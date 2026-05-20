@@ -34,22 +34,251 @@ _SEVERITY_FILTERS = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
 # Keywords checked case-insensitively across vendor + product + description.
 _COMMON_APP_KEYWORDS: list[str] = [
     "cisco", "fortinet", "palo alto", "paloalto", "vmware", "dell",
-    "huawei", "microsoft", "chrome", "firefox", "zoom", "slack",
+    "huawei", "microsoft edge", "microsoft authenticator", "microsoft",
+    "google chrome", "chrome", "firefox", "zoom", "slack",
     "whatsapp desktop", "telegram desktop", "notion", "google drive",
-    "microsoft authenticator", "bitwarden", "lastpass",
+    "bitwarden", "lastpass",
 ]
 # Short/ambiguous tokens — matched against vendor+product only to avoid false positives.
 _COMMON_APP_VENDOR_ONLY: list[str] = ["hp", "edge"]
 
-# Matches "vulnerability/overflow/injection/… in <ProductName>" in description text.
-# Requires a capital-letter start so generic words ("the", "a") are not captured.
-_PRODUCT_IN_DESC_RE = re.compile(
-    r"(?:vulnerability|overflow|injection|flaw|issue|bug|error|weakness)\s+in\s+"
-    r"([A-Z][A-Za-z0-9][A-Za-z0-9_\-\.]*(?:\s+[A-Z][A-Za-z0-9][A-Za-z0-9_\-\.]*)?)",
+# Keyword → human-readable display label.
+# _match_common_keyword sorts longest-first so "microsoft edge" wins over "microsoft",
+# "microsoft authenticator" wins over "microsoft", "google chrome" wins over "chrome", etc.
+_COMMON_KEYWORD_LABEL: dict[str, str] = {
+    "microsoft authenticator": "Microsoft Authenticator",
+    "microsoft edge":          "Microsoft Edge",
+    "whatsapp desktop":        "WhatsApp Desktop",
+    "telegram desktop":        "Telegram Desktop",
+    "google chrome":           "Google Chrome",
+    "google drive":            "Google Drive",
+    "palo alto":               "Palo Alto Networks",
+    "paloalto":                "Palo Alto Networks",
+    "cisco":                   "Cisco",
+    "fortinet":                "Fortinet",
+    "vmware":                  "VMware",
+    "dell":                    "Dell",
+    "huawei":                  "Huawei",
+    "microsoft":               "Microsoft",
+    "chrome":                  "Google Chrome",
+    "firefox":                 "Firefox",
+    "zoom":                    "Zoom",
+    "slack":                   "Slack",
+    "notion":                  "Notion",
+    "bitwarden":               "Bitwarden",
+    "lastpass":                "LastPass",
+    "hp":                      "HP",
+    "edge":                    "Microsoft Edge",
+}
+
+# ── Description-based product extraction regexes ─────────────────────────────
+# Tried in order inside _product_from_desc(); first match wins.
+
+# "BigBlueButton is an open-source…" / "Mullvad VPN is a VPN client…"
+# Also handles "(MantisBT)" abbreviation suffix.
+_PRODUCT_IS_RE = re.compile(
+    r"^([A-Z][A-Za-z0-9\+][A-Za-z0-9_\-]*(?:\s+[A-Z][A-Za-z0-9][A-Za-z0-9_\-]*){0,4})"
+    r"(?:\s+\([^)]+\))?\s+is\s+",
+)
+
+# "libheif is a HEIF…" — lowercase library/package names before "is a/an"
+_LOWLIB_IS_RE = re.compile(
+    r"^([a-z][A-Za-z0-9_\-\.]+)\s+is\s+(?:a|an|the|free|one|not|open)\s",
+)
+
+# "In MLflow version 3.9.0…" / "In BYD Atto3, an attacker…" / "In ScadaBR version 1.2.0…"
+# Must be checked BEFORE _PRODUCT_SUBJECT_RE to prevent "In ScadaBR" being captured as product.
+_IN_PRODUCT_START_RE = re.compile(
+    r"^In\s+((?:[A-Z][A-Za-z0-9][A-Za-z0-9_\-]*(?:\s+[A-Z][A-Za-z0-9][A-Za-z0-9_\-]*){0,3}))"
+    r"(?:,|\s+v\d|\s+version\b|\s+\()",
+)
+
+# "NVIDIA DGX OS contains…" / "HestiaCP versions 1.9.0 contain…" / "BillaBear (all versions…) contains…"
+# "Technitium DNS Server aggressively tries…" / "Ledger Live with vulnerable versions…"
+_PRODUCT_SUBJECT_RE = re.compile(
+    r"^([A-Z][A-Za-z0-9\+][A-Za-z0-9_\-]*(?:\s+[A-Z][A-Za-z0-9][A-Za-z0-9_\-]*){0,4})"
+    r"(?:\s+\([^)]+\))?"
+    r"\s+(?:contain|is\s+vulnerable|allow|prior\s+to|before\s+version|has\s+a|"
+    r"is\s+susceptible|does\s+not\s+properly|fail|versions?\s+\d|v\d+\.\d|"
+    r"uses\s+|requires?\s+|aggressively|with\s+vulnerable|devices?\s+contain)",
+)
+
+# "This vulnerability was fixed in Firefox 151…" — Mozilla-style advisories
+_FIXED_IN_RE = re.compile(
+    r"[Tt]his\s+vulnerability\s+was\s+fixed\s+in\s+"
+    r"((?:[A-Z][A-Za-z0-9][A-Za-z0-9_\-]*(?:\s+[A-Z][A-Za-z0-9][A-Za-z0-9_\-]*){0,2}))"
+    r"\s+\d",
+)
+
+# "This issue affects Apache OFBiz: before…" / "This issue affects Escargot: …"
+_THIS_ISSUE_RE = re.compile(
+    r"[Tt]his\s+issue\s+affects?\s+"
+    r"((?:[A-Z][A-Za-z0-9][A-Za-z0-9_\-]*(?:\s+[A-Z][A-Za-z0-9][A-Za-z0-9_\-]*){0,3}))"
+    r"(?::|\.|\s+(?:before|prior|through|version))",
+)
+
+# "The Piotnet Addons for Elementor Pro plugin for WordPress is vulnerable…"
+# Lazy match stops at the first plugin/extension/component/module keyword.
+_THE_PLUGIN_RE = re.compile(
+    r"^The\s+([A-Z][A-Za-z0-9][A-Za-z0-9_\-]*(?:\s+[A-Za-z][A-Za-z0-9_\-]*){0,6}?)"
+    r"\s+(?:plugin|extension|component|module)\s+(?:for\s+\S+\s+)?(?:is|before|prior|through)",
+)
+
+# "An issue was discovered in the Portrait Dell Color Management application before…"
+# "discovered in the Motorola Factory Test component (com.motorola.motocit)…"
+_IN_THE_APP_RE = re.compile(
+    r"\bin\s+the\s+((?:[A-Z][A-Za-z0-9][A-Za-z0-9_\-]*(?:\s+[A-Z][A-Za-z0-9][A-Za-z0-9_\-]*){0,4}))"
+    r"\s+(?:application|software|system|module|service|platform|tool|library|framework|plugin|extension|component)\b",
+)
+
+# "A path traversal vulnerability exists in the Altium Enterprise Server ComparisonService due to…"
+# "A local privilege escalation vulnerability exists in O+ Connect because it fails…"
+# "A flaw was found in Keycloak. An authenticated user…"
+# No dot in character class — prevents "Keycloak." from being absorbed into the product name.
+_EXISTS_IN_RE = re.compile(
+    r"\b(?:exists|found|identified)\s+in\s+(?:the\s+)?"
+    r"((?:[A-Z][A-Za-z0-9\+][A-Za-z0-9_\-]*(?:\s+[A-Z][A-Za-z0-9][A-Za-z0-9_\-]*){0,3}))"
+    r"(?:\s+(?:due\s+to|because|through|when|by\s+|allowing|via|where\s+)|[.,]|$)",
+)
+
+# "vulnerability exists in the /cgi-bin endpoint of Panabit PAP-XM320…"
+# "authentication bypass exists in the embedded HTTP server of Panabit PAP-XM320…"
+_OF_PRODUCT_RE = re.compile(
+    r"\b(?:endpoint|interface|server|backend|component|service)\s+of\s+"
+    r"((?:[A-Z][A-Za-z0-9\+][A-Za-z0-9_\-]*(?:\s+[A-Z][A-Za-z0-9][A-Za-z0-9_\-]*){0,3}))"
+    r"(?:\s+(?:up\s+to|before|prior|through|allows?|v\d)|\s*[,.]|$)",
+)
+
+# "versions of the package exifreader" / "affects the package foo"
+_OF_PACKAGE_RE = re.compile(
+    r"(?:of|for)\s+the\s+package\s+([A-Za-z][A-Za-z0-9_\-\.@/]+)",
+    re.IGNORECASE,
+)
+
+# Sentence boundary — truncate here so "Keycloak. An" doesn't bleed into the product name.
+# Matches ". " (sentence end) or common version/impact markers.
+_DESC_BOUNDARY_RE = re.compile(
+    r"(?:\.\s|\s+(?:prior\s+to|before\s+version|through\s+\d|allowed\s+a|"
+    r"on\s+(?:Linux|Windows|Android|iOS|macOS|Mac\b)))",
+    re.IGNORECASE,
+)
+
+# Last-resort: all "in {TitleCase word(s)}" up to 4 tokens; take the LAST match.
+# Sub-components appear first ("in GFX"), the actual product appears last ("in Google Chrome").
+# Second char allows '+' so "O+ Connect" is captured correctly.
+_IN_PRODUCT_RE = re.compile(
+    r"\bin\s+((?:[A-Z][A-Za-z0-9\+][A-Za-z0-9_\-]*(?:\s+[A-Z][A-Za-z0-9][A-Za-z0-9_\-]*){0,3}))",
 )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _product_from_desc(full_desc: str) -> str:
+    """Extract the affected product name from a CVE description string.
+
+    Tries patterns in priority order; returns empty string if nothing matches.
+    """
+    # 1. "BigBlueButton is an open-source…"
+    m = _PRODUCT_IS_RE.match(full_desc)
+    if m:
+        return m.group(1).strip()
+
+    # 2. "libheif is a HEIF…" (lowercase lib names)
+    m = _LOWLIB_IS_RE.match(full_desc)
+    if m:
+        return m.group(1).strip()
+
+    # 3. "In MLflow version 3.9…" / "In BYD Atto3, …"
+    # Checked before _PRODUCT_SUBJECT_RE so "In {Product}" isn't captured with "In" prefix.
+    m = _IN_PRODUCT_START_RE.match(full_desc)
+    if m:
+        return m.group(1).strip()
+
+    # 4. "NVIDIA DGX OS contains…" / "Technitium DNS Server aggressively…"
+    m = _PRODUCT_SUBJECT_RE.match(full_desc)
+    if m:
+        return m.group(1).strip()
+
+    # 5. "This vulnerability was fixed in Firefox 151…"
+    m = _FIXED_IN_RE.search(full_desc)
+    if m:
+        return m.group(1).strip()
+
+    # 6. "This issue affects Apache OFBiz: before…"
+    m = _THIS_ISSUE_RE.search(full_desc)
+    if m:
+        return m.group(1).strip()
+
+    # 7. "The Piotnet Addons for Elementor Pro plugin for WordPress is vulnerable…"
+    m = _THE_PLUGIN_RE.match(full_desc)
+    if m:
+        return m.group(1).strip()
+
+    # 8. "An issue was discovered in the Portrait Dell Color Management application…"
+    #    "in the Motorola Factory Test component (com.motorola.motocit)…"
+    m = _IN_THE_APP_RE.search(full_desc)
+    if m:
+        return m.group(1).strip()
+
+    # 9. "vulnerability exists in the Altium Enterprise Server ComparisonService due to…"
+    #    "flaw was found in Keycloak. An authenticated user…"
+    m = _EXISTS_IN_RE.search(full_desc)
+    if m:
+        return m.group(1).strip()
+
+    # 10. "vulnerability exists in … endpoint of Panabit PAP-XM320 up to…"
+    m = _OF_PRODUCT_RE.search(full_desc)
+    if m:
+        return m.group(1).strip()
+
+    # 11. "of the package exifreader"
+    m = _OF_PACKAGE_RE.search(full_desc)
+    if m:
+        return m.group(1).strip()
+
+    # 11. Last resort — truncate at sentence/version boundary, collect all
+    #     "in {TitleCase}" matches, return the last one (deepest = actual product).
+    boundary = _DESC_BOUNDARY_RE.search(full_desc)
+    text = full_desc[:boundary.start()] if boundary else full_desc
+    matches = _IN_PRODUCT_RE.findall(text)
+    if matches:
+        return matches[-1].strip()
+
+    # 12. If boundary truncation cleaned the text, grab the leading title-case sequence.
+    #     Covers "Funnel Builder for WooCommerce Checkout prior to…" → "Funnel Builder".
+    if boundary:
+        m = re.match(
+            r"^([A-Z][A-Za-z0-9\+][A-Za-z0-9_\-]*(?:\s+[A-Z][A-Za-z0-9][A-Za-z0-9_\-]*){0,4})",
+            text,
+        )
+        if m:
+            return m.group(1).strip()
+
+    return ""
+
+
+def _match_common_keyword(text: str) -> str:
+    """Return the display label for the first common-app keyword found in *text*.
+
+    Checks longer keys first so "microsoft authenticator" wins over "microsoft".
+    Returns empty string when nothing matches.
+    """
+    text_lower = text.lower()
+    for kw in sorted(_COMMON_KEYWORD_LABEL, key=len, reverse=True):
+        if kw in text_lower:
+            return _COMMON_KEYWORD_LABEL[kw]
+    # vendor-only keywords (hp, edge) — check without description to avoid false positives
+    return ""
+
+
+def _match_common_keyword_vendor_only(vendor_product: str) -> str:
+    """Return the display label for vendor-only keywords (hp, edge)."""
+    vp_lower = vendor_product.lower()
+    for kw in _COMMON_APP_VENDOR_ONLY:
+        if kw in vp_lower:
+            return _COMMON_KEYWORD_LABEL.get(kw, kw.upper())
+    return ""
+
 
 def _is_common_app(v: dict) -> bool:
     """Return True if the CVE involves a well-known application from the common app list.
@@ -168,18 +397,13 @@ def _parse_nvd_item(item: dict, kev_data: dict[str, dict]) -> dict:
         product = kev_entry.get("product", "")
 
     if not vendor and not product:
-        source = cve.get("sourceIdentifier", "")
-        if "@" in source:
-            domain = source.split("@", 1)[1]
-            org = domain.split(".")[0]
-            if org not in ("nist", "mitre", "cve"):
-                vendor = org.replace("-", " ").title()
-
-    if not vendor and not product:
         full_desc = next((d["value"] for d in descriptions if d.get("lang") == "en"), "")
-        m = _PRODUCT_IN_DESC_RE.search(full_desc)
-        if m:
-            vendor = m.group(1)
+        if full_desc:
+            vendor = _product_from_desc(full_desc)
+            # Last fallback: if regex still found nothing but the CVE mentions a common app,
+            # use the keyword label so "Common"-tagged CVEs always have a visible label.
+            if not vendor:
+                vendor = _match_common_keyword(full_desc)
 
     pub_raw = cve.get("published", "")
     try:

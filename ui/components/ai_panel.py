@@ -196,7 +196,7 @@ def render_ai_panel(run_results: dict, settings) -> None:
 
             if ioc_type in {"domain", "url"} and _provider_has_data("dnsdumpster", ioc):
                 _dd_target = dnsd_results.get(value, {}).get("queriedDomain") or value
-                links.append(f"DNSDumpster: https://dnsdumpster.com/results/{_dd_target}/")
+                links.append(f"DNSDumpster: https://dnsdumpster.com/?s={_dd_target}")
 
             if ioc_type in {"ip", "domain", "url", "hash"} and _provider_has_data("hybrid_analysis", ioc):
                 if ioc_type == "hash":
@@ -238,11 +238,14 @@ def render_ai_panel(run_results: dict, settings) -> None:
         _ctx_device_action = _get_effective_device_action()
         _ctx_parent = st.session_state.get("parent_process") or ""
         _ctx_child = st.session_state.get("child_process") or ""
-        _has_process_ctx = bool(_ctx_device_action or _ctx_parent or _ctx_child)
+        _ctx_file_path = st.session_state.get("file_path") or ""
+        _has_process_ctx = bool(_ctx_device_action or _ctx_parent or _ctx_child or _ctx_file_path)
         if _has_process_ctx:
             lines.append("Additional endpoint context (use if present, do not invent):")
             if _ctx_device_action:
                 lines.append(f"  Device Action: {_ctx_device_action} — incorporate this to indicate whether the activity was blocked/prevented or allowed.")
+            if _ctx_file_path:
+                lines.append(f"  File Path: {_ctx_file_path} — the file path involved in the activity.")
             if _ctx_parent:
                 lines.append(f"  Parent Process: {_ctx_parent} — the process that spawned the suspicious activity.")
             if _ctx_child:
@@ -424,7 +427,7 @@ def render_ai_panel(run_results: dict, settings) -> None:
             "evidence": evidence,
             "mitre_tactics": sorted(tactics),
             "risk_notes": notes[:8],
-            "asset_criticality": "critical" if st.session_state.get("critical_asset") else "standard",
+            "asset_criticality": "critical" if st.session_state.get("critical_asset_sel") == "Critical Asset" else "standard",
             "device_action": _get_effective_device_action(),
         }
 
@@ -868,11 +871,51 @@ def render_ai_panel(run_results: dict, settings) -> None:
         }
         _tactic_ids = [t for t in _ta_mitre if t.startswith("TA")]
 
+        def _flag_source_url(source: str, ioc_value: str, ioc_type: str) -> str:
+            """Return the direct Threat Intel URL for a given flag source + IOC."""
+            s = source.lower()
+            if "virustotal" in s or s == "vt":
+                if ioc_type == "url":
+                    return f"https://www.virustotal.com/gui/url/{_vt_url_id(ioc_value)}"
+                if ioc_type == "ip":
+                    return f"https://www.virustotal.com/gui/ip-address/{ioc_value}"
+                if ioc_type == "domain":
+                    return f"https://www.virustotal.com/gui/domain/{ioc_value}"
+                if ioc_type == "hash":
+                    return f"https://www.virustotal.com/gui/file/{ioc_value}"
+            if "urlscan" in s:
+                if ioc_type == "ip":
+                    return f"https://urlscan.io/ip/{ioc_value}"
+                if ioc_type == "domain":
+                    return f"https://urlscan.io/domain/{ioc_value}"
+                if ioc_type == "url":
+                    return f"https://urlscan.io/search/#q={quote_plus(ioc_value)}"
+                if ioc_type == "hash":
+                    return f"https://urlscan.io/search/#q=hash:{quote_plus(ioc_value)}"
+            if "abuse" in s:
+                return f"https://www.abuseipdb.com/check/{ioc_value}"
+            if "threatfox" in s:
+                return f"https://threatfox.abuse.ch/browse.php?search={quote_plus(ioc_value)}"
+            if "malwarebazaar" in s:
+                return f"https://bazaar.abuse.ch/sample/{ioc_value}/"
+            if "shodan" in s:
+                if ioc_type == "ip":
+                    return f"https://www.shodan.io/host/{ioc_value}"
+                return f"https://www.shodan.io/domain/{ioc_value}"
+            if "dnsdumpster" in s:
+                _dd_target = dnsd_results.get(ioc_value, {}).get("queriedDomain") or ioc_value
+                return f"https://dnsdumpster.com/?s={_dd_target}"
+            if "hybrid" in s:
+                if ioc_type == "hash":
+                    return f"https://hybrid-analysis.com/sample/{ioc_value}"
+                return f"https://hybrid-analysis.com/search?query={quote_plus(ioc_value)}"
+            return ""
+
         _all_flags: list[dict] = []
         for _ioc in items:
             if selected and _ioc.value not in selected:
                 continue
-            _all_flags.extend(extract_ioc_flags(
+            _ioc_flags = extract_ioc_flags(
                 _ioc.value, _ioc.type,
                 vt_results.get(_ioc.value, {}) or {},
                 urlscan_results.get(_ioc.value, {}) or {},
@@ -884,7 +927,11 @@ def render_ai_panel(run_results: dict, settings) -> None:
                 ha_results.get(_ioc.value, {}) or {},
                 mxtoolbox_results.get(_ioc.value, {}) or {},
                 ransomware_live_results.get(_ioc.value, {}) or {},
-            ))
+            )
+            for _f in _ioc_flags:
+                _f["ioc_value"] = _ioc.value
+                _f["ioc_type"] = _ioc.type
+            _all_flags.extend(_ioc_flags)
         _seen_fids: set[str] = set()
         _deduped_flags: list[dict] = []
         for _f in _all_flags:
@@ -1180,9 +1227,37 @@ def render_ai_panel(run_results: dict, settings) -> None:
                     with st.expander(f"{_se} {_sev} — {len(_grp)} indicator(s)"):
                         for _f in _grp:
                             _mitre_str = " · ".join(_f["mitre"]) if _f["mitre"] else "—"
-                            _src_badge = f'<span style="background:#34495e;color:#ecf0f1;padding:1px 7px;border-radius:8px;font-size:0.73rem">{_f["source"]}</span>'
+                            _f_ioc_val  = _f.get("ioc_value", "")
+                            _f_ioc_type = _f.get("ioc_type", "")
+                            _f_src_url  = _flag_source_url(_f["source"], _f_ioc_val, _f_ioc_type)
+                            _src_badge = (
+                                f'<a href="{_f_src_url}" target="_blank" style="text-decoration:none">'
+                                f'<span style="background:#34495e;color:#ecf0f1;padding:1px 7px;'
+                                f'border-radius:8px;font-size:0.73rem;cursor:pointer">{_f["source"]}</span></a>'
+                                if _f_src_url else
+                                f'<span style="background:#34495e;color:#ecf0f1;padding:1px 7px;'
+                                f'border-radius:8px;font-size:0.73rem">{_f["source"]}</span>'
+                            )
+                            _ioc_badge = (
+                                f'<a href="{_f_src_url}" target="_blank" style="text-decoration:none">'
+                                f'<span style="background:#1a3050;color:#79c0ff;padding:1px 7px;'
+                                f'border-radius:8px;font-size:0.73rem;font-family:monospace;cursor:pointer">'
+                                f'{_f_ioc_val}</span></a>'
+                                if _f_ioc_val and _f_src_url else
+                                f'<span style="background:#1a3050;color:#79c0ff;padding:1px 7px;'
+                                f'border-radius:8px;font-size:0.73rem;font-family:monospace">'
+                                f'{_f_ioc_val}</span>'
+                                if _f_ioc_val else ""
+                            )
+                            _label_html = (
+                                f'<a href="{_f_src_url}" target="_blank" '
+                                f'style="color:inherit;text-decoration:none;font-weight:700">'
+                                f'{_f["label"]}</a>'
+                                if _f_src_url else
+                                f'<strong>{_f["label"]}</strong>'
+                            )
                             st.markdown(
-                                f'**{_f["label"]}** {_src_badge}<br>'
+                                f'{_label_html} {_src_badge} {_ioc_badge}<br>'
                                 f'<span style="color:#aaa;font-size:0.82rem">Type: {_f["threat_type"]} &nbsp;|&nbsp; MITRE: {_mitre_str}</span>'
                                 + (f'<br><span style="color:#888;font-size:0.78rem">{_f["detail"]}</span>' if _f.get("detail") else ""),
                                 unsafe_allow_html=True,
@@ -1206,16 +1281,21 @@ def render_ai_panel(run_results: dict, settings) -> None:
                         for _col, (_lbl, _val) in zip(_cols, _chunk):
                             _col.metric(_lbl, _val)
 
-            # ── Row 6: Source Links ───────────────────────────────────────
+            # ── Row 6: Source Links (grouped by IOC) ─────────────────────
             _ioc_links_text = st.session_state.get("ai_ioc_links") or _build_ioc_links(selected or [])
             if _ioc_links_text:
                 st.divider()
                 st.markdown("**Source Links**")
+                _show_ioc_header = len(selected or []) > 1
                 for _ll in _ioc_links_text.strip().splitlines():
                     _ll = _ll.strip()
-                    if not _ll or _ll.startswith("Source:"):
+                    if not _ll:
                         continue
-                    if _ll.startswith("- "):
+                    if _ll.startswith("Source:"):
+                        if _show_ioc_header:
+                            _src_header = _ll[len("Source:"):].strip()
+                            st.caption(f"`{_src_header}`")
+                    elif _ll.startswith("- "):
                         _parts = _ll[2:].split(": ", 1)
                         if len(_parts) == 2:
                             _lname, _lurl = _parts

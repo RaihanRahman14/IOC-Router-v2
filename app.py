@@ -226,7 +226,7 @@ auto_generate_on_run: bool = st.session_state.get("auto_generate_on_run", False)
 auto_detect_and_provider: bool = st.session_state.get("auto_detect_and_provider", True)
 auto_detect: bool = auto_detect_and_provider
 auto_choose_provider: bool = auto_detect_and_provider
-critical_asset: bool = st.session_state.get("critical_asset", False)
+critical_asset: bool = st.session_state.get("critical_asset_sel", "Non Critical Asset") == "Critical Asset"
 allow_urlscan_submit: bool = True
 run: bool = False
 clear: bool = False
@@ -241,6 +241,7 @@ device_action: str = st.session_state.get("device_action", "")
 device_action_others: str = st.session_state.get("device_action_others", "")
 parent_process: str = st.session_state.get("parent_process", "")
 child_process: str = st.session_state.get("child_process", "")
+file_path: str = st.session_state.get("file_path", "")
 
 # ── Handle pending resets before rendering ────────────────────────────────────
 if st.session_state.get("reset_input"):
@@ -250,6 +251,7 @@ if st.session_state.get("reset_input"):
     st.session_state["device_action_others"] = ""
     st.session_state["parent_process"] = ""
     st.session_state["child_process"] = ""
+    st.session_state["file_path"] = ""
     st.session_state["reset_input"] = False
     raw = ""
     raw_log = ""
@@ -257,6 +259,7 @@ if st.session_state.get("reset_input"):
     device_action_others = ""
     parent_process = ""
     child_process = ""
+    file_path = ""
 
 if st.session_state.get("load_sample"):
     st.session_state["ioc_input"] = "8.8.8.8\nexample.com\nhttps://example.com/login\n44d88612fea8a8f36de82e1278abb02f"
@@ -453,16 +456,9 @@ if not _has_results:
 
         # Context expander
         with st.expander("🗂️ Context"):
-            _crit = st.columns([1, 3])
-            with _crit[0]:
-                critical_asset = st.checkbox("Critical Asset", value=False, key="critical_asset")
-            _sel = st.columns(2)
-            with _sel[0]:
-                st.selectbox("AI Provider", ["Gemini", "Groq"], index=0, key="auto_ai_provider")
-            with _sel[1]:
-                output_format = st.selectbox(
-                    "Output format", ["Ticket notes", "Table", "JSON", "Shareable Text"], index=0, key="output_format"
-                )
+            output_format = st.selectbox(
+                "Output format", ["Ticket notes", "Table", "JSON", "Shareable Text"], index=0, key="output_format"
+            )
 
             _opt = st.columns(2)
             with _opt[0]:
@@ -476,7 +472,7 @@ if not _has_results:
                     "Time Detected", placeholder="2025-01-01 08:00:00", key="time_detected"
                 )
 
-            _proc = st.columns(3)
+            _proc = st.columns([2, 1])
             with _proc[0]:
                 device_action = st.selectbox(
                     "Device Action",
@@ -484,19 +480,24 @@ if not _has_results:
                     key="device_action",
                 )
             with _proc[1]:
-                parent_process = st.text_input(
-                    "Parent Process", placeholder="e.g. explorer.exe", key="parent_process"
-                )
-            with _proc[2]:
-                child_process = st.text_input(
-                    "Child Process", placeholder="e.g. cmd.exe", key="child_process"
-                )
+                _asset_sel = st.selectbox("Asset Criticality", ["Non Critical Asset", "Critical Asset"], index=0, key="critical_asset_sel")
+                critical_asset = _asset_sel == "Critical Asset"
             if device_action == "Others":
                 device_action_others = st.text_input(
                     "Specify Action",
                     placeholder="e.g. Terminated, Logged, Alerted...",
                     key="device_action_others",
                 )
+
+            file_path = st.text_input(
+                "File Path", placeholder="e.g. C:\\Users\\user\\Downloads\\malware.exe", key="file_path"
+            )
+            parent_process = st.text_input(
+                "Parent Process", placeholder="e.g. explorer.exe", key="parent_process"
+            )
+            child_process = st.text_input(
+                "Child Process", placeholder="e.g. cmd.exe", key="child_process"
+            )
 
             raw_log = st.text_area(
                 "Context (optional)",
@@ -603,7 +604,8 @@ else:
                 "Auto Generate AI Output", value=False, key="auto_generate_on_run"
             )
         with col_chk[2]:
-            critical_asset = st.checkbox("Critical Asset", value=False, key="critical_asset")
+            _asset_sel = st.selectbox("Asset Criticality", ["Non Critical Asset", "Critical Asset"], index=0, key="critical_asset_sel")
+            critical_asset = _asset_sel == "Critical Asset"
 
         if auto_generate_on_run:
             col_drop = st.columns([1, 1, 3])

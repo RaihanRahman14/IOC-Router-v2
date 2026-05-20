@@ -50,7 +50,8 @@
       "Bash(Get-ChildItem \"c:\\\\Users\\\\rahma\\\\Documents\\\\Raihan\\\\Jobs\\\\Compnet\\\\IOC router v2\\\\\" | Select-Object Name)",
       "WebFetch(domain:github.com)",
       "Bash(Get-ChildItem -Recurse -Filter \"*.tsx\" -o -Filter \"*.ts\")",
-      "Bash(Select-Object -First 30 FullName)"
+      "Bash(Select-Object -First 30 FullName)",
+      "Bash(python -c \"from ui.components.ai_panel import render_ai_panel; print\\('import OK'\\)\")"
     ]
   }
 }
