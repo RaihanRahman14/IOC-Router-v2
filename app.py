@@ -165,6 +165,8 @@ for _k, _v in {
     "ioc_grp_ip": False, "ioc_grp_domain": False, "ioc_grp_hash": False,
     "ioc_grp_email": False, "ioc_grp_keyword": False,
     "auto_detect_and_provider": True,
+    "analysis_mode": "Triage",
+    "triage_speed": "Detailed",
 }.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
@@ -281,13 +283,41 @@ _PROVIDER_LABELS: dict[str, str] = {
     "ransomware_live": "Ransomware Live",
 }
 _PROVIDER_DISABLED: set[str] = {"whoxy"}
-_GROUP_PROVIDERS: dict[str, list[str]] = {
+_GROUP_PROVIDERS_FULL: dict[str, list[str]] = {
     "ip":         ["vt", "abuse", "tf", "shodan", "ha", "mxtoolbox"],
     "domain_url": ["vt", "urlscan", "abuse", "tf", "shodan", "dns", "ha", "mxtoolbox"],
     "hash":       ["vt", "tf", "mb", "ha"],
     "email":      ["mxtoolbox"],
     "keyword":    ["whoxy", "ransomware_live"],
 }
+_GROUP_PROVIDERS_LOOKUP: dict[str, list[str]] = {
+    "ip":         ["vt", "abuse", "mxtoolbox"],
+    "domain_url": ["shodan", "mxtoolbox"],
+    "email":      ["mxtoolbox"],
+}
+
+
+def _get_group_providers(mode: str) -> dict[str, list[str]]:
+    """Return the IOC-group -> provider mapping for the given analysis mode.
+
+    Args:
+        mode: Either "Triage" or "Lookup".
+
+    Returns:
+        Mapping of IOC group key to list of provider keys appropriate for the mode.
+    """
+    if mode == "Lookup":
+        return _GROUP_PROVIDERS_LOOKUP
+    # Triage: exclude MxToolBox and the entire Keyword group; drop empty groups
+    triage_map = {
+        g: [p for p in ps if p != "mxtoolbox"]
+        for g, ps in _GROUP_PROVIDERS_FULL.items()
+        if g != "keyword"
+    }
+    return {g: ps for g, ps in triage_map.items() if ps}
+
+
+_GROUP_PROVIDERS: dict[str, list[str]] = _GROUP_PROVIDERS_FULL
 _GROUP_IOC_KEY: dict[str, str] = {
     "ip":         "ioc_grp_ip",
     "domain_url": "ioc_grp_domain",
@@ -323,14 +353,23 @@ def _on_provider_toggle(p: str, group: str) -> None:
 
 def _on_ioc_group_toggle(group: str) -> None:
     """Enable all providers in a group when the IOC type header is checked."""
+    mode = st.session_state.get("analysis_mode", "Triage")
+    group_providers = _get_group_providers(mode)
     if st.session_state.get(_GROUP_IOC_KEY[group], True):
-        for p in _GROUP_PROVIDERS[group]:
+        for p in group_providers.get(group, []):
             if p not in _PROVIDER_DISABLED:
                 st.session_state[f"prov_{p}_{group}"] = True
 
 
-def _render_providers_expander(expanded: bool = True) -> None:
-    """Render grouped Providers expander with per-IOC-type sections."""
+def _render_providers_expander(expanded: bool = True, mode: str = "Triage") -> None:
+    """Render grouped Providers expander with per-IOC-type sections.
+
+    Args:
+        expanded: Whether the expander is expanded by default.
+        mode: Analysis mode, "Triage" or "Lookup". Controls which IOC groups
+            and providers are shown.
+    """
+    group_providers = _get_group_providers(mode)
     for p, groups in _PROVIDER_TO_GROUPS.items():
         for g in groups:
             gkey = f"prov_{p}_{g}"
@@ -341,8 +380,9 @@ def _render_providers_expander(expanded: bool = True) -> None:
         if ioc_key not in st.session_state:
             st.session_state[ioc_key] = False
 
-    with st.expander("🔍 IOC & Providers", expanded=expanded):
-        for i, (group, providers) in enumerate(_GROUP_PROVIDERS.items()):
+    expander_title = "🔍 Lookup & Providers" if mode == "Lookup" else "🔍 IOC & Providers"
+    with st.expander(expander_title, expanded=expanded):
+        for i, (group, providers) in enumerate(group_providers.items()):
             st.checkbox(
                 _GROUP_LABEL[group],
                 key=_GROUP_IOC_KEY[group],
@@ -362,7 +402,7 @@ def _render_providers_expander(expanded: bool = True) -> None:
                             on_change=_on_provider_toggle,
                             args=(p, group),
                         )
-            if i < len(_GROUP_PROVIDERS) - 1:
+            if i < len(group_providers) - 1:
                 st.divider()
 
 
@@ -370,7 +410,7 @@ if not _has_results:
     # ── LANDING: Note left | Input center | CVE right ─────────────────────────
     st.markdown(LANDING_CSS, unsafe_allow_html=True)
 
-    _note_col, _center_col, _right_col = st.columns([1, 1.6, 1], gap="large")
+    _note_col, _center_col, _right_col = st.columns([0.75, 2.4, 0.9], gap="large")
 
     with _note_col:
         st.markdown(
@@ -428,9 +468,41 @@ if not _has_results:
                 label_visibility="collapsed",
             )
             # Toolbar row inside card
-            _tc1, _tc2, _tc_run = st.columns([1.9, 1.2, 0.55])
+            _current_mode = st.session_state.get("analysis_mode", "Triage")
+            _auto_on = st.session_state.get("auto_detect_and_provider", True)
+            _show_speed = _current_mode == "Triage" and _auto_on
+            if _show_speed:
+                _tc_mode, _tc1, _tc_speed, _tc2, _tc_run = st.columns(
+                    [0.95, 1.5, 0.85, 1.15, 0.5]
+                )
+            else:
+                _tc_mode, _tc1, _tc2, _tc_run = st.columns([0.95, 1.8, 1.15, 0.5])
+            _auto_label = (
+                "Auto detect Lookup & Provider"
+                if _current_mode == "Lookup"
+                else "Auto detect IOC & Provider"
+            )
+            with _tc_mode:
+                with st.popover(f"{_current_mode} ▾", use_container_width=True):
+                    st.radio(
+                        "Mode",
+                        ["Triage", "Lookup"],
+                        index=0 if _current_mode == "Triage" else 1,
+                        key="analysis_mode",
+                        label_visibility="collapsed",
+                    )
             with _tc1:
-                st.checkbox("Auto detect IOC & Provider", key="auto_detect_and_provider")
+                st.checkbox(_auto_label, key="auto_detect_and_provider")
+            if _show_speed:
+                with _tc_speed:
+                    with st.container(key="triage_speed_wrap_chat"):
+                        st.segmented_control(
+                            "Triage speed",
+                            options=["Fast", "Detailed"],
+                            selection_mode="single",
+                            key="triage_speed",
+                            label_visibility="collapsed",
+                        )
             with _tc2:
                 auto_generate_on_run = st.checkbox("Auto AI Description", value=False, key="auto_generate_on_run")
             with _tc_run:
@@ -452,7 +524,10 @@ if not _has_results:
 
         # Providers section — shown when Auto detect & Provider is off
         if not st.session_state.get("auto_detect_and_provider", True):
-            _render_providers_expander(expanded=True)
+            _render_providers_expander(
+                expanded=True,
+                mode=st.session_state.get("analysis_mode", "Triage"),
+            )
 
         # Context expander
         with st.expander("🗂️ Context"):
@@ -596,14 +671,48 @@ else:
                 key="device_action_others",
             )
 
-        col_chk = st.columns(3)
+        _current_mode_r = st.session_state.get("analysis_mode", "Triage")
+        _auto_on_r = st.session_state.get("auto_detect_and_provider", True)
+        _show_speed_r = _current_mode_r == "Triage" and _auto_on_r
+        if _show_speed_r:
+            col_chk = st.columns([0.6, 1.0, 0.55, 1.0, 1.0])
+        else:
+            col_chk = st.columns([0.6, 1.2, 1.0, 1.0])
+        _auto_label_r = (
+            "Auto detect Lookup & Provider"
+            if _current_mode_r == "Lookup"
+            else "Auto detect & Provider"
+        )
         with col_chk[0]:
-            st.checkbox("Auto detect & Provider", value=True, key="auto_detect_and_provider")
+            with st.popover(f"{_current_mode_r} ▾", use_container_width=True):
+                st.radio(
+                    "Mode",
+                    ["Triage", "Lookup"],
+                    index=0 if _current_mode_r == "Triage" else 1,
+                    key="analysis_mode",
+                    label_visibility="collapsed",
+                )
         with col_chk[1]:
+            st.checkbox(_auto_label_r, value=True, key="auto_detect_and_provider")
+        if _show_speed_r:
+            with col_chk[2]:
+                with st.container(key="triage_speed_wrap_split"):
+                    st.segmented_control(
+                        "Triage speed",
+                        options=["Fast", "Detailed"],
+                        selection_mode="single",
+                        default=st.session_state.get("triage_speed", "Detailed"),
+                        key="triage_speed",
+                        label_visibility="collapsed",
+                    )
+            _gen_col, _asset_col = col_chk[3], col_chk[4]
+        else:
+            _gen_col, _asset_col = col_chk[2], col_chk[3]
+        with _gen_col:
             auto_generate_on_run = st.checkbox(
                 "Auto Generate AI Output", value=False, key="auto_generate_on_run"
             )
-        with col_chk[2]:
+        with _asset_col:
             _asset_sel = st.selectbox("Asset Criticality", ["Non Critical Asset", "Critical Asset"], index=0, key="critical_asset_sel")
             critical_asset = _asset_sel == "Critical Asset"
 
@@ -623,7 +732,10 @@ else:
                 )
 
         if not auto_detect_and_provider:
-            _render_providers_expander(expanded=False)
+            _render_providers_expander(
+                expanded=False,
+                mode=st.session_state.get("analysis_mode", "Triage"),
+            )
 
         col_btn = st.columns([1.6, 0.8, 1.8, 2.8], gap="small")
         with col_btn[0]:
@@ -679,20 +791,57 @@ if run_requested:
         st.session_state["ai_provider"] = auto_ai_provider
 
 
-def _auto_provider_flags(items: list[IOC], settings_obj: Settings) -> dict[str, bool]:
+# Triage "Fast" mode — minimal provider set per IOC type for quick verdicts.
+_FAST_PROVIDERS_BY_TYPE: dict[str, set[str]] = {
+    "ip":     {"vt", "abuse"},
+    "domain": {"vt", "urlscan", "shodan"},
+    "url":    {"vt", "urlscan", "shodan"},
+    "hash":   {"vt", "ha"},
+}
+
+
+def _auto_provider_flags(
+    items: list[IOC],
+    settings_obj: Settings,
+    fast: bool = False,
+) -> dict[str, bool]:
+    """Return per-provider enablement flags for auto-detect mode.
+
+    Args:
+        items: Parsed IOC list.
+        settings_obj: Settings carrying API keys.
+        fast: When True, only enable the minimal Fast-mode provider set per
+            IOC type (Triage Fast). When False, use the full type-based set.
+
+    Returns:
+        Mapping of provider key to a boolean indicating whether that provider
+        should run for the current input.
+    """
     types = {ioc.type for ioc in items}
+
+    def _type_match(provider: str, allowed: set[str]) -> bool:
+        if not fast:
+            return bool(types & allowed)
+        # In fast mode a provider only runs if at least one IOC type in the
+        # input lists it in _FAST_PROVIDERS_BY_TYPE.
+        return any(
+            provider in _FAST_PROVIDERS_BY_TYPE.get(t, set())
+            for t in types
+            if t in allowed
+        )
+
     return {
-        "vt":             bool(settings_obj.vt_key)               and bool(types & {"ip", "domain", "url", "hash"}),
-        "urlscan":        bool(settings_obj.urlscan_key)           and bool(types & {"domain", "url"}),
-        "abuse":          bool(settings_obj.abuse_key)             and bool(types & {"ip", "domain", "url"}),
-        "tf":             bool(settings_obj.threatfox_key)         and bool(types & {"ip", "domain", "url", "hash"}),
-        "mb":             bool(settings_obj.malwarebazaar_key)     and "hash" in types,
-        "shodan":         bool(settings_obj.shodan_key)            and bool(types & {"ip", "domain", "url"}),
-        "dns":            bool(settings_obj.dnsdumpster_key)       and bool(types & {"domain", "url"}),
-        "ha":             bool(settings_obj.hybrid_analysis_key)   and bool(types & {"ip", "domain", "url", "hash"}),
-        "mxtoolbox":      bool(settings_obj.mxtoolbox_key)         and bool(types & {"ip", "domain", "url", "email"}),
-        "whoxy":          bool(settings_obj.whoxy_key)             and bool(types & {"whois"}),
-        "ransomware_live": bool(settings_obj.ransomware_live_key)  and bool(types & {"whois"}),
+        "vt":              bool(settings_obj.vt_key)              and _type_match("vt",        {"ip", "domain", "url", "hash"}),
+        "urlscan":         bool(settings_obj.urlscan_key)         and _type_match("urlscan",   {"domain", "url"}),
+        "abuse":           bool(settings_obj.abuse_key)           and _type_match("abuse",     {"ip", "domain", "url"}),
+        "tf":              bool(settings_obj.threatfox_key)       and _type_match("tf",        {"ip", "domain", "url", "hash"}),
+        "mb":              bool(settings_obj.malwarebazaar_key)   and _type_match("mb",        {"hash"}),
+        "shodan":          bool(settings_obj.shodan_key)          and _type_match("shodan",    {"ip", "domain", "url"}),
+        "dns":             bool(settings_obj.dnsdumpster_key)     and _type_match("dns",       {"domain", "url"}),
+        "ha":              bool(settings_obj.hybrid_analysis_key) and _type_match("ha",        {"ip", "domain", "url", "hash"}),
+        "mxtoolbox":       bool(settings_obj.mxtoolbox_key)       and _type_match("mxtoolbox", {"ip", "domain", "url", "email"}),
+        "whoxy":           bool(settings_obj.whoxy_key)           and _type_match("whoxy",     {"whois"}),
+        "ransomware_live": bool(settings_obj.ransomware_live_key) and _type_match("ransomware_live", {"whois"}),
     }
 
 
@@ -721,7 +870,11 @@ with split_right:
         else:
             ioc_payload = [(i.value, i.type) for i in items]
             if auto_choose_provider:
-                provider_flags = _auto_provider_flags(items, settings)
+                _is_triage_fast = (
+                    st.session_state.get("analysis_mode", "Triage") == "Triage"
+                    and st.session_state.get("triage_speed", "Detailed") == "Fast"
+                )
+                provider_flags = _auto_provider_flags(items, settings, fast=_is_triage_fast)
                 _payload = lambda _p: ioc_payload  # noqa: E731
             else:
                 _payload = lambda _p: _manual_payload_for_provider(_p, items)  # noqa: E731

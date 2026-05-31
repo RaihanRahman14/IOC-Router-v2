@@ -28,7 +28,7 @@ _SEVERITY_STYLE: dict[str, tuple[str, str]] = {
     "N/A":      ("#6b7280", "#1a1d23"),
 }
 
-_FILTER_OPTIONS = ["Common", "ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"]
+_FILTER_OPTIONS = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "Common", "ALL"]
 _SEVERITY_FILTERS = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
 
 # Keywords checked case-insensitively across vendor + product + description.

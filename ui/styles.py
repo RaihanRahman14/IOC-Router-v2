@@ -4,6 +4,13 @@ from __future__ import annotations
 # ── Global styles: header, split layout, drawer ──────────────────────────────
 GLOBAL_CSS_AND_HEADER = """
     <style>
+    /* Scale entire UI to 80% on desktop; keep 100% on mobile for readability */
+    @media (min-width: 768px) {
+        html {
+            zoom: 0.8;
+        }
+    }
+
     .fixed-app-header {
         position: fixed;
         top: 0;
@@ -316,6 +323,20 @@ GLOBAL_CSS_AND_HEADER = """
     /* Ensure textarea text is always readable regardless of background override */
     [data-testid="stTextArea"] textarea {
         color: #e6edf3 !important;
+    }
+
+    /* Triage speed segmented control — render options vertically */
+    .st-key-triage_speed_wrap_chat [data-testid="stSegmentedControl"] > div,
+    .st-key-triage_speed_wrap_split [data-testid="stSegmentedControl"] > div {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        width: 100% !important;
+        gap: 2px !important;
+    }
+    .st-key-triage_speed_wrap_chat [data-testid="stSegmentedControl"] label,
+    .st-key-triage_speed_wrap_split [data-testid="stSegmentedControl"] label {
+        width: 100% !important;
+        justify-content: center !important;
     }
 
     </style>
