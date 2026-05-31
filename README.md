@@ -40,7 +40,28 @@ Automatically identifies and routes each indicator to the relevant providers —
 
 ---
 
-### 3. Threat Flag Extraction
+### 3. Analysis Modes — Triage & Lookup
+
+Two analysis modes are available from the toolbar to match different SOC workflows:
+
+- **Triage** *(default)* — incident-focused analysis using the full threat-intel provider set (VirusTotal, URLScan, AbuseIPDB, Shodan, ThreatFox, MalwareBazaar, DNSDumpster, Hybrid Analysis, Ransomware.live). MxToolBox and the Keyword group are excluded to keep the output focused on verdict-relevant signals.
+- **Lookup** — lightweight reputation/infrastructure check using a minimal provider subset: IP → VirusTotal + AbuseIPDB + MxToolBox, Domain/URL → Shodan + MxToolBox, Email → MxToolBox. Useful when you only need a quick sanity check without the full ticket-grade analysis.
+
+#### Triage Speed (Fast / Detailed)
+
+When **Triage** mode is active together with **Auto detect IOC & Provider**, an additional **Speed** selector becomes available:
+
+- **Detailed** *(default)* — runs the full Triage provider set for each IOC type.
+- **Fast** — runs only the highest-signal providers per type for quicker verdicts:
+  - IP → VirusTotal, AbuseIPDB
+  - Domain / URL → VirusTotal, URLScan, Shodan
+  - Hash → VirusTotal, Hybrid Analysis
+
+Both **Mode** and **Speed** are exposed as compact popovers in the input toolbar (and in the post-result toolbar), so analysts can switch between deep-dive and fast-triage workflows without leaving the page.
+
+---
+
+### 4. Threat Flag Extraction
 
 Extracts 100+ granular threat flags from provider responses, each labeled with a severity level (CRITICAL, HIGH, MEDIUM, LOW) and mapped to MITRE ATT&CK technique IDs. Flags are grouped by severity in collapsible sections, making it easy to triage the most critical indicators first.
 
@@ -50,7 +71,7 @@ Extracts 100+ granular threat flags from provider responses, each labeled with a
 
 ---
 
-### 4. Verdict Aggregation
+### 5. Verdict Aggregation
 
 Produces a final verdict per IOC — **Malicious**, **Suspicious**, **Unknown**, or **Benign** — based on consensus across all queried providers. The ticket notes output includes a session-level summary (total IOCs, count per verdict) followed by a per-IOC breakdown listing each provider's finding and a plain-language conclusion.
 
@@ -60,7 +81,7 @@ Produces a final verdict per IOC — **Malicious**, **Suspicious**, **Unknown**,
 
 ---
 
-### 5. Threat State & Level
+### 6. Threat State & Level
 
 Determines the threat lifecycle state (e.g. Reconnaissance, Persistence, Impact) and assigns a threat level (Low → Very High), adjusted for asset criticality when the **Critical** flag is set. Also surfaces a human-readable risk label, a list of reasons driving the assessment, all relevant MITRE ATT&CK tactics observed across providers, key evidence per IOC (malware family, domain age, open ports, first seen), and direct source links back to each provider's result page.
 
@@ -78,13 +99,13 @@ Determines the threat lifecycle state (e.g. Reconnaissance, Persistence, Impact)
 
 ---
 
-### 6. Geolocation & Mapping
+### 7. Geolocation & Mapping
 
 Resolves IP addresses to country, city, ISP, and ASN, and plots them on an interactive OpenStreetMap map embedded in the result card. Geolocation context is also surfaced in the key evidence and ticket note outputs alongside other per-IOC metadata.
 
 ---
 
-### 7. AI Ticket Generation
+### 8. AI Ticket Generation
 
 Auto-generates a human-readable incident narrative using Google Gemini or Groq, grounded in the extracted flags, raw provider logs, and analyst-supplied context (alert name, host, host IP, detection time, device action, parent/child process, and free-text context). The AI provider and model can be selected via the Options panel before running the analysis.
 
@@ -96,7 +117,7 @@ Auto-generates a human-readable incident narrative using Google Gemini or Groq, 
 
 ---
 
-### 8. Multiple Output Formats
+### 9. Multiple Output Formats
 
 Results can be exported in four formats selectable from the Options panel — **Ticket Notes** (structured plain text per IOC, paste-ready for SIEM tickets), **Table** (tabular view with verdict, confidence, evidence, and sources), **JSON** (raw structured output for downstream processing), and **Shareable Text** (Base64-encoded summary, copy-to-clipboard ready).
 
@@ -143,6 +164,8 @@ Results can be exported in four formats selectable from the Options panel — **
 Input IOCs
     ↓
 [Parser]          — type detection, normalization, deduplication
+    ↓
+[Mode Filter]     — Triage (full) / Lookup (minimal) + Triage Speed (Fast/Detailed)
     ↓
 [Provider Router] — each IOC is sent only to relevant providers
     ↓
