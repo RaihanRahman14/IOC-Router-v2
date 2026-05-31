@@ -6,7 +6,10 @@
       "Bash(xargs grep -l \"cve\\\\|CVE\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\(r'c:\\\\Users\\\\rahma\\\\Documents\\\\Raihan\\\\Jobs\\\\Compnet\\\\IOC router v2\\\\app.py', encoding='utf-8'\\).read\\(\\)\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('app.py', encoding='utf-8'\\).read\\(\\)\\); ast.parse\\(open\\('ui/styles.py', encoding='utf-8'\\).read\\(\\)\\); print\\('ok'\\)\")",
-      "Bash(python -c \"import ast; ast.parse\\(open\\('app.py', encoding='utf-8'\\).read\\(\\)\\); print\\('ok'\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app.py', encoding='utf-8'\\).read\\(\\)\\); print\\('ok'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app.py', encoding='utf-8'\\).read\\(\\)\\); print\\('app.py: syntax OK'\\); ast.parse\\(open\\('ui/components/output_renderer.py', encoding='utf-8'\\).read\\(\\)\\); print\\('output_renderer.py: syntax OK'\\)\")",
+      "Bash(python test_auto_allowed.py)",
+      "Bash(del test_auto_allowed.py)"
     ]
   }
 }

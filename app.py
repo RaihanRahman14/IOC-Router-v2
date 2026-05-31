@@ -803,62 +803,6 @@ _FAST_PROVIDERS_BY_TYPE: dict[str, set[str]] = {
 }
 
 
-def _auto_provider_flags(
-    items: list[IOC],
-    settings_obj: Settings,
-    fast: bool = False,
-    mode: str = "Triage",
-) -> dict[str, bool]:
-    """Return per-provider enablement flags for auto-detect mode.
-
-    Args:
-        items: Parsed IOC list.
-        settings_obj: Settings carrying API keys.
-        fast: When True, only enable the minimal Fast-mode provider set per
-            IOC type (Triage Fast). When False, use the full type-based set.
-        mode: Analysis mode, "Triage" or "Lookup". Controls which providers
-            are allowed per IOC group, mirroring the UI's mode filter.
-
-    Returns:
-        Mapping of provider key to a boolean indicating whether that provider
-        should run for the current input.
-    """
-    types = {ioc.type for ioc in items}
-    group_map = _get_group_providers(mode)
-    allowed_by_mode: set[str] = {
-        p
-        for t in types
-        for p in group_map.get(_IOC_TYPE_TO_GROUP.get(t, ""), [])
-    }
-
-    def _type_match(provider: str, allowed: set[str]) -> bool:
-        if provider not in allowed_by_mode:
-            return False
-        if not fast:
-            return bool(types & allowed)
-        # In fast mode a provider only runs if at least one IOC type in the
-        # input lists it in _FAST_PROVIDERS_BY_TYPE.
-        return any(
-            provider in _FAST_PROVIDERS_BY_TYPE.get(t, set())
-            for t in types
-            if t in allowed
-        )
-
-    return {
-        "vt":              bool(settings_obj.vt_key)              and _type_match("vt",        {"ip", "domain", "url", "hash"}),
-        "urlscan":         bool(settings_obj.urlscan_key)         and _type_match("urlscan",   {"domain", "url"}),
-        "abuse":           bool(settings_obj.abuse_key)           and _type_match("abuse",     {"ip", "domain", "url"}),
-        "tf":              bool(settings_obj.threatfox_key)       and _type_match("tf",        {"ip", "domain", "url", "hash"}),
-        "mb":              bool(settings_obj.malwarebazaar_key)   and _type_match("mb",        {"hash"}),
-        "shodan":          bool(settings_obj.shodan_key)          and _type_match("shodan",    {"ip", "domain", "url"}),
-        "dns":             bool(settings_obj.dnsdumpster_key)     and _type_match("dns",       {"domain", "url"}),
-        "ha":              bool(settings_obj.hybrid_analysis_key) and _type_match("ha",        {"ip", "domain", "url", "hash"}),
-        "mxtoolbox":       bool(settings_obj.mxtoolbox_key)       and _type_match("mxtoolbox", {"ip", "domain", "url", "email"}),
-        "whoxy":           bool(settings_obj.whoxy_key)           and _type_match("whoxy",     {"whois"}),
-        "ransomware_live": bool(settings_obj.ransomware_live_key) and _type_match("ransomware_live", {"whois"}),
-    }
-
-
 def _manual_payload_for_provider(
     provider: str, items: list[IOC]
 ) -> list[tuple[str, str]]:
@@ -873,6 +817,75 @@ def _manual_payload_for_provider(
     ]
 
 
+_PROVIDER_KEYS: tuple[str, ...] = (
+    "vt", "urlscan", "abuse", "tf", "mb", "shodan",
+    "dns", "ha", "mxtoolbox", "whoxy", "ransomware_live",
+)
+
+
+def _has_key_map(settings_obj: Settings) -> dict[str, bool]:
+    """Return mapping of provider key to whether its API key is configured."""
+    return {
+        "vt":              bool(settings_obj.vt_key),
+        "urlscan":         bool(settings_obj.urlscan_key),
+        "abuse":           bool(settings_obj.abuse_key),
+        "tf":              bool(settings_obj.threatfox_key),
+        "mb":              bool(settings_obj.malwarebazaar_key),
+        "shodan":          bool(settings_obj.shodan_key),
+        "dns":             bool(settings_obj.dnsdumpster_key),
+        "ha":              bool(settings_obj.hybrid_analysis_key),
+        "mxtoolbox":       bool(settings_obj.mxtoolbox_key),
+        "whoxy":           bool(settings_obj.whoxy_key),
+        "ransomware_live": bool(settings_obj.ransomware_live_key),
+    }
+
+
+def _auto_allowed_by_type(
+    items: list[IOC],
+    settings_obj: Settings,
+    mode: str,
+    fast: bool,
+) -> dict[str, set[str]]:
+    """Per-IOC-type set of providers allowed under auto-detect for this mode.
+
+    Args:
+        items: Parsed IOC list.
+        settings_obj: Settings carrying API keys.
+        mode: "Triage" or "Lookup".
+        fast: True if Triage Fast — additionally restricts per type.
+
+    Returns:
+        Mapping ioc_type -> set of provider keys that should run for that type,
+        already gated on API-key availability and Fast-mode restrictions.
+    """
+    group_map = _get_group_providers(mode)
+    has_key = _has_key_map(settings_obj)
+    out: dict[str, set[str]] = {}
+    for ioc in items:
+        if ioc.type in out:
+            continue
+        group = _IOC_TYPE_TO_GROUP.get(ioc.type, "")
+        base = set(group_map.get(group, []))
+        if fast:
+            base &= _FAST_PROVIDERS_BY_TYPE.get(ioc.type, set())
+        out[ioc.type] = {p for p in base if has_key.get(p, False)}
+    return out
+
+
+def _manual_allowed_by_type(items: list[IOC]) -> dict[str, set[str]]:
+    """Per-IOC-type set of providers checklisted by the user (manual mode)."""
+    out: dict[str, set[str]] = {}
+    for ioc in items:
+        if ioc.type in out:
+            continue
+        group = _IOC_TYPE_TO_GROUP.get(ioc.type, "")
+        out[ioc.type] = {
+            p for p in _PROVIDER_KEYS
+            if st.session_state.get(f"prov_{p}_{group}", False)
+        }
+    return out
+
+
 # ── Right panel / Results ─────────────────────────────────────────────────────
 with split_right:
     if not _was_landing:
@@ -882,25 +895,26 @@ with split_right:
         if not items:
             st.info("Tidak ada IOC valid setelah parsing.")
         else:
-            ioc_payload = [(i.value, i.type) for i in items]
             if auto_choose_provider:
                 _current_mode = st.session_state.get("analysis_mode", "Triage")
                 _is_triage_fast = (
                     _current_mode == "Triage"
                     and st.session_state.get("triage_speed", "Detailed") == "Fast"
                 )
-                provider_flags = _auto_provider_flags(
-                    items, settings, fast=_is_triage_fast, mode=_current_mode,
+                allowed_by_type = _auto_allowed_by_type(
+                    items, settings, mode=_current_mode, fast=_is_triage_fast,
                 )
-                _payload = lambda _p: ioc_payload  # noqa: E731
             else:
-                _payload = lambda _p: _manual_payload_for_provider(_p, items)  # noqa: E731
-                provider_flags = {
-                    p: bool(_payload(p)) for p in [
-                        "vt", "urlscan", "abuse", "tf", "mb", "shodan",
-                        "dns", "ha", "mxtoolbox", "whoxy", "ransomware_live",
-                    ]
-                }
+                allowed_by_type = _manual_allowed_by_type(items)
+
+            def _payload(p: str) -> list[tuple[str, str]]:
+                return [
+                    (ioc.value, ioc.type)
+                    for ioc in items
+                    if p in allowed_by_type.get(ioc.type, set())
+                ]
+
+            provider_flags = {p: bool(_payload(p)) for p in _PROVIDER_KEYS}
 
             vt_results = vt_cached(_payload("vt"), settings.vt_key) if provider_flags["vt"] else {}
             urlscan_results = (
@@ -945,6 +959,7 @@ with split_right:
                 "whoxy": whoxy_results,
                 "ransomware_live": ransomware_live_results,
                 "provider_flags": provider_flags,
+                "allowed_by_type": {t: sorted(ps) for t, ps in allowed_by_type.items()},
             }
             if _was_landing:
                 st.rerun()

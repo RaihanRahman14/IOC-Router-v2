@@ -22,6 +22,7 @@ def render_results_output(output_format: str, run_results: dict) -> None:
     tf_results = run_results["tf"]
     mb_results = run_results["mb"]
     ha_results = run_results.get("ha", {})
+    shodan_results = run_results.get("shodan", {})
     dnsd_results = run_results.get("dnsd", {})
     mxtoolbox_results = run_results.get("mxtoolbox", {})
     whoxy_results = run_results.get("whoxy", {})
@@ -168,6 +169,23 @@ def render_results_output(output_format: str, run_results: dict) -> None:
                 return "Hybrid Analysis: No data"
             return f"Hybrid Analysis: {', '.join(parts)}"
 
+        def _shodan_line(val: str) -> str:
+            sh = shodan_results.get(val, {})
+            if not sh or sh.get("error"):
+                return "Shodan: No data"
+            ports = sh.get("ports") or []
+            vulns = sh.get("vulns") or []
+            tags = sh.get("tags") or []
+            risk = (sh.get("risk_summary") or {}).get("risk_level") or "UNKNOWN"
+            if not ports and not vulns and not tags and risk == "UNKNOWN":
+                return "Shodan: No data"
+            parts = [f"risk={risk}", f"{len(ports)} port(s)"]
+            if vulns:
+                parts.append(f"{len(vulns)} CVE(s)")
+            if tags:
+                parts.append("tags=" + ",".join(tags[:3]) + ("…" if len(tags) > 3 else ""))
+            return "Shodan: " + ", ".join(parts)
+
         def _mx_line(val: str) -> str:
             mx = mxtoolbox_results.get(val, {})
             if not mx or mx.get("error"):
@@ -245,10 +263,19 @@ def render_results_output(output_format: str, run_results: dict) -> None:
             return f"{verdict} indicator"
 
         pf = run_results.get("provider_flags") or {}
+        allowed_by_type_raw = run_results.get("allowed_by_type") or {}
+        allowed_by_type: dict[str, set[str]] = {
+            t: set(ps) for t, ps in allowed_by_type_raw.items()
+        }
 
-        def _add(notes_list: list, flag_key: str, line: str) -> None:
-            if pf.get(flag_key, True):
-                notes_list.append(line)
+        def _add(notes_list: list, ioc_type: str, provider: str, line: str) -> None:
+            allowed = allowed_by_type.get(ioc_type)
+            if allowed is None:
+                if not pf.get(provider, True):
+                    return
+            elif provider not in allowed:
+                return
+            notes_list.append(line)
 
         notes = []
         for row in rows:
@@ -258,53 +285,56 @@ def render_results_output(output_format: str, run_results: dict) -> None:
             if t == "ip":
                 notes.append("#IP")
                 notes.append(f"IP: {val}")
-                _add(notes, "abuse",     _abuse_line(val))
-                _add(notes, "vt",        _vt_line(val))
-                _add(notes, "tf",        _tf_line(val))
-                _add(notes, "ha",        _ha_line(val))
-                _add(notes, "mxtoolbox", _mx_line(val))
+                _add(notes, t, "abuse",     _abuse_line(val))
+                _add(notes, t, "vt",        _vt_line(val))
+                _add(notes, t, "tf",        _tf_line(val))
+                _add(notes, t, "shodan",    _shodan_line(val))
+                _add(notes, t, "ha",        _ha_line(val))
+                _add(notes, t, "mxtoolbox", _mx_line(val))
                 notes.append("Conclusion: " + ("Malicious IP, confirmed suspicious activity" if verdict == "Malicious" else f"{verdict} IP"))
             elif t == "hash":
                 notes.append("#Hash")
                 notes.append(f"Hash: {val}")
-                _add(notes, "vt", _vt_line(val))
-                _add(notes, "tf", _tf_line(val))
-                _add(notes, "mb", _mb_line(val))
-                _add(notes, "ha", _ha_line(val))
+                _add(notes, t, "vt", _vt_line(val))
+                _add(notes, t, "tf", _tf_line(val))
+                _add(notes, t, "mb", _mb_line(val))
+                _add(notes, t, "ha", _ha_line(val))
                 notes.append("Conclusion: " + ("Confirmed malware" if verdict == "Malicious" else f"{verdict} file"))
             elif t == "domain":
                 notes.append("#Domain")
                 notes.append(f"Domain: {val}")
-                _add(notes, "urlscan",        _urlscan_line(val))
-                _add(notes, "vt",             _vt_line(val))
-                _add(notes, "tf",             _tf_line(val))
-                _add(notes, "ha",             _ha_line(val))
-                _add(notes, "dns",            _dd_line(val))
-                _add(notes, "mxtoolbox",      _mx_line(val))
+                _add(notes, t, "urlscan",        _urlscan_line(val))
+                _add(notes, t, "vt",             _vt_line(val))
+                _add(notes, t, "tf",             _tf_line(val))
+                _add(notes, t, "shodan",         _shodan_line(val))
+                _add(notes, t, "ha",             _ha_line(val))
+                _add(notes, t, "dns",            _dd_line(val))
+                _add(notes, t, "mxtoolbox",      _mx_line(val))
                 notes.append("Conclusion: " + _indicator_conclusion(verdict))
             elif t == "url":
                 notes.append("#URL")
                 notes.append(f"URL: {val}")
-                _add(notes, "urlscan",        _urlscan_line(val))
-                _add(notes, "vt",             _vt_line(val))
-                _add(notes, "tf",             _tf_line(val))
-                _add(notes, "ha",             _ha_line(val))
-                _add(notes, "dns",            _dd_line(val))
-                _add(notes, "mxtoolbox",      _mx_line(val))
+                _add(notes, t, "urlscan",        _urlscan_line(val))
+                _add(notes, t, "vt",             _vt_line(val))
+                _add(notes, t, "tf",             _tf_line(val))
+                _add(notes, t, "shodan",         _shodan_line(val))
+                _add(notes, t, "ha",             _ha_line(val))
+                _add(notes, t, "dns",            _dd_line(val))
+                _add(notes, t, "mxtoolbox",      _mx_line(val))
                 notes.append("Conclusion: " + _indicator_conclusion(verdict))
             elif t == "email":
                 notes.append("#Email")
                 notes.append(f"Email: {val}")
-                _add(notes, "vt",        _vt_line(val))
-                _add(notes, "tf",        _tf_line(val))
-                _add(notes, "ha",        _ha_line(val))
-                _add(notes, "mxtoolbox", _mx_line(val))
+                _add(notes, t, "vt",        _vt_line(val))
+                _add(notes, t, "tf",        _tf_line(val))
+                _add(notes, t, "ha",        _ha_line(val))
+                _add(notes, t, "mxtoolbox", _mx_line(val))
                 notes.append("Conclusion: " + _indicator_conclusion(verdict))
             elif t == "whois":
                 notes.append("#Whois Keyword")
                 notes.append(f"Keyword: {val}")
-                _add(notes, "whoxy",           _whoxy_line(val))
-                _add(notes, "ransomware_live", _rl_line(val))
+                _add(notes, t, "whoxy",           _whoxy_line(val))
+                _add(notes, t, "ransomware_live", _rl_line(val))
                 notes.append("Conclusion: " + _indicator_conclusion(verdict))
             notes.append("")
         notes_text = "\n".join(notes)
