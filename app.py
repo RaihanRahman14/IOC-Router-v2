@@ -472,8 +472,8 @@ if not _has_results:
             _auto_on = st.session_state.get("auto_detect_and_provider", True)
             _show_speed = _current_mode == "Triage" and _auto_on
             if _show_speed:
-                _tc_mode, _tc1, _tc_speed, _tc2, _tc_run = st.columns(
-                    [0.95, 1.5, 0.85, 1.15, 0.5]
+                _tc_mode, _tc_speed, _tc1, _tc2, _tc_run = st.columns(
+                    [0.95, 0.85, 1.5, 1.15, 0.5]
                 )
             else:
                 _tc_mode, _tc1, _tc2, _tc_run = st.columns([0.95, 1.8, 1.15, 0.5])
@@ -495,11 +495,12 @@ if not _has_results:
                 st.checkbox(_auto_label, key="auto_detect_and_provider")
             if _show_speed:
                 with _tc_speed:
-                    with st.container(key="triage_speed_wrap_chat"):
-                        st.segmented_control(
+                    _current_speed = st.session_state.get("triage_speed", "Detailed")
+                    with st.popover(f"{_current_speed} ▾", use_container_width=True):
+                        st.radio(
                             "Triage speed",
-                            options=["Fast", "Detailed"],
-                            selection_mode="single",
+                            ["Fast", "Detailed"],
+                            index=0 if _current_speed == "Fast" else 1,
                             key="triage_speed",
                             label_visibility="collapsed",
                         )
@@ -675,7 +676,7 @@ else:
         _auto_on_r = st.session_state.get("auto_detect_and_provider", True)
         _show_speed_r = _current_mode_r == "Triage" and _auto_on_r
         if _show_speed_r:
-            col_chk = st.columns([0.6, 1.0, 0.55, 1.0, 1.0])
+            col_chk = st.columns([0.6, 0.55, 1.0, 1.0, 1.0])
         else:
             col_chk = st.columns([0.6, 1.2, 1.0, 1.0])
         _auto_label_r = (
@@ -692,21 +693,23 @@ else:
                     key="analysis_mode",
                     label_visibility="collapsed",
                 )
-        with col_chk[1]:
-            st.checkbox(_auto_label_r, value=True, key="auto_detect_and_provider")
         if _show_speed_r:
-            with col_chk[2]:
-                with st.container(key="triage_speed_wrap_split"):
-                    st.segmented_control(
+            with col_chk[1]:
+                _current_speed_r = st.session_state.get("triage_speed", "Detailed")
+                with st.popover(f"{_current_speed_r} ▾", use_container_width=True):
+                    st.radio(
                         "Triage speed",
-                        options=["Fast", "Detailed"],
-                        selection_mode="single",
-                        default=st.session_state.get("triage_speed", "Detailed"),
+                        ["Fast", "Detailed"],
+                        index=0 if _current_speed_r == "Fast" else 1,
                         key="triage_speed",
                         label_visibility="collapsed",
                     )
+            with col_chk[2]:
+                st.checkbox(_auto_label_r, value=True, key="auto_detect_and_provider")
             _gen_col, _asset_col = col_chk[3], col_chk[4]
         else:
+            with col_chk[1]:
+                st.checkbox(_auto_label_r, value=True, key="auto_detect_and_provider")
             _gen_col, _asset_col = col_chk[2], col_chk[3]
         with _gen_col:
             auto_generate_on_run = st.checkbox(
@@ -804,6 +807,7 @@ def _auto_provider_flags(
     items: list[IOC],
     settings_obj: Settings,
     fast: bool = False,
+    mode: str = "Triage",
 ) -> dict[str, bool]:
     """Return per-provider enablement flags for auto-detect mode.
 
@@ -812,14 +816,24 @@ def _auto_provider_flags(
         settings_obj: Settings carrying API keys.
         fast: When True, only enable the minimal Fast-mode provider set per
             IOC type (Triage Fast). When False, use the full type-based set.
+        mode: Analysis mode, "Triage" or "Lookup". Controls which providers
+            are allowed per IOC group, mirroring the UI's mode filter.
 
     Returns:
         Mapping of provider key to a boolean indicating whether that provider
         should run for the current input.
     """
     types = {ioc.type for ioc in items}
+    group_map = _get_group_providers(mode)
+    allowed_by_mode: set[str] = {
+        p
+        for t in types
+        for p in group_map.get(_IOC_TYPE_TO_GROUP.get(t, ""), [])
+    }
 
     def _type_match(provider: str, allowed: set[str]) -> bool:
+        if provider not in allowed_by_mode:
+            return False
         if not fast:
             return bool(types & allowed)
         # In fast mode a provider only runs if at least one IOC type in the
@@ -870,11 +884,14 @@ with split_right:
         else:
             ioc_payload = [(i.value, i.type) for i in items]
             if auto_choose_provider:
+                _current_mode = st.session_state.get("analysis_mode", "Triage")
                 _is_triage_fast = (
-                    st.session_state.get("analysis_mode", "Triage") == "Triage"
+                    _current_mode == "Triage"
                     and st.session_state.get("triage_speed", "Detailed") == "Fast"
                 )
-                provider_flags = _auto_provider_flags(items, settings, fast=_is_triage_fast)
+                provider_flags = _auto_provider_flags(
+                    items, settings, fast=_is_triage_fast, mode=_current_mode,
+                )
                 _payload = lambda _p: ioc_payload  # noqa: E731
             else:
                 _payload = lambda _p: _manual_payload_for_provider(_p, items)  # noqa: E731
