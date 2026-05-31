@@ -4,13 +4,6 @@ from __future__ import annotations
 # ── Global styles: header, split layout, drawer ──────────────────────────────
 GLOBAL_CSS_AND_HEADER = """
     <style>
-    /* Scale entire UI to 80% on desktop; keep 100% on mobile for readability */
-    @media (min-width: 768px) {
-        html {
-            zoom: 0.8;
-        }
-    }
-
     .fixed-app-header {
         position: fixed;
         top: 0;
