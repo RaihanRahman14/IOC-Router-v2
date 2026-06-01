@@ -5,6 +5,7 @@ import base64
 import requests
 
 from config import Settings
+from core.infra_classifier import classify as classify_infra
 from ioc.parser import IOC
 
 
@@ -79,7 +80,31 @@ def _pack_vt(data: dict, key: str, endpoint: str, ident: str) -> dict:
         behavior = _vt_get(f"/files/{ident}/behaviour_summary", key)
         if behavior.get("data"):
             out["behavior"] = behavior.get("data", {}).get("attributes", behavior.get("data"))
+    out["infra_classification"] = _classify_vt_infra(endpoint, ident, attrs)
     return out
+
+
+def _classify_vt_infra(endpoint: str, ident: str, attrs: dict) -> dict | None:
+    """Derive an infra classification from VT attributes.
+
+    Args:
+        endpoint: VT endpoint segment (``ip_addresses``, ``domains``, ...).
+        ident: The IOC identifier (IP / domain / hash / url-id).
+        attrs: The ``attributes`` block returned by VT.
+
+    Returns:
+        A classification dict from ``core.infra_classifier.classify`` or
+        ``None`` when VT did not include ASN/AS-owner info or the infra is
+        unrecognized.
+    """
+    if not isinstance(attrs, dict):
+        return None
+    asn = attrs.get("asn")
+    org = attrs.get("as_owner") or attrs.get("network")
+    ip = ident if endpoint == "ip_addresses" else None
+    if asn is None and not org:
+        return None
+    return classify_infra(asn=asn, org=org, ip=ip)
 
 
 def vt_lookup_batch(items: list[IOC], settings: Settings) -> dict[str, dict]:

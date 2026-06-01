@@ -51,3 +51,50 @@ def _safe_int(val: Any, default: int = 0) -> int:
         return int(val)
     except Exception:
         return default
+
+
+# Map infra-classifier category to threat-flag id label and threat-type wording.
+_INFRA_LABELS = {
+    "BP":        ("INFRA_BENIGN",       "Benign infra (anycast/CDN/public DNS)",  "Hard whitelist — legitimate shared anycast infra"),
+    "FP":        ("INFRA_FP_PRONE",     "FP-prone shared hosting",                "Shared hosting / hyperscaler compute — confidence discount"),
+    "HIGH_RISK": ("INFRA_HIGH_RISK",    "Bulletproof / high-risk hosting",        "Known abuse-friendly / bulletproof hosting provider"),
+}
+
+
+def _flag_from_infra(infra: dict | None, source: str) -> dict | None:
+    """Build a threat-indicator flag from an infra classification dict.
+
+    Args:
+        infra: Dict returned by ``core.infra_classifier.classify`` (with keys
+            ``category``, ``severity``, ``provider``, ``reason``, ``asn``).
+            Pass ``None`` to short-circuit and return ``None``.
+        source: Provider name to attribute the flag to (e.g. ``"Shodan"``).
+
+    Returns:
+        A flag dict suitable for ``flags`` lists, or ``None`` if ``infra`` is
+        falsy or its category is unknown.
+    """
+    if not isinstance(infra, dict):
+        return None
+    category = infra.get("category")
+    if category not in _INFRA_LABELS:
+        return None
+    base_id, label, threat_type = _INFRA_LABELS[category]
+    severity = infra.get("severity") or "LOW"
+    provider = infra.get("provider") or "unknown"
+    asn = infra.get("asn")
+    reason = infra.get("reason") or ""
+    detail = f"Provider: {provider}"
+    if asn is not None:
+        detail += f" (AS{asn})"
+    if reason:
+        detail += f" — {reason}"
+    return _flag(
+        f"{base_id}_{source.upper()}",
+        f"{label}: {provider}",
+        threat_type,
+        severity,
+        [],
+        detail,
+        source,
+    )

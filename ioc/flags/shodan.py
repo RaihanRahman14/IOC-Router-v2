@@ -1,7 +1,7 @@
 """Threat flag extraction from Shodan results."""
 from __future__ import annotations
 
-from .base import _flag, _safe_int
+from .base import _flag, _safe_int, _flag_from_infra
 
 
 def _flags_shodan(sh: dict) -> list[dict]:
@@ -101,6 +101,11 @@ def _flags_shodan(sh: dict) -> list[dict]:
             "Tag: vpn",
             "Shodan",
         ))
+    infra = sh.get("infra_classification")
+    infra_flag = _flag_from_infra(infra, "Shodan")
+    if infra_flag:
+        flags.append(infra_flag)
+
     if "honeypot" in tag_list:
         flags.append(_flag(
             "SHODAN_HONEYPOT",

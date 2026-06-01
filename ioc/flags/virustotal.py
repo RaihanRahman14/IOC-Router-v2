@@ -1,7 +1,7 @@
 """Threat flag extraction from VirusTotal results."""
 from __future__ import annotations
 
-from .base import _flag, _days_since, _safe_int
+from .base import _flag, _days_since, _safe_int, _flag_from_infra
 
 
 def _flags_virustotal(vt: dict) -> list[dict]:
@@ -16,6 +16,11 @@ def _flags_virustotal(vt: dict) -> list[dict]:
     mal = _safe_int(stats.get("malicious"))
     sus = _safe_int(stats.get("suspicious"))
     total = sum(_safe_int(v) for v in stats.values()) if stats else 0
+
+    infra = vt.get("infra_classification")
+    infra_flag = _flag_from_infra(infra, "VirusTotal")
+    if infra_flag:
+        flags.append(infra_flag)
 
     # --- Detection counts ---
     if mal >= 10:

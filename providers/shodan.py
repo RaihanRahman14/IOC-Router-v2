@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import requests
 
 from config import Settings
+from core.infra_classifier import classify as classify_infra, lookup_asn
 from ioc.parser import IOC
 
 
@@ -174,8 +175,25 @@ def enrichWithInternetDB(resolvedIps: list[str]) -> list[dict]:
             "tags": payload.get("tags") if isinstance(payload.get("tags"), list) else [],
         }
         item["risk_summary"] = scoreRisk(item)
+        item["infra_classification"] = _classify_ip_infra(ip)
         results.append(item)
     return results
+
+
+def _classify_ip_infra(ip: str) -> dict | None:
+    """Look up ASN for ``ip`` and classify it as BP / FP / HIGH_RISK.
+
+    Args:
+        ip: IPv4 / IPv6 address string.
+
+    Returns:
+        Classification dict from ``core.infra_classifier.classify`` or
+        ``None`` when ASN lookup fails or the infra is unrecognized.
+    """
+    asn, org = lookup_asn(ip)
+    if asn is None and not org:
+        return None
+    return classify_infra(asn=asn, org=org, ip=ip)
 
 
 def buildRollup(results: list[dict]) -> dict:
@@ -271,5 +289,6 @@ def shodan_lookup_batch(items: list[IOC], settings: Settings) -> dict[str, dict]
             "queriedIp": (selected or {}).get("ip"),
             "queriedIps": targets,
             "risk_summary": (selected or {}).get("risk_summary", {"risk_level": "UNKNOWN", "reasons": ["No InternetDB result"], "confidence": 20}),
+            "infra_classification": (selected or {}).get("infra_classification"),
         }
     return out

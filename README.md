@@ -71,6 +71,22 @@ Extracts 100+ granular threat flags from provider responses, each labeled with a
 
 ---
 
+### 4b. Infrastructure Classification (Shodan & VirusTotal)
+
+Every IP enriched via **Shodan** or **VirusTotal** is auto-classified by its hosting infrastructure (ASN + AS-owner). The classification is exposed as an `infra_classification` field on each provider result and is also surfaced as a Threat Indicator flag so it factors into the overall verdict.
+
+| Category | Trigger | Threat Indicator | Examples |
+|---|---|---|---|
+| 🟢 **BP** (Benign Positive) | Anycast / CDN / public DNS — by-design always legitimate | **MEDIUM** | Cloudflare (AS13335), Google DNS (AS15169 @ 8.8.8.8), Quad9 (AS19281), Akamai (AS20940), Fastly (AS54113), AWS CloudFront |
+| 🟡 **FP** (False Positive prone) | Shared hosting / hyperscaler compute — confidence discount | **LOW** | DigitalOcean (AS14061), Vultr (AS20473), Hetzner (AS24940), OVH (AS16276), Contabo (AS51167), AWS EC2, GCE, Azure VM |
+| 🔴 **HIGH_RISK** | Bulletproof / abuse-friendly hosting — confidence boost | **HIGH** | Proton66 / PROSPERO, Chang Way, Media Land, PQ Hosting / Selectel, AEZA Group, Flyservers, SmartApe |
+
+**Hyperscaler refinement**: AWS / GCP / Azure share one ASN between CDN and compute services. AWS IPs are refined against the published [`ip-ranges.json`](https://ip-ranges.amazonaws.com/ip-ranges.json) feed (cached for 24h) — addresses in CloudFront subnets are classified as **BP**, everything else on AS16509 falls to **FP** (EC2). Known Google Public DNS IPs (`8.8.8.8` / `8.8.4.4`) are pinned to **BP**; other AS15169 / AS8075 addresses default to **FP** (compute).
+
+Source: [core/infra_classifier.py](core/infra_classifier.py) · Tests: [tests/test_infra_classifier.py](tests/test_infra_classifier.py)
+
+---
+
 ### 5. Verdict Aggregation
 
 Produces a final verdict per IOC — **Malicious**, **Suspicious**, **Unknown**, or **Benign** — based on consensus across all queried providers. The ticket notes output includes a session-level summary (total IOCs, count per verdict) followed by a per-IOC breakdown listing each provider's finding and a plain-language conclusion.
@@ -206,7 +222,8 @@ ioc-router/
 ├── core/                         # Orchestration & shared utilities
 │   ├── orchestrator.py           # Async provider dispatch & result aggregation
 │   ├── cache.py                  # In-memory result caching
-│   └── geo.py                    # IP geolocation resolution
+│   ├── geo.py                    # IP geolocation resolution
+│   └── infra_classifier.py       # ASN-based infra classification (BP / FP / HIGH_RISK)
 │
 ├── ioc/                          # IOC processing pipeline
 │   ├── parser.py                 # Type detection, normalization, deduplication
