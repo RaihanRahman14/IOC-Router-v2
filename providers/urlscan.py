@@ -122,9 +122,9 @@ def urlscan_lookup_batch(
         else:
             domain = ioc.value.lower()
             queries = [
-                f'domain:"{domain}"',
                 f'page.domain:"{domain}"',
                 f'task.domain:"{domain}"',
+                f'domain:"{domain}"',
             ]
             first = _search_first(queries, settings.urlscan_key)
 
