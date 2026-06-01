@@ -8,8 +8,11 @@ from datetime import datetime, timedelta, timezone
 
 _WIB = timezone(timedelta(hours=7))  # UTC+7 Jakarta / WIB
 
+import base64
+
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +31,10 @@ _SEVERITY_STYLE: dict[str, tuple[str, str]] = {
     "N/A":      ("#6b7280", "#1a1d23"),
 }
 
-_FILTER_OPTIONS = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "Common", "ALL"]
+_FILTER_OPTIONS = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "Common", "ALL", "Select"]
 _SEVERITY_FILTERS = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
+
+CVE_RECORD_URL = "https://www.cve.org/CVERecord?id={cve_id}"
 
 # Keywords checked case-insensitively across vendor + product + description.
 _COMMON_APP_KEYWORDS: list[str] = [
@@ -380,12 +385,11 @@ def _parse_nvd_item(item: dict, kev_data: dict[str, dict]) -> dict:
     cve_id = cve.get("id", "")
 
     descriptions = cve.get("descriptions", [])
-    desc = next(
+    desc_full = next(
         (d["value"] for d in descriptions if d.get("lang") == "en"),
         "No description available.",
     )
-    if len(desc) > 120:
-        desc = desc[:117] + "..."
+    desc = desc_full[:117] + "..." if len(desc_full) > 120 else desc_full
 
     score, severity = _extract_cvss(cve.get("metrics", {}))
     vendor, product = _extract_vendor_product(cve.get("configurations", []))
@@ -423,6 +427,7 @@ def _parse_nvd_item(item: dict, kev_data: dict[str, dict]) -> dict:
         "vendorProject": vendor,
         "product": product,
         "description": desc,
+        "descriptionFull": desc_full,
         "datePublished": date_published,
         "timePublished": time_published,
         "publishedRaw": pub_raw,
@@ -561,7 +566,8 @@ def _init_state() -> None:
 def _reset_state() -> None:
     """Clear all CVE session state keys to force a fresh fetch on next render."""
     for key in ("cve_items", "cve_total_nvd", "cve_pub_start",
-                "cve_pub_end", "cve_error", "cve_fetched_at", "cve_hours"):
+                "cve_pub_end", "cve_error", "cve_fetched_at", "cve_hours",
+                "cve_selected_ids", "cve_copy_text"):
         st.session_state.pop(key, None)
 
 
@@ -658,6 +664,51 @@ def _card_html(v: dict, common_app: bool = False) -> str:
     )
 
 
+# ── Copy formatter ────────────────────────────────────────────────────────────
+
+def _format_selected_text(selected: list[dict]) -> str:
+    """Format selected CVE dicts into the copy-block text.
+
+    Output per CVE:
+        [CVE-ID](https://www.cve.org/CVERecord?id=CVE-ID)
+        CVE Metrics: <score> (<severity>)
+        Time published: <YYYY-MM-DD HH:MM WIB>
+        Descriptions:
+        <full description>
+
+    Multiple CVEs are separated by a single blank line.
+
+    Args:
+        selected: List of parsed CVE dicts (from _parse_nvd_item).
+
+    Returns:
+        Formatted multi-line string ready for clipboard.
+    """
+    blocks: list[str] = []
+    for v in selected:
+        cve_id = v.get("cveID", "")
+        url = CVE_RECORD_URL.format(cve_id=cve_id)
+        score = v.get("score")
+        severity = v.get("severity", "N/A")
+        score_label = f"{score:.1f}" if isinstance(score, (int, float)) else "N/A"
+        metrics_line = f"CVE Metrics: {score_label} ({severity})"
+
+        date_pub = v.get("datePublished", "")
+        time_pub = v.get("timePublished", "")
+        published = f"{date_pub} {time_pub} WIB".strip() if time_pub else date_pub
+
+        desc_full = v.get("descriptionFull") or v.get("description", "")
+
+        blocks.append(
+            f"[{cve_id}]({url})\n"
+            f"{metrics_line}\n"
+            f"Time published: {published}\n"
+            f"Descriptions:\n"
+            f"{desc_full}"
+        )
+    return "\n\n".join(blocks)
+
+
 # ── Filter logic ──────────────────────────────────────────────────────────────
 
 def _on_severity_change() -> None:
@@ -676,7 +727,8 @@ def _on_severity_change() -> None:
 
     newly_added = [s for s in selected if s not in prev]
     has_common_app = "Common" in selected
-    severity_sel = [s for s in selected if s != "Common"]
+    has_select = "Select" in selected
+    severity_sel = [s for s in selected if s not in ("Common", "Select")]
 
     if "ALL" in newly_added:
         new_severity = ["ALL"]
@@ -685,7 +737,12 @@ def _on_severity_change() -> None:
     else:
         new_severity = ["ALL"]
 
-    new_selection = (["Common"] if has_common_app else []) + new_severity
+    independent = []
+    if has_common_app:
+        independent.append("Common")
+    if has_select:
+        independent.append("Select")
+    new_selection = independent + new_severity
     st.session_state["cve_severity_pills"] = new_selection
     st.session_state["cve_severity_pills_prev"] = new_selection
 
@@ -811,7 +868,8 @@ def render_cve_panel() -> None:
 
     active: set[str] = set(selected_filters) if selected_filters else {"ALL"}
     common_app_only: bool = "Common" in active
-    active_severity = active - {"Common"}
+    select_mode: bool = "Select" in active
+    active_severity = active - {"Common", "Select"}
     if not active_severity:
         active_severity = {"ALL"}
 
@@ -832,14 +890,45 @@ def render_cve_panel() -> None:
     # Sort newest-first
     filtered.sort(key=lambda v: v.get("publishedRaw", ""), reverse=True)
 
+    # ── Selection state ──────────────────────────────────────────────────────
+    if "cve_selected_ids" not in st.session_state:
+        st.session_state["cve_selected_ids"] = set()
+    selected_ids: set[str] = st.session_state["cve_selected_ids"]
+    if not select_mode and selected_ids:
+        # Hidden selections persist when toggling Select off then on again.
+        pass
+
     # ── CVE cards (fixed-height scrollable) ──────────────────────────────────
     if filtered:
-        st.markdown(
-            '<div style="height:320px;overflow-y:auto;padding-right:4px;">'
-            + "".join(_card_html(v, _is_common_app(v)) for v in filtered)
-            + "</div>",
-            unsafe_allow_html=True,
-        )
+        if select_mode:
+            with st.container(height=320, border=False):
+                for v in filtered:
+                    cve_id = v["cveID"]
+                    col_chk, col_card = st.columns([1, 20])
+                    with col_chk:
+                        checked = st.checkbox(
+                            label=f"Select {cve_id}",
+                            value=cve_id in selected_ids,
+                            key=f"cve_chk_{cve_id}",
+                            label_visibility="collapsed",
+                        )
+                        if checked:
+                            selected_ids.add(cve_id)
+                        else:
+                            selected_ids.discard(cve_id)
+                    with col_card:
+                        st.markdown(
+                            _card_html(v, _is_common_app(v)),
+                            unsafe_allow_html=True,
+                        )
+            st.session_state["cve_selected_ids"] = selected_ids
+        else:
+            st.markdown(
+                '<div style="height:320px;overflow-y:auto;padding-right:4px;">'
+                + "".join(_card_html(v, _is_common_app(v)) for v in filtered)
+                + "</div>",
+                unsafe_allow_html=True,
+            )
     else:
         hint = " Try broadening your search or filter." if search_query else ""
         st.markdown(
@@ -851,9 +940,12 @@ def render_cve_panel() -> None:
             unsafe_allow_html=True,
         )
 
-    # ── View more / Refresh ───────────────────────────────────────────────────
+    # ── View more / Refresh / Copy ────────────────────────────────────────────
     st.markdown('<div style="margin-top:10px;"></div>', unsafe_allow_html=True)
-    col_view, col_refresh, col_info = st.columns([2, 1, 3])
+    if select_mode:
+        col_view, col_refresh, col_copy = st.columns([4, 1, 2])
+    else:
+        col_view, col_refresh, _col_spacer = st.columns([4, 1, 2])
     with col_view:
         if st.button("View more", key="cve_view_more", use_container_width=True):
             next_hours = current_hours + 3
@@ -865,9 +957,64 @@ def render_cve_panel() -> None:
                      help="Reload newest CVEs from last 3 hours"):
             _reset_state()
             st.rerun()
-    with col_info:
-        st.markdown(
-            f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.63rem;'
-            f'color:#6b7280;padding-top:6px;">last {current_hours}h loaded</div>',
-            unsafe_allow_html=True,
-        )
+    if select_mode:
+        with col_copy:
+            n_sel = len(selected_ids)
+            ordered = [v for v in filtered if v["cveID"] in selected_ids]
+            copy_text = _format_selected_text(ordered) if ordered else ""
+            data_b64 = base64.b64encode(copy_text.encode("utf-8")).decode("ascii")
+            disabled_attr = "disabled" if n_sel == 0 else ""
+            disabled_style = (
+                "background:rgba(255,255,255,0.04);color:#4b5563;cursor:not-allowed;"
+                if n_sel == 0
+                else "background:rgba(255,255,255,0.04);color:#e2e6f0;cursor:pointer;"
+            )
+            components.html(
+                f"""
+                <style>
+                  html, body {{ margin:0; padding:0; }}
+                  .cve-copy-btn {{
+                    width:100%;
+                    height:38px;
+                    border:1px solid rgba(255,255,255,0.15);
+                    border-radius:8px;
+                    font-family:'JetBrains Mono', monospace;
+                    font-size:0.85rem;
+                    font-weight:500;
+                    {disabled_style}
+                    transition: background 0.15s;
+                  }}
+                  .cve-copy-btn:not([disabled]):hover {{
+                    background: rgba(255,255,255,0.08) !important;
+                  }}
+                </style>
+                <button class="cve-copy-btn" id="cve_copy_btn" {disabled_attr}>Copy</button>
+                <script>
+                  (function() {{
+                    const btn = document.getElementById("cve_copy_btn");
+                    const data = "{data_b64}";
+                    if (!btn || btn.disabled) return;
+                    btn.addEventListener("click", () => {{
+                      const text = atob(data);
+                      navigator.clipboard.writeText(text).then(() => {{
+                        btn.textContent = "Copied!";
+                        setTimeout(() => {{ btn.textContent = "Copy"; }}, 1500);
+                      }}).catch(() => {{
+                        btn.textContent = "Copy failed";
+                        setTimeout(() => {{ btn.textContent = "Copy"; }}, 1500);
+                      }});
+                    }});
+                  }})();
+                </script>
+                """,
+                height=42,
+            )
+
+    info = f"last {current_hours}h loaded"
+    if select_mode:
+        info += f" · {len(selected_ids)} selected"
+    st.markdown(
+        f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.63rem;'
+        f'color:#6b7280;margin-top:6px;">{info}</div>',
+        unsafe_allow_html=True,
+    )
