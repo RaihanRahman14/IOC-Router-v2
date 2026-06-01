@@ -1,6 +1,8 @@
 """IOC Router - Streamlit app entrypoint (refactored)."""
 from __future__ import annotations
 
+import time
+
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -916,25 +918,42 @@ with split_right:
 
             provider_flags = {p: bool(_payload(p)) for p in _PROVIDER_KEYS}
 
-            vt_results = vt_cached(_payload("vt"), settings.vt_key) if provider_flags["vt"] else {}
-            urlscan_results = (
-                urlscan_cached(_payload("urlscan"), settings.urlscan_key, allow_urlscan_submit)
-                if provider_flags["urlscan"]
-                else {}
-            )
-            abuse_results   = abuse_cached(_payload("abuse"), settings.abuse_key, CACHE_REV)             if provider_flags["abuse"]   else {}
-            tf_results      = tf_cached(_payload("tf"), settings.threatfox_key, CACHE_REV)               if provider_flags["tf"]      else {}
-            mb_results      = mb_cached(_payload("mb"), settings.malwarebazaar_key, CACHE_REV)           if provider_flags["mb"]      else {}
-            shodan_results  = shodan_cached(_payload("shodan"), settings.shodan_key, CACHE_REV)          if provider_flags["shodan"]  else {}
-            dnsd_results    = dnsd_cached(_payload("dns"), settings.dnsdumpster_key, CACHE_REV)          if provider_flags["dns"]     else {}
-            ha_results      = ha_cached(_payload("ha"), settings.hybrid_analysis_key, CACHE_REV)         if provider_flags["ha"]      else {}
-            mxtoolbox_results      = mxtoolbox_cached(_payload("mxtoolbox"), settings.mxtoolbox_key, CACHE_REV)           if provider_flags["mxtoolbox"]      else {}
-            whoxy_results          = whoxy_cached(_payload("whoxy"), settings.whoxy_key, CACHE_REV)                       if provider_flags["whoxy"]           else {}
-            ransomware_live_results = (
-                ransomware_live_cached(_payload("ransomware_live"), settings.ransomware_live_key, CACHE_REV)
-                if provider_flags["ransomware_live"]
-                else {}
-            )
+            _provider_timings: dict[str, dict] = {}
+
+            def _timed(key: str, enabled: bool, call_fn):
+                """Run a provider call, measure wall time, record n_iocs.
+
+                Args:
+                    key: Provider short key (matches _PROVIDER_KEYS).
+                    enabled: Whether this provider has any IOC to query.
+                    call_fn: Zero-arg callable returning the provider result dict.
+
+                Returns:
+                    The provider result dict, or {} when disabled.
+                """
+                payload = _payload(key) if enabled else []
+                if not enabled:
+                    _provider_timings[key] = {"time": 0.0, "n": 0}
+                    return {}
+                t0 = time.perf_counter()
+                result = call_fn()
+                _provider_timings[key] = {
+                    "time": time.perf_counter() - t0,
+                    "n": len(payload),
+                }
+                return result
+
+            vt_results              = _timed("vt",              provider_flags["vt"],              lambda: vt_cached(_payload("vt"), settings.vt_key))
+            urlscan_results         = _timed("urlscan",         provider_flags["urlscan"],         lambda: urlscan_cached(_payload("urlscan"), settings.urlscan_key, allow_urlscan_submit))
+            abuse_results           = _timed("abuse",           provider_flags["abuse"],           lambda: abuse_cached(_payload("abuse"), settings.abuse_key, CACHE_REV))
+            tf_results              = _timed("tf",              provider_flags["tf"],              lambda: tf_cached(_payload("tf"), settings.threatfox_key, CACHE_REV))
+            mb_results              = _timed("mb",              provider_flags["mb"],              lambda: mb_cached(_payload("mb"), settings.malwarebazaar_key, CACHE_REV))
+            shodan_results          = _timed("shodan",          provider_flags["shodan"],          lambda: shodan_cached(_payload("shodan"), settings.shodan_key, CACHE_REV))
+            dnsd_results            = _timed("dns",             provider_flags["dns"],             lambda: dnsd_cached(_payload("dns"), settings.dnsdumpster_key, CACHE_REV))
+            ha_results              = _timed("ha",              provider_flags["ha"],              lambda: ha_cached(_payload("ha"), settings.hybrid_analysis_key, CACHE_REV))
+            mxtoolbox_results       = _timed("mxtoolbox",       provider_flags["mxtoolbox"],       lambda: mxtoolbox_cached(_payload("mxtoolbox"), settings.mxtoolbox_key, CACHE_REV))
+            whoxy_results           = _timed("whoxy",           provider_flags["whoxy"],           lambda: whoxy_cached(_payload("whoxy"), settings.whoxy_key, CACHE_REV))
+            ransomware_live_results = _timed("ransomware_live", provider_flags["ransomware_live"], lambda: ransomware_live_cached(_payload("ransomware_live"), settings.ransomware_live_key, CACHE_REV))
             summary, rows = summarize_results(
                 items,
                 vt_results,
@@ -960,7 +979,14 @@ with split_right:
                 "ransomware_live": ransomware_live_results,
                 "provider_flags": provider_flags,
                 "allowed_by_type": {t: sorted(ps) for t, ps in allowed_by_type.items()},
+                "timings": {
+                    "providers": _provider_timings,
+                    "providers_total": sum(v["time"] for v in _provider_timings.values()),
+                },
             }
+            # New enrichment run invalidates any prior AI timing — it belongs to
+            # the previous result set. Auto-AI (if enabled) will repopulate it.
+            st.session_state.pop("ai_timing", None)
             if _was_landing:
                 st.rerun()
 

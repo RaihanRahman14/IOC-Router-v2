@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import os
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote_plus, urlsplit, urlunsplit
 
@@ -31,7 +32,7 @@ def _get_effective_device_action() -> str:
 
 def _clear_ai_outputs() -> None:
     """Clear all AI-generated session state outputs."""
-    for _k in ("ai_short", "ai_desc", "ai_threat_analysis", "ai_ioc_links"):
+    for _k in ("ai_short", "ai_desc", "ai_threat_analysis", "ai_ioc_links", "ai_timing"):
         if _k in st.session_state:
             del st.session_state[_k]
 
@@ -584,12 +585,17 @@ def render_ai_panel(run_results: dict, settings) -> None:
             if use_only_evidence:
                 short_prompt = "STRICT: Do not invent data. " + short_prompt
                 desc_prompt = "STRICT: Do not invent data. " + desc_prompt
+            _t_ai = time.perf_counter()
             if ai_provider == "Gemini":
                 short_out, short_err = gemini_generate(short_prompt, settings, use_backup=False)
                 desc_out, desc_err = gemini_generate(desc_prompt, settings, use_backup=False)
             else:
                 short_out, short_err = groq_generate(short_prompt, settings)
                 desc_out, desc_err = groq_generate(desc_prompt, settings)
+            st.session_state["ai_timing"] = {
+                "provider": ai_provider,
+                "time": time.perf_counter() - _t_ai,
+            }
             if not short_out:
                 st.error("AI Short Result gagal dibuat.")
                 if short_err:
@@ -1302,6 +1308,57 @@ def render_ai_panel(run_results: dict, settings) -> None:
                             st.markdown(f"• [{_lname}]({_lurl}) — `{_lurl}`")
                         else:
                             st.markdown(f"• {_ll[2:]}")
+
+        # ── Timing breakdown (providers + AI) ───────────────────────────
+        _timings = run_results.get("timings") or {}
+        _prov_timings: dict = _timings.get("providers") or {}
+        _prov_total: float = float(_timings.get("providers_total") or 0.0)
+        _ai_timing = st.session_state.get("ai_timing") or {}
+        _ai_time: float = float(_ai_timing.get("time") or 0.0) if _ai_timing else 0.0
+        _grand_total = _prov_total + _ai_time
+
+        if _prov_timings:
+            _prov_label_map = {
+                "vt": "VirusTotal", "urlscan": "urlscan", "abuse": "AbuseIPDB",
+                "tf": "ThreatFox", "mb": "MalwareBazaar", "shodan": "Shodan",
+                "dns": "DNSDumpster", "ha": "Hybrid Analysis",
+                "mxtoolbox": "MxToolBox", "whoxy": "Whoxy",
+                "ransomware_live": "Ransomware.live",
+            }
+            _caption_bits = [f"Providers {_prov_total:.2f}s"]
+            if _ai_timing:
+                _caption_bits.append(f"AI {_ai_time:.2f}s")
+            _caption_bits.append(f"Total {_grand_total:.2f}s")
+            with st.expander(f"⏱ Timing — {' · '.join(_caption_bits)}", expanded=False):
+                _active = [
+                    (k, v) for k, v in _prov_timings.items()
+                    if v.get("n", 0) > 0 or v.get("time", 0.0) > 0
+                ]
+                _active.sort(key=lambda kv: kv[1].get("time", 0.0), reverse=True)
+                if _active:
+                    st.markdown("**Providers**")
+                    for _k, _v in _active:
+                        _name = _prov_label_map.get(_k, _k)
+                        _n = int(_v.get("n", 0))
+                        _t = float(_v.get("time", 0.0))
+                        st.markdown(
+                            f"- {_name}: `{_t:.2f}s` &nbsp;·&nbsp; {_n} IOC{'s' if _n != 1 else ''}",
+                            unsafe_allow_html=True,
+                        )
+                    st.markdown(f"**Providers subtotal:** `{_prov_total:.2f}s`")
+                if _ai_timing:
+                    st.divider()
+                    st.markdown("**AI (Threat Analysis)**")
+                    st.markdown(
+                        f"- {_ai_timing.get('provider', 'AI')}: `{_ai_time:.2f}s`"
+                    )
+                st.divider()
+                st.markdown(f"**Total elapsed:** `{_grand_total:.2f}s`")
+                st.caption(
+                    "Provider times include cache hits (near-instant) and "
+                    "network calls. AI time only appears once a Threat Analysis "
+                    "has actually been generated."
+                )
 
         # ── Description below (full width, with copy) ───────────────────
         shown_desc = desc_text if desc_text else ""
