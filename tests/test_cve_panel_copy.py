@@ -111,12 +111,17 @@ class TestFormatSelectedText(unittest.TestCase):
         out = _format_selected_text([parsed])
 
         url = CVE_RECORD_URL.format(cve_id="CVE-2023-23397")
-        self.assertIn(f"[CVE-2023-23397]({url})", out)
-        self.assertIn("CVE Metrics: 9.8 (CRITICAL)", out)
-        self.assertIn("Time published: ", out)
+        # WhatsApp-style bold header on its own line, followed by a blank line.
+        self.assertIn("*CVE-2023-23397*\n\n", out)
+        self.assertIn("*CVE Metrics*: 9.8 (CRITICAL)", out)
+        self.assertIn("*Time published*: ", out)
         self.assertIn("WIB", out)
-        self.assertIn("Descriptions:\n", out)
+        self.assertIn(f"*References*: {url}", out)
+        self.assertIn("*Descriptions*:\n", out)
         self.assertIn("Microsoft Outlook Elevation of Privilege Vulnerability.", out)
+        # Must NOT contain markdown-style links or markdown-double-asterisk bold.
+        self.assertNotIn("](", out)
+        self.assertNotIn("**", out)
 
     def test_multiple_cves_separated_by_blank_line(self) -> None:
         parsed = [_parse_nvd_item(it, kev_data={}) for it in SAMPLE_ITEMS]
@@ -129,8 +134,11 @@ class TestFormatSelectedText(unittest.TestCase):
         self.assertLess(idx_xz, idx_log4j)
         self.assertLess(idx_log4j, idx_outlook)
 
-        # Exactly one blank line (== "\n\n") between consecutive CVE blocks.
-        self.assertEqual(out.count("\n\n"), len(SAMPLE_ITEMS) - 1)
+        # Each CVE has one internal blank line (after the bold header) and there
+        # is one blank line between consecutive CVE blocks, so the total number
+        # of "\n\n" occurrences is len(SAMPLE_ITEMS) (one per CVE for the
+        # header separator) + (len - 1) for the inter-block separators.
+        self.assertEqual(out.count("\n\n"), len(SAMPLE_ITEMS) * 2 - 1)
 
     def test_empty_selection(self) -> None:
         self.assertEqual(_format_selected_text([]), "")
@@ -145,8 +153,11 @@ class TestFormatSelectedText(unittest.TestCase):
             "descriptionFull": "Reserved.",
         }
         out = _format_selected_text([partial])
-        self.assertIn("CVE Metrics: N/A (N/A)", out)
-        self.assertIn("Time published: 2026-06-02 10:00 WIB", out)
+        self.assertIn("*CVE Metrics*: N/A (N/A)", out)
+        self.assertIn("*Time published*: 2026-06-02 10:00 WIB", out)
+        self.assertIn(
+            "*References*: https://www.cve.org/CVERecord?id=CVE-9999-0001", out
+        )
 
 
 if __name__ == "__main__":

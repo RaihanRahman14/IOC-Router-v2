@@ -667,13 +667,20 @@ def _card_html(v: dict, common_app: bool = False) -> str:
 # ── Copy formatter ────────────────────────────────────────────────────────────
 
 def _format_selected_text(selected: list[dict]) -> str:
-    """Format selected CVE dicts into the copy-block text.
+    """Format selected CVE dicts as plain text for WhatsApp messages.
+
+    WhatsApp bold uses single asterisks (`*text*`). WhatsApp does not support
+    markdown-style anchor links — arbitrary anchor text cannot be clickable.
+    Only raw URLs are auto-linked, so the URL is appended after the bold
+    CVE-ID on the same line: tapping the URL opens the CVE record page.
 
     Output per CVE:
-        [CVE-ID](https://www.cve.org/CVERecord?id=CVE-ID)
-        CVE Metrics: <score> (<severity>)
-        Time published: <YYYY-MM-DD HH:MM WIB>
-        Descriptions:
+        *CVE-ID*
+
+        *CVE Metrics*: <score> (<severity>)
+        *Time published*: <YYYY-MM-DD HH:MM WIB>
+        *References*: https://www.cve.org/CVERecord?id=CVE-ID
+        *Descriptions*:
         <full description>
 
     Multiple CVEs are separated by a single blank line.
@@ -682,7 +689,7 @@ def _format_selected_text(selected: list[dict]) -> str:
         selected: List of parsed CVE dicts (from _parse_nvd_item).
 
     Returns:
-        Formatted multi-line string ready for clipboard.
+        Formatted multi-line plain-text string ready for clipboard.
     """
     blocks: list[str] = []
     for v in selected:
@@ -691,7 +698,6 @@ def _format_selected_text(selected: list[dict]) -> str:
         score = v.get("score")
         severity = v.get("severity", "N/A")
         score_label = f"{score:.1f}" if isinstance(score, (int, float)) else "N/A"
-        metrics_line = f"CVE Metrics: {score_label} ({severity})"
 
         date_pub = v.get("datePublished", "")
         time_pub = v.get("timePublished", "")
@@ -700,10 +706,12 @@ def _format_selected_text(selected: list[dict]) -> str:
         desc_full = v.get("descriptionFull") or v.get("description", "")
 
         blocks.append(
-            f"[{cve_id}]({url})\n"
-            f"{metrics_line}\n"
-            f"Time published: {published}\n"
-            f"Descriptions:\n"
+            f"*{cve_id}*\n"
+            f"\n"
+            f"*CVE Metrics*: {score_label} ({severity})\n"
+            f"*Time published*: {published}\n"
+            f"*References*: {url}\n"
+            f"*Descriptions*:\n"
             f"{desc_full}"
         )
     return "\n\n".join(blocks)
