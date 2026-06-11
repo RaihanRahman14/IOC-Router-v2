@@ -4,7 +4,7 @@
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white)
 ![Threat Intelligence](https://img.shields.io/badge/Threat_Intelligence-multi--source-red)
 ![AI Powered](https://img.shields.io/badge/AI_Powered-Gemini_%2B_Groq-blue)
-[![Live Demo](https://img.shields.io/badge/Live_Demo-minzelo--ioc--analyzer-FF4B4B?style=flat&logo=streamlit&logoColor=white)](https://minzelo-ioc-analyzer.streamlit.app)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-ioc--router-FF4B4B?style=flat&logo=streamlit&logoColor=white)](https://ioc-router.streamlit.app)
 
 IOC Router is a multi-source threat intelligence platform built for SOC analysts. Paste one or more suspicious indicators — IPs, domains, URLs, file hashes, emails, or bare keywords — and get an enriched verdict aggregated from up to 11 threat intel providers, complete with severity-rated flags, MITRE ATT&CK mappings, geolocation, and an AI-generated incident ticket.
 
@@ -125,6 +125,13 @@ Resolves IP addresses to country, city, ISP, and ASN, and plots them on an inter
 
 Auto-generates a human-readable incident narrative using Google Gemini or Groq, grounded in the extracted flags, raw provider logs, and analyst-supplied context (alert name, host, host IP, detection time, device action, parent/child process, and free-text context). The AI provider and model can be selected via the Options panel before running the analysis.
 
+Additional AI panel capabilities:
+
+- **Tone control** — pick between *High level language* (for IT professionals without a security background), *SOC L1 concise*, or *More formal* narrative styles.
+- **Ransomware.live correlation** — victim/leak-site hits are fed into the prompt so the ticket calls out known ransomware exposure alongside other provider findings.
+- **Analyst override** — adjust the final State / Level / Verdict directly in the panel; the change can optionally be pushed to Telegram for audit (requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`).
+- **Bug report / feature request dialog** — built-in form (see [ui/components/bug_report.py](ui/components/bug_report.py)) sends feedback to the same Telegram channel.
+
 <p align="center">
   <img src="image/Options.jpeg" width="40%">
   &nbsp;&nbsp;
@@ -140,6 +147,26 @@ Results can be exported in four formats selectable from the Options panel — **
 <p align="center">
   <img src="image/Homepage.jpeg" width="80%">
 </p>
+
+---
+
+### 10. CVE Lookup Panel
+
+A dedicated panel surfaces recent CVEs from the **NVD API v2** (with the **CISA KEV** catalog overlaid to flag known-exploited vulnerabilities). Key behaviors:
+
+- **Lazy loading** — 10 entries per page so large NVD windows stay responsive.
+- **Severity filtering** — pick from `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `Common`, `ALL`, or a custom `Select` set.
+- **Common-app detection** — vendor/product matching against a curated keyword list (Cisco, Fortinet, Palo Alto, VMware, Microsoft, Chrome, Zoom, Slack, WhatsApp Desktop, Telegram Desktop, etc.) so SOC-relevant CVEs surface first.
+- **NVD-aware caching** — short TTL (15 min) keeps the rolling 3-hour window fresh while avoiding rate-limit pressure.
+- **Copy formatter** — one-click copy formatted for WhatsApp/SOC handoff: bold styling, raw CVE URLs, and grouped severity output.
+
+Source: [ui/components/cve_panel.py](ui/components/cve_panel.py) · Tests: [tests/test_cve_panel_copy.py](tests/test_cve_panel_copy.py)
+
+---
+
+### 11. Run Timing & Performance Tracking
+
+Every enrichment run records per-provider latency and total wall time, and the AI ticket call tracks its own elapsed duration (`ai_timing`). These timings are surfaced in the JSON output under the `timings` key (`providers`, `providers_total`) — useful for spotting slow providers and tracking AI cost/performance over time.
 
 ---
 
@@ -263,7 +290,8 @@ ioc-router/
 │       ├── drawer.py             # API key drawer sidebar
 │       ├── ioc_card.py           # Per-IOC result card
 │       ├── ai_panel.py           # AI ticket generation panel
-│       ├── cve_panel.py          # CVE details panel
+│       ├── cve_panel.py          # CVE details panel (NVD + CISA KEV, lazy-loaded)
+│       ├── bug_report.py         # Bug report / feature request dialog → Telegram
 │       ├── map.py                # Interactive OSM map builder
 │       └── output_renderer.py    # Notes / Table / JSON / Shareable output
 │
@@ -280,7 +308,7 @@ ioc-router/
 │   ├── whoxy.md
 │   ├── ransomware_live.md
 │   ├── gemini.md
-│   └── grok.md
+│   └── groq.md
 │
 ├── image/                        # Screenshots for README documentation
 │   ├── Homepage.jpeg
@@ -298,8 +326,10 @@ ioc-router/
 │
 └── tests/
     ├── test_abuseipdb_processing.py
+    ├── test_cve_panel_copy.py
     ├── test_dnsdumpster_processing.py
     ├── test_hybrid_analysis_provider.py
+    ├── test_infra_classifier.py
     ├── test_malwarebazaar_provider.py
     ├── test_shodan_internetdb.py
     ├── test_threat_analysis.py
