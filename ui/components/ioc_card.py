@@ -137,6 +137,94 @@ def _vuln_warnings_for_ports(ports: list[int]) -> list[str]:
     return warnings
 
 
+def _confidence_score_color(score: float) -> tuple[str, str]:
+    """Return (background, accent) hex colors for a 0–100 score, matching the panel above."""
+    if score >= 70:
+        return "#3a1414", "#f87171"
+    if score >= 40:
+        return "#3a2a14", "#fbbf24"
+    if score >= 10:
+        return "#1e2236", "#60a5fa"
+    return "#14321a", "#4ade80"
+
+
+def _render_confidence_score_card(row: dict) -> None:
+    """Render the per-IOC confidence-score card inside an IOC expander.
+
+    Reads the `ConfidenceScore` family of fields added by `summarize_results`.
+    Renders nothing if those fields are missing (graceful fallback).
+
+    Args:
+        row: A single row dict from `run_results["rows"]`.
+    """
+    if not row or row.get("ConfidenceScore") is None:
+        return
+
+    score = float(row.get("ConfidenceScore") or 0.0)
+    label = row.get("ConfidenceLabel") or "Unknown"
+    verdict_score = row.get("VerdictFromScore") or "Unknown"
+    provider_scores = row.get("ProviderScores") or {}
+    active = row.get("ActiveProviders") or []
+    infra_note = row.get("InfraNote")
+
+    bg, accent = _confidence_score_color(score)
+    fill_pct = max(0.0, min(100.0, score))
+
+    provider_rows = "".join(
+        f"<tr>"
+        f"<td style='padding:3px 10px 3px 0;color:#cfd3dc;font-size:0.85rem;'>{p}</td>"
+        f"<td style='padding:3px 0;width:100%;'>"
+        f"  <div style='background:#0f1117;border-radius:4px;height:6px;overflow:hidden;'>"
+        f"    <div style='background:{accent};"
+        f"width:{min(100.0, float(provider_scores.get(p, 0))):.1f}%;height:100%;'></div>"
+        f"  </div>"
+        f"</td>"
+        f"<td style='padding:3px 0 3px 10px;color:{accent};font-family:monospace;"
+        f"font-size:0.85rem;text-align:right;min-width:55px;'>"
+        f"{float(provider_scores.get(p, 0)):.1f}</td>"
+        f"</tr>"
+        for p in active
+    )
+
+    infra_block = (
+        f"<div style='margin-top:8px;padding:6px 10px;background:#1e1e2e;"
+        f"border-left:3px solid {accent};border-radius:4px;font-size:0.82rem;color:#cfd3dc;'>"
+        f"<b style='color:{accent};'>Infra:</b> {infra_note}</div>"
+        if infra_note else ""
+    )
+
+    table_block = (
+        f"<table style='width:100%;border-collapse:collapse;margin-top:8px;'>"
+        f"{provider_rows}</table>"
+        if provider_rows
+        else "<div style='color:#9ea8cf;font-size:0.85rem;margin-top:8px;'>"
+             "No active providers.</div>"
+    )
+
+    html = (
+        f"<div style='background:{bg};border:1px solid {accent};border-radius:8px;"
+        f"padding:12px 14px;margin-bottom:12px;'>"
+        f"  <div style='display:flex;justify-content:space-between;align-items:center;'>"
+        f"    <div>"
+        f"      <div style='font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;"
+        f"color:#9ea8cf;'>Confidence Score</div>"
+        f"      <div style='font-size:1.6rem;font-weight:700;color:{accent};line-height:1.1;'>"
+        f"{score:.1f}<span style='font-size:0.8rem;color:#9ea8cf;'> / 100</span>"
+        f"      <span style='font-size:0.8rem;color:#cfd3dc;margin-left:10px;'>"
+        f"({label} · {verdict_score})</span></div>"
+        f"    </div>"
+        f"  </div>"
+        f"  <div style='background:#0f1117;border-radius:6px;height:6px;margin-top:8px;"
+        f"overflow:hidden;'>"
+        f"    <div style='background:{accent};width:{fill_pct:.1f}%;height:100%;'></div>"
+        f"  </div>"
+        f"  {table_block}"
+        f"  {infra_block}"
+        f"</div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def render_ioc_cards(run_results: dict) -> None:
     """Render one expandable detail card per IOC with per-provider tabs."""
     items = run_results["items"]
@@ -151,6 +239,9 @@ def render_ioc_cards(run_results: dict) -> None:
     mxtoolbox_results = run_results.get("mxtoolbox", {})
     whoxy_results = run_results.get("whoxy", {})
     ransomware_live_results = run_results.get("ransomware_live", {})
+    rows_by_value: dict[str, dict] = {
+        r.get("Artifact"): r for r in (run_results.get("rows") or [])
+    }
 
     def _urlscan_screenshot_url(us: dict) -> str:
         if not us:
@@ -178,7 +269,13 @@ def render_ioc_cards(run_results: dict) -> None:
         return f'<span style="background:#555;color:#fff;padding:2px 8px;border-radius:4px;font-size:0.85em">⚪ {verdict or "Unknown"}</span>'
 
     for ioc in items:
-        with st.expander(f"Details: {ioc.value} ({ioc.type})", expanded=False):
+        _row = rows_by_value.get(ioc.value, {}) or {}
+        _score = _row.get("ConfidenceScore")
+        _title_suffix = f" — Score: {_score:.1f}" if isinstance(_score, (int, float)) else ""
+        with st.expander(
+            f"Details: {ioc.value} ({ioc.type}){_title_suffix}", expanded=False
+        ):
+            _render_confidence_score_card(_row)
             vt = vt_results.get(ioc.value, {})
             us = urlscan_results.get(ioc.value, {})
             ab = abuse_results.get(ioc.value, {})

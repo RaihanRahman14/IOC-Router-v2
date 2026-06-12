@@ -1,9 +1,10 @@
 """Verdict aggregation helpers."""
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from ioc.parser import IOC
+from ioc.confidence_scorer import compute_confidence_score, compute_session_summary
 
 
 def summarize_results(
@@ -13,7 +14,27 @@ def summarize_results(
     abuse_results: Dict[str, dict],
     threatfox_results: Dict[str, dict],
     malwarebazaar_results: Dict[str, dict],
+    shodan_results: Optional[Dict[str, dict]] = None,
+    hybrid_results: Optional[Dict[str, dict]] = None,
 ) -> Tuple[dict, List[dict]]:
+    """Aggregate provider results into a verdict summary and per-IOC rows.
+
+    Args:
+        items: Parsed IOC objects in the batch.
+        vt_results: VirusTotal results keyed by IOC value.
+        urlscan_results: urlscan.io results keyed by IOC value.
+        abuse_results: AbuseIPDB results keyed by IOC value.
+        threatfox_results: ThreatFox results keyed by IOC value.
+        malwarebazaar_results: MalwareBazaar results keyed by IOC value.
+        shodan_results: Shodan results keyed by IOC value (optional).
+        hybrid_results: Hybrid Analysis results keyed by IOC value (optional).
+
+    Returns:
+        Tuple of (summary, rows). `summary` includes a `session_summary` key
+        carrying the numeric confidence-score aggregation. `rows` contains the
+        original qualitative fields plus the new `ConfidenceScore` family of
+        fields produced by `ioc.confidence_scorer`.
+    """
     summary = {
         "total": len(items),
         "malicious": 0,
@@ -22,6 +43,7 @@ def summarize_results(
         "benign": 0,
     }
     rows: List[dict] = []
+    per_ioc_scores: List[dict] = []
 
     for ioc in items:
         vt = vt_results.get(ioc.value) or {}
@@ -115,6 +137,17 @@ def summarize_results(
         if mb:
             sources.append("MalwareBazaar")
 
+        conf_result = compute_confidence_score(
+            ioc_value=ioc.value,
+            vt_results=vt_results,
+            abuse_results=abuse_results,
+            threatfox_results=threatfox_results,
+            shodan_results=shodan_results or {},
+            hybrid_results=hybrid_results,
+            malwarebazaar_results=malwarebazaar_results,
+        )
+        per_ioc_scores.append(conf_result)
+
         rows.append(
             {
                 "Artifact": ioc.value,
@@ -124,8 +157,15 @@ def summarize_results(
                 "Primary Evidence": reason,
                 "Next Action": "Review",
                 "Sources": ", ".join(sources) if sources else "",
+                "ConfidenceScore":   conf_result["score"],
+                "ConfidenceLabel":   conf_result["label"],
+                "ProviderScores":    conf_result["provider_scores"],
+                "ActiveProviders":   conf_result["active_providers"],
+                "InfraNote":         conf_result["infra_note"],
+                "VerdictFromScore":  conf_result["verdict_from_score"],
             }
         )
 
     summary["benign"] = 0
+    summary["session_summary"] = compute_session_summary(per_ioc_scores)
     return summary, rows

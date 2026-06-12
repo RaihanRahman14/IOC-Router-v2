@@ -12,6 +12,81 @@ except Exception:
     pd = None
 
 
+def _score_color(score: float) -> tuple[str, str]:
+    """Pick (background, accent) hex colors for a 0–100 confidence score.
+
+    Args:
+        score: Confidence score on the 0–100 scale.
+
+    Returns:
+        Tuple of (background_hex, accent_hex).
+    """
+    if score >= 70:
+        return "#3a1414", "#f87171"
+    if score >= 40:
+        return "#3a2a14", "#fbbf24"
+    if score >= 10:
+        return "#1e2236", "#60a5fa"
+    return "#14321a", "#4ade80"
+
+
+def _render_session_threat_panel(summary: dict) -> None:
+    """Render the session-level threat score panel above the metric strip.
+
+    Reads `summary["session_summary"]` produced by
+    `ioc.confidence_scorer.compute_session_summary`. Renders nothing if the
+    summary is missing or empty (graceful fallback for older sessions).
+
+    Args:
+        summary: The aggregated summary dict returned by `summarize_results`.
+    """
+    sess = summary.get("session_summary") or {}
+    if not sess:
+        return
+
+    highest = float(sess.get("highest_score") or 0.0)
+    label = sess.get("session_label") or "Unknown"
+    highest_ioc = sess.get("highest_ioc") or "—"
+    distribution = sess.get("verdict_distribution") or {}
+
+    bg, accent = _score_color(highest)
+    fill_pct = max(0.0, min(100.0, highest))
+
+    dist_pills = "".join(
+        f"<span style='background:#1e1e2e;border:1px solid #333;border-radius:999px;"
+        f"padding:2px 10px;margin-right:6px;font-size:0.78rem;color:#cfd3dc;'>"
+        f"{verd}: <b style='color:{accent};'>{cnt}</b></span>"
+        for verd, cnt in distribution.items()
+    )
+
+    html = (
+        f"<div style='background:{bg};border:1px solid {accent};border-radius:10px;"
+        f"padding:14px 18px;margin:6px 0 14px 0;'>"
+        f"  <div style='display:flex;justify-content:space-between;align-items:center;'>"
+        f"    <div>"
+        f"      <div style='font-size:0.78rem;letter-spacing:0.08em;text-transform:uppercase;"
+        f"color:#9ea8cf;'>Session Threat Score</div>"
+        f"      <div style='font-size:2.1rem;font-weight:700;color:{accent};line-height:1.1;'>"
+        f"{highest:.1f}<span style='font-size:0.9rem;color:#9ea8cf;'> / 100</span></div>"
+        f"      <div style='font-size:0.95rem;color:#e8eaf0;margin-top:2px;'>{label}</div>"
+        f"    </div>"
+        f"    <div style='text-align:right;'>"
+        f"      <div style='font-size:0.78rem;color:#9ea8cf;'>Highest IOC</div>"
+        f"      <div style='font-family:monospace;color:#e8eaf0;font-size:0.95rem;'>"
+        f"{highest_ioc}</div>"
+        f"    </div>"
+        f"  </div>"
+        f"  <div style='background:#0f1117;border-radius:6px;height:8px;margin-top:10px;"
+        f"overflow:hidden;'>"
+        f"    <div style='background:{accent};width:{fill_pct:.1f}%;height:100%;"
+        f"transition:width 0.3s;'></div>"
+        f"  </div>"
+        f"  <div style='margin-top:10px;'>{dist_pills}</div>"
+        f"</div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def render_results_output(output_format: str, run_results: dict) -> None:
     """Render the results section: summary metrics + selected output format."""
     summary = run_results["summary"]
@@ -27,6 +102,8 @@ def render_results_output(output_format: str, run_results: dict) -> None:
     mxtoolbox_results = run_results.get("mxtoolbox", {})
     whoxy_results = run_results.get("whoxy", {})
     ransomware_live_results = run_results.get("ransomware_live", {})
+
+    _render_session_threat_panel(summary)
 
     col_sum = st.columns(5)
     col_sum[0].metric("Total", summary["total"])

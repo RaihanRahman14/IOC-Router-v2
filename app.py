@@ -961,6 +961,8 @@ with split_right:
                 abuse_results,
                 tf_results,
                 mb_results,
+                shodan_results=shodan_results,
+                hybrid_results=ha_results,
             )
             st.session_state["run_results"] = {
                 "items": items,
