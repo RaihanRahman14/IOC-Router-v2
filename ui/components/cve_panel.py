@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 _WIB = timezone(timedelta(hours=7))  # UTC+7 Jakarta / WIB
@@ -18,9 +19,12 @@ logger = logging.getLogger(__name__)
 
 NVD_CVE_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 CISA_KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+MITRE_CVE_URL = "https://cveawg.mitre.org/api/cve/{cve_id}"
 
 _NVD_MAX_PAGE = 2000  # NVD API hard limit per request
 _CACHE_TTL = 900  # 15 minutes — shorter TTL to keep 3-hour window fresh
+_MITRE_CACHE_TTL = 86400  # 24h — MITRE record changes rarely once published
+_MITRE_PARALLEL_WORKERS = 8
 
 _SEVERITY_STYLE: dict[str, tuple[str, str]] = {
     "CRITICAL": ("#ef4444", "#2d0a0a"),
@@ -345,6 +349,108 @@ def _extract_cvss(metrics: dict) -> tuple[float | None, str]:
     return None, "N/A"
 
 
+def _extract_cwe(weaknesses: list) -> str:
+    """Extract the first CWE-N identifier from an NVD weaknesses list.
+
+    Args:
+        weaknesses: The weaknesses list from an NVD CVE item.
+
+    Returns:
+        A CWE id like "CWE-346", or empty string if none found.
+    """
+    for w in weaknesses:
+        for d in w.get("description", []):
+            value = (d.get("value") or "").strip()
+            if value.startswith("CWE-"):
+                return value
+    return ""
+
+
+def _extract_mitre_vendor_product(mitre_data: dict) -> tuple[str, str, str]:
+    """Extract vendor, product, and affected version range from a MITRE cveawg record.
+
+    Args:
+        mitre_data: Parsed JSON from cveawg.mitre.org/api/cve/{id}.
+
+    Returns:
+        Tuple of (vendor, product, version_range). Each is empty when unavailable
+        or marked as "n/a" by the CNA.
+    """
+    cna = mitre_data.get("containers", {}).get("cna", {})
+    affected = cna.get("affected", [])
+    if not affected:
+        return "", "", ""
+
+    first = affected[0]
+    vendor = (first.get("vendor") or "").strip()
+    product = (first.get("product") or "").strip()
+    if vendor.lower() in ("n/a", "na", ""):
+        vendor = ""
+    if product.lower() in ("n/a", "na", ""):
+        product = ""
+
+    version_range = ""
+    for v in first.get("versions", []):
+        if v.get("status") != "affected":
+            continue
+        less_than = (v.get("lessThan") or "").strip()
+        less_than_or_eq = (v.get("lessThanOrEqual") or "").strip()
+        version = (v.get("version") or "").strip()
+        if less_than:
+            version_range = f"< {less_than}"
+        elif less_than_or_eq:
+            version_range = f"<= {less_than_or_eq}"
+        elif version and version.lower() not in ("n/a", "na", "*"):
+            version_range = version
+        if version_range:
+            break
+
+    return vendor, product, version_range
+
+
+_CAPEC_MAX_LABEL_LEN = 80
+
+
+def _extract_mitre_capec(mitre_data: dict) -> str:
+    """Extract a concise attack pattern label from a MITRE cveawg record.
+
+    The MITRE schema's `impacts[].descriptions[].value` is intended to hold a
+    short CAPEC name (e.g. "DNS Rebinding") but some CNAs misuse it to store a
+    multi-sentence impact narrative. To keep the card readable we only accept
+    descriptions shorter than _CAPEC_MAX_LABEL_LEN and otherwise fall back to
+    the bare CAPEC id.
+
+    Args:
+        mitre_data: Parsed JSON from cveawg.mitre.org/api/cve/{id}.
+
+    Returns:
+        A short attack pattern label (e.g. "DNS Rebinding (CAPEC-275)" or
+        "CAPEC-275"), or "" when nothing concise is available.
+    """
+    cna = mitre_data.get("containers", {}).get("cna", {})
+    for impact in cna.get("impacts", []):
+        capec_id = (impact.get("capecId") or "").strip()
+
+        short_desc = ""
+        for d in impact.get("descriptions", []):
+            value = (d.get("value") or "").strip()
+            if not value:
+                continue
+            # Strip "CAPEC-N: " prefix so we don't double-print the id.
+            cleaned = re.sub(r"^CAPEC-\d+\s*[:\-]\s*", "", value, flags=re.IGNORECASE)
+            if len(cleaned) <= _CAPEC_MAX_LABEL_LEN:
+                short_desc = cleaned
+                break
+
+        if short_desc and capec_id:
+            return f"{short_desc} ({capec_id})"
+        if short_desc:
+            return short_desc
+        if capec_id:
+            return capec_id
+    return ""
+
+
 def _extract_vendor_product(configurations: list) -> tuple[str, str]:
     """Extract vendor and product name from NVD CPE configurations.
 
@@ -365,18 +471,28 @@ def _extract_vendor_product(configurations: list) -> tuple[str, str]:
     return "", ""
 
 
-def _parse_nvd_item(item: dict, kev_data: dict[str, dict]) -> dict:
+def _parse_nvd_item(
+    item: dict,
+    kev_data: dict[str, dict],
+    mitre_data: dict,
+) -> dict:
     """Parse a single NVD vulnerability item into a display-ready dict.
 
-    Vendor/product resolution order:
-      1. NVD CPE configurations (populated after NVD analysis)
-      2. CISA KEV catalog entry (available immediately for KEV CVEs)
-      3. sourceIdentifier domain (e.g. "security@apache.org" → "Apache")
-      4. Description text regex — "vulnerability in <Product>" pattern
+    Vendor/product resolution order (per user spec):
+      1. MITRE cveawg `affected[]` (vendor + product + version range)
+      2. Description regex / common-keyword fallback
+
+    Description resolution order:
+      1. CISA KEV `shortDescription` (already SOC-friendly and concise)
+      2. NVD English description (truncated to 120 chars)
 
     Args:
         item: A single entry from NVD vulnerabilities list.
-        kev_data: Dict mapping CVE ID to {vendorProject, product} from CISA KEV.
+        kev_data: Dict mapping CVE ID to expanded KEV record (vendorProject,
+            product, shortDescription, requiredAction, knownRansomwareCampaignUse,
+            vulnerabilityName).
+        mitre_data: Parsed JSON from cveawg.mitre.org for this CVE, or {} if
+            the call failed / record is absent.
 
     Returns:
         Dict with display fields for a CVE card.
@@ -385,29 +501,32 @@ def _parse_nvd_item(item: dict, kev_data: dict[str, dict]) -> dict:
     cve_id = cve.get("id", "")
 
     descriptions = cve.get("descriptions", [])
-    desc_full = next(
+    nvd_desc_full = next(
         (d["value"] for d in descriptions if d.get("lang") == "en"),
         "No description available.",
     )
-    desc = desc_full[:117] + "..." if len(desc_full) > 120 else desc_full
 
     score, severity = _extract_cvss(cve.get("metrics", {}))
-    vendor, product = _extract_vendor_product(cve.get("configurations", []))
+    cwe_id = _extract_cwe(cve.get("weaknesses", []))
+
+    vendor, product, version_range = _extract_mitre_vendor_product(mitre_data)
+    attack_pattern = _extract_mitre_capec(mitre_data)
+
+    if not vendor and not product:
+        # Fallback to regex / common-keyword match against NVD description
+        vendor = _product_from_desc(nvd_desc_full)
+        if not vendor:
+            vendor = _match_common_keyword(nvd_desc_full)
 
     kev_entry = kev_data.get(cve_id, {})
 
-    if not vendor and not product and kev_entry:
-        vendor = kev_entry.get("vendorProject", "")
-        product = kev_entry.get("product", "")
-
-    if not vendor and not product:
-        full_desc = next((d["value"] for d in descriptions if d.get("lang") == "en"), "")
-        if full_desc:
-            vendor = _product_from_desc(full_desc)
-            # Last fallback: if regex still found nothing but the CVE mentions a common app,
-            # use the keyword label so "Common"-tagged CVEs always have a visible label.
-            if not vendor:
-                vendor = _match_common_keyword(full_desc)
+    # Description: KEV shortDescription preferred when available, else NVD truncated
+    kev_short = (kev_entry.get("shortDescription") or "").strip()
+    if kev_short:
+        desc_full = kev_short
+    else:
+        desc_full = nvd_desc_full
+    desc = desc_full[:117] + "..." if len(desc_full) > 120 else desc_full
 
     pub_raw = cve.get("published", "")
     try:
@@ -422,10 +541,15 @@ def _parse_nvd_item(item: dict, kev_data: dict[str, dict]) -> dict:
         date_published = pub_raw[:10]
         time_published = pub_raw[11:16] if len(pub_raw) >= 16 else ""
 
+    is_ransomware = (
+        kev_entry.get("knownRansomwareCampaignUse", "").lower() == "known"
+    )
+
     return {
         "cveID": cve_id,
         "vendorProject": vendor,
         "product": product,
+        "versionRange": version_range,
         "description": desc,
         "descriptionFull": desc_full,
         "datePublished": date_published,
@@ -433,7 +557,11 @@ def _parse_nvd_item(item: dict, kev_data: dict[str, dict]) -> dict:
         "publishedRaw": pub_raw,
         "score": score,
         "severity": severity,
+        "cwe": cwe_id,
+        "attackPattern": attack_pattern,
+        "requiredAction": (kev_entry.get("requiredAction") or "").strip(),
         "isKev": bool(kev_entry),
+        "isRansomware": is_ransomware,
     }
 
 
@@ -441,10 +569,12 @@ def _parse_nvd_item(item: dict, kev_data: dict[str, dict]) -> dict:
 
 @st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
 def _fetch_kev_data() -> dict[str, dict]:
-    """Fetch CISA KEV catalog, keyed by CVE ID with vendor/product metadata.
+    """Fetch CISA KEV catalog, keyed by CVE ID with expanded metadata.
 
     Returns:
-        Dict mapping CVE ID to a dict with vendorProject and product strings.
+        Dict mapping CVE ID to a dict with vendorProject, product,
+        vulnerabilityName, shortDescription, requiredAction, and
+        knownRansomwareCampaignUse fields.
     """
     try:
         resp = requests.get(CISA_KEV_URL, timeout=15)
@@ -453,11 +583,43 @@ def _fetch_kev_data() -> dict[str, dict]:
             v.get("cveID", ""): {
                 "vendorProject": v.get("vendorProject", ""),
                 "product": v.get("product", ""),
+                "vulnerabilityName": v.get("vulnerabilityName", ""),
+                "shortDescription": v.get("shortDescription", ""),
+                "requiredAction": v.get("requiredAction", ""),
+                "knownRansomwareCampaignUse": v.get(
+                    "knownRansomwareCampaignUse", "Unknown"
+                ),
             }
             for v in resp.json().get("vulnerabilities", [])
         }
     except requests.RequestException as exc:
         logger.warning("CISA KEV fetch failed: %s", exc)
+        return {}
+
+
+@st.cache_data(ttl=_MITRE_CACHE_TTL, show_spinner=False)
+def _fetch_mitre_cve(cve_id: str) -> dict:
+    """Fetch a single CVE record from cveawg.mitre.org.
+
+    Args:
+        cve_id: CVE identifier (e.g. "CVE-2026-11624").
+
+    Returns:
+        Parsed JSON dict, or {} on any non-200 response / network failure.
+    """
+    if not cve_id:
+        return {}
+    try:
+        resp = requests.get(
+            MITRE_CVE_URL.format(cve_id=cve_id),
+            headers={"Accept": "application/json"},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return {}
+        return resp.json()
+    except (requests.RequestException, ValueError) as exc:
+        logger.debug("MITRE fetch failed for %s: %s", cve_id, exc)
         return {}
 
 
@@ -533,7 +695,7 @@ def _fetch_all_for_window(hours: int) -> None:
     pub_start, pub_end = _time_window(hours)
     kev_data = _fetch_kev_data()
 
-    all_items: list[dict] = []
+    raw_items: list[dict] = []
     total = 0
     error = False
     start_index = 0
@@ -544,10 +706,24 @@ def _fetch_all_for_window(hours: int) -> None:
             error = True
             break
         total = page["total"]
-        all_items.extend(_parse_nvd_item(i, kev_data) for i in page["items"])
+        raw_items.extend(page["items"])
         start_index += len(page["items"])
         if start_index >= total or not page["items"]:
             break
+
+    # Parallel MITRE cveawg enrichment per CVE (vendor/product/version/CAPEC).
+    # Cached for 24h so subsequent reloads within TTL skip the HTTP round-trip.
+    cve_ids = [i.get("cve", {}).get("id", "") for i in raw_items]
+    mitre_map: dict[str, dict] = {}
+    if cve_ids:
+        with ThreadPoolExecutor(max_workers=_MITRE_PARALLEL_WORKERS) as pool:
+            mitre_results = list(pool.map(_fetch_mitre_cve, cve_ids))
+        mitre_map = dict(zip(cve_ids, mitre_results))
+
+    all_items = [
+        _parse_nvd_item(item, kev_data, mitre_map.get(item.get("cve", {}).get("id", ""), {}))
+        for item in raw_items
+    ]
 
     st.session_state["cve_items"] = all_items
     st.session_state["cve_total_nvd"] = total
@@ -609,8 +785,29 @@ def _kev_badge_html() -> str:
     )
 
 
+def _ransomware_badge_html() -> str:
+    """Build a small RANSOMWARE indicator badge.
+
+    Returns:
+        HTML string for the RANSOMWARE badge.
+    """
+    return (
+        '<span style="display:inline-flex;align-items:center;'
+        'background:#3a0a0a;border:1px solid #ef444466;border-radius:4px;'
+        'padding:1px 5px;font-family:\'JetBrains Mono\',monospace;font-size:0.58rem;'
+        'color:#fca5a5;font-weight:600;letter-spacing:0.03em;">RANSOMWARE</span>'
+    )
+
+
 def _card_html(v: dict, common_app: bool = False) -> str:
     """Build HTML for a single CVE card.
+
+    Layout (top → bottom):
+        1. Header row    — CVE-ID + badges (KEV, RANSOMWARE) · date WIB
+        2. Attack line   — "Attack: <pattern> · CWE-<N>" (only if present)
+        3. Description   — KEV shortDescription if available, else NVD
+        4. Required action — KEV requiredAction (only if present)
+        5. Footer row    — vendor · product · version · severity badge
 
     Args:
         v: Parsed CVE dict from _parse_nvd_item.
@@ -622,13 +819,52 @@ def _card_html(v: dict, common_app: bool = False) -> str:
     cve_id = v["cveID"]
     vendor = v["vendorProject"]
     product = v["product"]
-    vendor_product = f"{vendor} · {product}" if vendor and product else vendor or product or "—"
+    version_range = v.get("versionRange", "")
+
+    parts = [p for p in (vendor, product, version_range) if p]
+    vendor_product = " · ".join(parts) if parts else "—"
 
     badge = _severity_badge_html(v["score"], v["severity"])
     kev_tag = f" {_kev_badge_html()}" if v["isKev"] else ""
+    ransomware_tag = (
+        f" {_ransomware_badge_html()}" if v.get("isRansomware") else ""
+    )
 
     time_str = v.get("timePublished", "")
     date_label = f'{v["datePublished"]} {time_str} WIB' if time_str else v["datePublished"]
+
+    # Attack line — CAPEC attack pattern from MITRE + CWE from NVD
+    attack_bits: list[str] = []
+    attack_pattern = v.get("attackPattern", "")
+    if attack_pattern:
+        attack_bits.append(attack_pattern)
+    cwe_id = v.get("cwe", "")
+    if cwe_id:
+        attack_bits.append(cwe_id)
+    attack_line = ""
+    if attack_bits:
+        attack_text = " · ".join(attack_bits)
+        # Defensive 2-line clamp: even if a CNA still slipped a long string past
+        # _extract_mitre_capec, the card stays readable.
+        attack_line = (
+            f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.62rem;'
+            f'color:#a78bfa;margin-top:8px;line-height:1.4;letter-spacing:0.02em;'
+            f'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;'
+            f'overflow:hidden;" title="{attack_text}">'
+            f'<span style="color:#6b7280;">Attack:</span> {attack_text}'
+            f'</div>'
+        )
+
+    # Required action line — from CISA KEV when available
+    required_action = v.get("requiredAction", "")
+    action_line = ""
+    if required_action:
+        action_line = (
+            f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.62rem;'
+            f'color:#fbbf24;margin-top:8px;line-height:1.45;">'
+            f'<span style="color:#6b7280;">Required action:</span> {required_action}'
+            f'</div>'
+        )
 
     if common_app:
         border = "rgba(239,68,68,0.45)"
@@ -639,23 +875,30 @@ def _card_html(v: dict, common_app: bool = False) -> str:
 
     return (
         f'<div style="border:1px solid {border};border-radius:8px;'
-        f'padding:10px 12px;margin-bottom:8px;background:{bg};">'
+        f'padding:14px 14px 12px 14px;margin-bottom:10px;background:{bg};">'
+        # Header row
         f'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
-        f'<div style="display:flex;align-items:center;gap:6px;">'
+        f'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
         f'<a href="https://www.cve.org/CVERecord?id={cve_id}" target="_blank" '
         f'style="font-family:\'JetBrains Mono\',monospace;font-size:0.72rem;'
         f'color:#60a5fa;font-weight:600;text-decoration:none;" '
         f'onmouseover="this.style.textDecoration=\'underline\'" '
         f'onmouseout="this.style.textDecoration=\'none\'">{cve_id}</a>'
-        f'{kev_tag}'
+        f'{kev_tag}{ransomware_tag}'
         f'</div>'
         f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.63rem;'
         f'color:#6b7280;white-space:nowrap;" title="Waktu ditambahkan ke NVD (WIB)">{date_label}</span>'
         f'</div>'
+        # Attack pattern (above description)
+        f'{attack_line}'
+        # Description
         f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.72rem;'
-        f'color:#e2e6f0;margin-top:4px;line-height:1.4;">{v["description"]}</div>'
+        f'color:#e2e6f0;margin-top:8px;line-height:1.5;">{v["description"]}</div>'
+        # Required action (below description)
+        f'{action_line}'
+        # Footer row — vendor/product/version + severity badge
         f'<div style="display:flex;justify-content:space-between;align-items:center;'
-        f'margin-top:6px;gap:6px;">'
+        f'margin-top:10px;gap:6px;">'
         f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.63rem;'
         f'color:#9ca3af;">{vendor_product}</span>'
         f'{badge}'

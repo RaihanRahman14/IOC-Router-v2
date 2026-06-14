@@ -202,8 +202,11 @@ def _score_hybrid_analysis(ha: dict) -> Optional[float]:
 def _score_malwarebazaar(mb: dict) -> Optional[float]:
     """Score a MalwareBazaar result on 0.0–1.0.
 
-    A non-empty MB result means the hash is a confirmed malware sample, so the
-    base is already very high; the signature field nudges it a touch higher.
+    A confirmed MB hit (query_status == "ok" AND non-empty data list) means
+    the hash is a known malware sample, so the base is already very high; the
+    signature field nudges it a touch higher. Any other state — error,
+    hash_not_found, no_result, or empty data — means MB has nothing to say
+    about this hash and must NOT contribute to the score.
 
     Args:
         mb: MalwareBazaar result dict.
@@ -213,8 +216,17 @@ def _score_malwarebazaar(mb: dict) -> Optional[float]:
     """
     if not mb or not isinstance(mb, dict):
         return None
+    if mb.get("error"):
+        return None
+    if mb.get("query_status") != "ok":
+        return None
 
-    sig_boost = 0.05 if mb.get("signature") else 0.0
+    rows = mb.get("data") or []
+    if not isinstance(rows, list) or not rows:
+        return None
+
+    primary = rows[0] if isinstance(rows[0], dict) else {}
+    sig_boost = 0.05 if primary.get("signature") else 0.0
     return min(1.0, 0.95 + sig_boost)
 
 
