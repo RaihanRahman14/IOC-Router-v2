@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 _WIB = timezone(timedelta(hours=7))  # UTC+7 Jakarta / WIB
 
 import base64
+from urllib.parse import quote_plus
 
 import requests
 import streamlit as st
@@ -39,6 +40,8 @@ _FILTER_OPTIONS = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "Common", "ALL", "Select
 _SEVERITY_FILTERS = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
 
 CVE_RECORD_URL = "https://www.cve.org/CVERecord?id={cve_id}"
+CWE_DEFINITION_URL = "https://cwe.mitre.org/data/definitions/{code}.html"
+GOOGLE_SEARCH_URL = "https://www.google.com/search?q={query}"
 
 # Keywords checked case-insensitively across vendor + product + description.
 _COMMON_APP_KEYWORDS: list[str] = [
@@ -822,7 +825,25 @@ def _card_html(v: dict, common_app: bool = False) -> str:
     version_range = v.get("versionRange", "")
 
     parts = [p for p in (vendor, product, version_range) if p]
-    vendor_product = " · ".join(parts) if parts else "—"
+    vendor_product_text = " · ".join(parts) if parts else "—"
+
+    # Only hyperlink to Google search when BOTH vendor and product were resolved
+    # (either via MITRE affected[] or the regex fallback). Skip otherwise — a
+    # search for just a vendor is too noisy to be useful.
+    if vendor and product:
+        gquery = quote_plus(f"{vendor} {product}")
+        gurl = GOOGLE_SEARCH_URL.format(query=gquery)
+        vendor_product_html = (
+            f'<a href="{gurl}" target="_blank" '
+            f'style="color:#9ca3af;text-decoration:none;'
+            f'border-bottom:1px dashed rgba(156,163,175,0.4);" '
+            f'onmouseover="this.style.borderBottomStyle=\'solid\'" '
+            f'onmouseout="this.style.borderBottomStyle=\'dashed\'" '
+            f'title="Search Google for {vendor} {product}">'
+            f'{vendor_product_text}</a>'
+        )
+    else:
+        vendor_product_html = vendor_product_text
 
     badge = _severity_badge_html(v["score"], v["severity"])
     kev_tag = f" {_kev_badge_html()}" if v["isKev"] else ""
@@ -833,24 +854,37 @@ def _card_html(v: dict, common_app: bool = False) -> str:
     time_str = v.get("timePublished", "")
     date_label = f'{v["datePublished"]} {time_str} WIB' if time_str else v["datePublished"]
 
-    # Attack line — CAPEC attack pattern from MITRE + CWE from NVD
+    # Attack line — CAPEC attack pattern from MITRE + CWE from NVD.
+    # CWE label is hyperlinked to cwe.mitre.org definition page.
     attack_bits: list[str] = []
     attack_pattern = v.get("attackPattern", "")
     if attack_pattern:
         attack_bits.append(attack_pattern)
     cwe_id = v.get("cwe", "")
     if cwe_id:
-        attack_bits.append(cwe_id)
+        cwe_num = re.sub(r"^CWE-", "", cwe_id, flags=re.IGNORECASE)
+        cwe_href = CWE_DEFINITION_URL.format(code=cwe_num)
+        cwe_html = (
+            f'<a href="{cwe_href}" target="_blank" '
+            f'style="color:#a78bfa;text-decoration:none;'
+            f'border-bottom:1px dashed rgba(167,139,250,0.4);" '
+            f'onmouseover="this.style.borderBottomStyle=\'solid\'" '
+            f'onmouseout="this.style.borderBottomStyle=\'dashed\'">{cwe_id}</a>'
+        )
+        attack_bits.append(cwe_html)
     attack_line = ""
     if attack_bits:
         attack_text = " · ".join(attack_bits)
+        # Plain-text tooltip — strip the <a> wrapper so the HTML attribute is clean.
+        tooltip_bits = [b for b in (attack_pattern, cwe_id) if b]
+        tooltip = " · ".join(tooltip_bits).replace('"', "&quot;")
         # Defensive 2-line clamp: even if a CNA still slipped a long string past
         # _extract_mitre_capec, the card stays readable.
         attack_line = (
             f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.62rem;'
             f'color:#a78bfa;margin-top:8px;line-height:1.4;letter-spacing:0.02em;'
             f'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;'
-            f'overflow:hidden;" title="{attack_text}">'
+            f'overflow:hidden;" title="{tooltip}">'
             f'<span style="color:#6b7280;">Attack:</span> {attack_text}'
             f'</div>'
         )
@@ -900,7 +934,7 @@ def _card_html(v: dict, common_app: bool = False) -> str:
         f'<div style="display:flex;justify-content:space-between;align-items:center;'
         f'margin-top:10px;gap:6px;">'
         f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.63rem;'
-        f'color:#9ca3af;">{vendor_product}</span>'
+        f'color:#9ca3af;">{vendor_product_html}</span>'
         f'{badge}'
         f'</div>'
         f'</div>'
@@ -914,19 +948,25 @@ def _format_selected_text(selected: list[dict]) -> str:
 
     WhatsApp bold uses single asterisks (`*text*`). WhatsApp does not support
     markdown-style anchor links — arbitrary anchor text cannot be clickable.
-    Only raw URLs are auto-linked, so the URL is appended after the bold
-    CVE-ID on the same line: tapping the URL opens the CVE record page.
+    Only raw URLs are auto-linked.
 
-    Output per CVE:
-        *CVE-ID*
+    Output per CVE (Opsi B layout). Fields without data render as "-":
 
-        *CVE Metrics*: <score> (<severity>)
+        *CVE-ID* ⚠️ KEV · RANSOMWARE          (badges only shown if applicable)
+
+        *Severity*: <score> (<sev>) · <CWE> · <attack pattern>
+        *Affected*: <vendor> · <product> · <version>
         *Time published*: <YYYY-MM-DD HH:MM WIB>
-        *References*: https://www.cve.org/CVERecord?id=CVE-ID
-        *Descriptions*:
+
+        *Description*:
         <full description>
 
-    Multiple CVEs are separated by a single blank line.
+        *Required Action*:
+        <CISA KEV requiredAction>
+
+        *Reference*: https://www.cve.org/CVERecord?id=CVE-ID
+
+    Multiple CVEs are separated by a blank line.
 
     Args:
         selected: List of parsed CVE dicts (from _parse_nvd_item).
@@ -938,24 +978,72 @@ def _format_selected_text(selected: list[dict]) -> str:
     for v in selected:
         cve_id = v.get("cveID", "")
         url = CVE_RECORD_URL.format(cve_id=cve_id)
+
+        # Header — inline KEV / RANSOMWARE tags only when applicable
+        tags: list[str] = []
+        if v.get("isKev"):
+            tags.append("KEV")
+        if v.get("isRansomware"):
+            tags.append("RANSOMWARE")
+        tag_suffix = f" ⚠️ {' · '.join(tags)}" if tags else ""
+
+        # Severity line: score (sev) · CWE · attack pattern
         score = v.get("score")
         severity = v.get("severity", "N/A")
-        score_label = f"{score:.1f}" if isinstance(score, (int, float)) else "N/A"
+        if isinstance(score, (int, float)):
+            severity_label = f"{score:.1f} ({severity})"
+        else:
+            severity_label = "-"
+        sev_parts = [severity_label]
+        cwe = (v.get("cwe") or "").strip()
+        if cwe:
+            sev_parts.append(cwe)
+        attack = (v.get("attackPattern") or "").strip()
+        if attack:
+            sev_parts.append(attack)
+        severity_line = " · ".join(sev_parts) if sev_parts else "-"
 
+        # Affected: vendor · product · version
+        vendor = (v.get("vendorProject") or "").strip()
+        product = (v.get("product") or "").strip()
+        version = (v.get("versionRange") or "").strip()
+        affected_parts = [p for p in (vendor, product, version) if p]
+        affected = " · ".join(affected_parts) if affected_parts else "-"
+
+        # Time published
         date_pub = v.get("datePublished", "")
         time_pub = v.get("timePublished", "")
-        published = f"{date_pub} {time_pub} WIB".strip() if time_pub else date_pub
+        if date_pub and time_pub:
+            published = f"{date_pub} {time_pub} WIB"
+        elif date_pub:
+            published = date_pub
+        else:
+            published = "-"
 
-        desc_full = v.get("descriptionFull") or v.get("description", "")
+        # Description — already prefers KEV shortDescription over NVD in parser
+        desc_full = (v.get("descriptionFull") or v.get("description") or "").strip()
+        if not desc_full:
+            desc_full = "-"
+
+        # Required action — from CISA KEV; "-" when CVE not in KEV or field empty
+        action = (v.get("requiredAction") or "").strip()
+        if not action:
+            action = "-"
 
         blocks.append(
-            f"*{cve_id}*\n"
+            f"*{cve_id}*{tag_suffix}\n"
             f"\n"
-            f"*CVE Metrics*: {score_label} ({severity})\n"
+            f"*Severity*: {severity_line}\n"
+            f"*Affected*: {affected}\n"
             f"*Time published*: {published}\n"
-            f"*References*: {url}\n"
-            f"*Descriptions*:\n"
-            f"{desc_full}"
+            f"\n"
+            f"*Description*:\n"
+            f"{desc_full}\n"
+            f"\n"
+            f"*Required Action*:\n"
+            f"{action}\n"
+            f"\n"
+            f"*Reference*: {url}"
         )
     return "\n\n".join(blocks)
 

@@ -69,7 +69,7 @@ def render_ai_panel(run_results: dict, settings) -> None:
             st.session_state["gemini_models"] = models
             st.session_state["gemini_models_err"] = err
         if st.session_state.get("gemini_models_err"):
-            st.code(st.session_state["gemini_models_err"])
+            st.error(st.session_state["gemini_models_err"])
         models = st.session_state.get("gemini_models", [])
         if models:
             default_model = settings.gemini_model or "gemini-2.5-flash"
@@ -597,13 +597,15 @@ def render_ai_panel(run_results: dict, settings) -> None:
                 "time": time.perf_counter() - _t_ai,
             }
             if not short_out:
-                st.error("AI Short Result gagal dibuat.")
                 if short_err:
-                    st.code(short_err)
+                    st.error(f"AI Short Result gagal dibuat — {short_err}")
+                else:
+                    st.error("AI Short Result gagal dibuat.")
             if not desc_out:
-                st.error("AI Description gagal dibuat.")
                 if desc_err:
-                    st.code(desc_err)
+                    st.error(f"AI Description gagal dibuat — {desc_err}")
+                else:
+                    st.error("AI Description gagal dibuat.")
             if short_out:
                 short_clean = short_out.strip()
                 if short_clean.upper().startswith("SHORT:"):

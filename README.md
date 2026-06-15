@@ -97,6 +97,27 @@ Produces a final verdict per IOC — **Malicious**, **Suspicious**, **Unknown**,
 
 ---
 
+### 5b. Numeric Confidence Scoring (0–100)
+
+In addition to the qualitative verdict, each IOC is assigned a numeric **Confidence Score** on a 0.0–100.0 scale, computed from a weighted blend of provider signals:
+
+| Provider | Weight | Signal Normalized From |
+|---|---|---|
+| VirusTotal | 0.30 | engine ratio (60%) + reputation (20%) + community votes (20%) |
+| AbuseIPDB | 0.20 | `abuseConfidenceScore` + report volume |
+| ThreatFox | 0.20 | `confidence_level` (High / Medium / Low) |
+| Shodan | 0.15 | malicious tags, open-port risk, CVE presence |
+| Hybrid Analysis | 0.10 | sandbox threat score / verdict |
+| MalwareBazaar | 0.05 | known-sample match |
+
+Providers that return no data are excluded and the remaining weights are renormalized so the score never penalizes a missing source. The result is then nudged by [infra classification](#4b-infrastructure-classification-shodan--virustotal): **HIGH_RISK** ASNs add a confidence boost, **FP**-prone hyperscalers apply a discount, and **BP** anycast/CDN ranges enforce a soft ceiling.
+
+**Session-level aggregation** — the highest-scoring IOC drives a session-wide threat panel rendered above the result cards (with verdict distribution pills), and each IOC card carries its own score badge, per-provider bar chart, and infra note. Numeric scores are also written to the JSON output as `ConfidenceScore`, `ConfidenceLabel`, `ProviderScores`, `ActiveProviders`, `InfraNote`, and `VerdictFromScore` fields per row.
+
+Source: [ioc/confidence_scorer.py](ioc/confidence_scorer.py)
+
+---
+
 ### 6. Threat State & Level
 
 Determines the threat lifecycle state (e.g. Reconnaissance, Persistence, Impact) and assigns a threat level (Low → Very High), adjusted for asset criticality when the **Critical** flag is set. Also surfaces a human-readable risk label, a list of reasons driving the assessment, all relevant MITRE ATT&CK tactics observed across providers, key evidence per IOC (malware family, domain age, open ports, first seen), and direct source links back to each provider's result page.
@@ -152,12 +173,14 @@ Results can be exported in four formats selectable from the Options panel — **
 
 ### 10. CVE Lookup Panel
 
-A dedicated panel surfaces recent CVEs from the **NVD API v2** (with the **CISA KEV** catalog overlaid to flag known-exploited vulnerabilities). Key behaviors:
+A dedicated panel surfaces recent CVEs from the **NVD API v2**, enriched with the **CISA KEV** catalog and the **MITRE cveawg** record for each CVE. Key behaviors:
 
 - **Lazy loading** — 10 entries per page so large NVD windows stay responsive.
 - **Severity filtering** — pick from `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `Common`, `ALL`, or a custom `Select` set.
 - **Common-app detection** — vendor/product matching against a curated keyword list (Cisco, Fortinet, Palo Alto, VMware, Microsoft, Chrome, Zoom, Slack, WhatsApp Desktop, Telegram Desktop, etc.) so SOC-relevant CVEs surface first.
-- **NVD-aware caching** — short TTL (15 min) keeps the rolling 3-hour window fresh while avoiding rate-limit pressure.
+- **MITRE enrichment** — pulls vendor / product / affected version range from `affected[]` and a short CAPEC attack-pattern label from `impacts[]`, plus the **CWE-N** id from the NVD weaknesses list. Records are fetched in parallel (8 workers) and cached for 24 hours.
+- **KEV expansion** — when a CVE is in the CISA KEV catalog, the card carries the KEV `shortDescription`, `requiredAction`, `knownRansomwareCampaignUse`, and `vulnerabilityName` fields alongside the standard NVD data.
+- **NVD-aware caching** — short TTL (15 min) keeps the rolling 3-hour window fresh while avoiding rate-limit pressure; MITRE responses use a separate 24h TTL.
 - **Copy formatter** — one-click copy formatted for WhatsApp/SOC handoff: bold styling, raw CVE URLs, and grouped severity output.
 
 Source: [ui/components/cve_panel.py](ui/components/cve_panel.py) · Tests: [tests/test_cve_panel_copy.py](tests/test_cve_panel_copy.py)
@@ -255,6 +278,7 @@ ioc-router/
 ├── ioc/                          # IOC processing pipeline
 │   ├── parser.py                 # Type detection, normalization, deduplication
 │   ├── verdict.py                # Multi-source verdict aggregation engine
+│   ├── confidence_scorer.py      # 0–100 numeric confidence score + session aggregation
 │   ├── threat_analysis.py        # Threat state, threat level, asset criticality
 │   └── flags/                    # Per-provider threat flag extractors
 │       ├── virustotal.py
