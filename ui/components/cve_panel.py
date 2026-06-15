@@ -878,8 +878,7 @@ def _card_html(v: dict, common_app: bool = False) -> str:
         # Plain-text tooltip — strip the <a> wrapper so the HTML attribute is clean.
         tooltip_bits = [b for b in (attack_pattern, cwe_id) if b]
         tooltip = " · ".join(tooltip_bits).replace('"', "&quot;")
-        # Defensive 2-line clamp: even if a CNA still slipped a long string past
-        # _extract_mitre_capec, the card stays readable.
+        # 2-line clamp keeps the card height tidy and consistent across cards.
         attack_line = (
             f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.62rem;'
             f'color:#a78bfa;margin-top:8px;line-height:1.4;letter-spacing:0.02em;'
@@ -895,7 +894,9 @@ def _card_html(v: dict, common_app: bool = False) -> str:
     if required_action:
         action_line = (
             f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.62rem;'
-            f'color:#fbbf24;margin-top:8px;line-height:1.45;">'
+            f'color:#fbbf24;margin-top:8px;line-height:1.45;'
+            f'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;'
+            f'overflow:hidden;" title="{required_action.replace(chr(34), "&quot;")}">'
             f'<span style="color:#6b7280;">Required action:</span> {required_action}'
             f'</div>'
         )
@@ -925,7 +926,7 @@ def _card_html(v: dict, common_app: bool = False) -> str:
         f'</div>'
         # Attack pattern (above description)
         f'{attack_line}'
-        # Description
+        # Description — truncated by parser to keep card height consistent.
         f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.72rem;'
         f'color:#e2e6f0;margin-top:8px;line-height:1.5;">{v["description"]}</div>'
         # Required action (below description)
@@ -1025,10 +1026,10 @@ def _format_selected_text(selected: list[dict]) -> str:
         if not desc_full:
             desc_full = "-"
 
-        # Required action — from CISA KEV; "-" when CVE not in KEV or field empty
+        # Required action — from CISA KEV. Skip the whole block when absent so
+        # the message isn't padded with bare "-" placeholders.
         action = (v.get("requiredAction") or "").strip()
-        if not action:
-            action = "-"
+        action_block = f"\n\n*Required Action*:\n{action}" if action else ""
 
         blocks.append(
             f"*{cve_id}*{tag_suffix}\n"
@@ -1038,12 +1039,9 @@ def _format_selected_text(selected: list[dict]) -> str:
             f"*Time published*: {published}\n"
             f"\n"
             f"*Description*:\n"
-            f"{desc_full}\n"
-            f"\n"
-            f"*Required Action*:\n"
-            f"{action}\n"
-            f"\n"
-            f"*Reference*: {url}"
+            f"{desc_full}"
+            f"{action_block}"
+            f"\n\n*Reference*: {url}"
         )
     return "\n\n".join(blocks)
 
@@ -1334,7 +1332,15 @@ def render_cve_panel() -> None:
                     const data = "{data_b64}";
                     if (!btn || btn.disabled) return;
                     btn.addEventListener("click", () => {{
-                      const text = atob(data);
+                      // atob() returns a binary string (one char per byte) so
+                      // multi-byte UTF-8 like "·" arrives as garbled "Â·".
+                      // Re-decode the byte sequence as UTF-8 before copying.
+                      const binary = atob(data);
+                      const bytes = new Uint8Array(binary.length);
+                      for (let i = 0; i < binary.length; i++) {{
+                        bytes[i] = binary.charCodeAt(i);
+                      }}
+                      const text = new TextDecoder("utf-8").decode(bytes);
                       navigator.clipboard.writeText(text).then(() => {{
                         btn.textContent = "Copied!";
                         setTimeout(() => {{ btn.textContent = "Copy"; }}, 1500);
