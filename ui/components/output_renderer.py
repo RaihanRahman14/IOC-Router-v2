@@ -105,8 +105,6 @@ def render_results_output(output_format: str, run_results: dict) -> None:
     whoxy_results = run_results.get("whoxy", {})
     ransomware_live_results = run_results.get("ransomware_live", {})
 
-    _render_session_threat_panel(summary)
-
     col_sum = st.columns(5)
     col_sum[0].metric("Total", summary["total"])
     col_sum[1].metric("Malicious", summary["malicious"])
@@ -114,21 +112,63 @@ def render_results_output(output_format: str, run_results: dict) -> None:
     col_sum[3].metric("Unknown", summary["unknown"])
     col_sum[4].metric("Benign", summary["benign"])
 
+    _render_session_threat_panel(summary)
+
     if output_format == "Table":
         if pd:
             df = pd.DataFrame(rows)
 
-            def _style_verdict(row):
-                verdict = row.get("Verdict", "")
-                if verdict == "Malicious":
-                    return ["background-color: #ffd6d6; color: #111"] * len(row)
-                if verdict == "Suspicious":
-                    return ["background-color: #ffe8c7; color: #111"] * len(row)
-                if verdict == "Benign":
-                    return ["background-color: #dff5e1; color: #111"] * len(row)
-                return ["background-color: #f2f2f2; color: #111"] * len(row)
+            def _style_row(row: "pd.Series") -> list[str]:
+                """Apply white background to every cell, color only the Verdict cell.
 
-            st.dataframe(df.style.apply(_style_verdict, axis=1), use_container_width=True)
+                Args:
+                    row: A row from the results DataFrame.
+
+                Returns:
+                    A list of CSS strings, one per column in the row.
+                """
+                verdict = row.get("Verdict", "")
+                verdict_palette = {
+                    "Malicious":  ("#fde2e2", "#b42318"),
+                    "Suspicious": ("#fdecc8", "#8a5a00"),
+                    "Benign":     ("#e4f5e7", "#1a7f37"),
+                    "Unknown":    ("#eef0f3", "#3a3f47"),
+                }
+                styles = ["background-color: #ffffff; color: #1f2937"] * len(row)
+                if verdict in verdict_palette:
+                    bg, fg = verdict_palette[verdict]
+                    try:
+                        idx = list(row.index).index("Verdict")
+                        styles[idx] = (
+                            f"background-color: {bg}; color: {fg}; "
+                            f"font-weight: 600"
+                        )
+                    except ValueError:
+                        pass
+                return styles
+
+            styled = (
+                df.style
+                .apply(_style_row, axis=1)
+                .set_table_styles(
+                    [
+                        {
+                            "selector": "thead th",
+                            "props": [
+                                ("background-color", "#ffffff"),
+                                ("color", "#1f2937"),
+                                ("border-bottom", "1px solid #e5e7eb"),
+                                ("font-weight", "600"),
+                            ],
+                        },
+                        {
+                            "selector": "tbody td",
+                            "props": [("border-bottom", "1px solid #f1f3f5")],
+                        },
+                    ]
+                )
+            )
+            st.dataframe(styled, use_container_width=True)
         else:
             st.dataframe(rows, use_container_width=True)
 
