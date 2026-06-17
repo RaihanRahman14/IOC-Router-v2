@@ -61,18 +61,20 @@ def _render_session_threat_panel(summary: dict) -> None:
 
     html = (
         f"<div style='background:{bg};border:1px solid {accent};border-radius:10px;"
-        f"padding:14px 18px;margin:6px 0 14px 0;'>"
-        f"  <div style='display:flex;justify-content:space-between;align-items:center;'>"
-        f"    <div>"
+        f"padding:14px 18px;margin:6px 0 14px 0;overflow:hidden;'>"
+        f"  <div style='display:flex;justify-content:space-between;align-items:flex-start;"
+        f"flex-wrap:wrap;gap:10px;'>"
+        f"    <div style='min-width:0;flex:1 1 auto;'>"
         f"      <div style='font-size:0.78rem;letter-spacing:0.08em;text-transform:uppercase;"
         f"color:#9ea8cf;'>Session Threat Score</div>"
         f"      <div style='font-size:2.1rem;font-weight:700;color:{accent};line-height:1.1;'>"
         f"{highest:.1f}<span style='font-size:0.9rem;color:#9ea8cf;'> / 100</span></div>"
         f"      <div style='font-size:0.95rem;color:#e8eaf0;margin-top:2px;'>{label}</div>"
         f"    </div>"
-        f"    <div style='text-align:right;'>"
+        f"    <div style='text-align:right;min-width:0;flex:1 1 180px;max-width:100%;'>"
         f"      <div style='font-size:0.78rem;color:#9ea8cf;'>Highest IOC</div>"
-        f"      <div style='font-family:monospace;color:#e8eaf0;font-size:0.95rem;'>"
+        f"      <div style='font-family:monospace;color:#e8eaf0;font-size:0.85rem;"
+        f"word-break:break-all;overflow-wrap:anywhere;'>"
         f"{highest_ioc}</div>"
         f"    </div>"
         f"  </div>"
@@ -81,7 +83,7 @@ def _render_session_threat_panel(summary: dict) -> None:
         f"    <div style='background:{accent};width:{fill_pct:.1f}%;height:100%;"
         f"transition:width 0.3s;'></div>"
         f"  </div>"
-        f"  <div style='margin-top:10px;'>{dist_pills}</div>"
+        f"  <div style='margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;'>{dist_pills}</div>"
         f"</div>"
     )
     st.markdown(html, unsafe_allow_html=True)
@@ -256,11 +258,22 @@ def render_results_output(output_format: str, run_results: dict) -> None:
             risk = (sh.get("risk_summary") or {}).get("risk_level") or "UNKNOWN"
             if not ports and not vulns and not tags and risk == "UNKNOWN":
                 return "Shodan: No data"
-            parts = [f"risk={risk}", f"{len(ports)} port(s)"]
+            parts = [risk, f"{len(ports)} port(s)"]
             if vulns:
                 parts.append(f"{len(vulns)} CVE(s)")
             if tags:
-                parts.append("tags=" + ",".join(tags[:3]) + ("…" if len(tags) > 3 else ""))
+                tag_str = ",".join(tags[:3]) + ("…" if len(tags) > 3 else "")
+                parts.append(tag_str)
+            queried_ip = sh.get("queriedIp") or ""
+            if queried_ip:
+                try:
+                    from core.geo import fetch_geo_ip_api
+                    geo = fetch_geo_ip_api(queried_ip) or {}
+                    country = geo.get("country") or ""
+                    if country:
+                        parts.append(country)
+                except Exception:
+                    pass
             return "Shodan: " + ", ".join(parts)
 
         def _mx_line(val: str) -> str:

@@ -14,14 +14,21 @@ from typing import Optional
 
 
 BASE_WEIGHTS: dict[str, float] = {
-    "virustotal":      0.30,
+    "virustotal":      0.25,
     "abuseipdb":       0.20,
     "threatfox":       0.20,
-    "shodan":          0.15,
-    "hybrid_analysis": 0.10,
-    "malwarebazaar":   0.05,
+    "shodan":          0.10,
+    "hybrid_analysis": 0.15,
+    "malwarebazaar":   0.10,
     # urlscan, ransomware_live: context-only, not part of the score formula.
 }
+
+# When any single provider returns a score ≥ this threshold, the final
+# weighted sum is floored at `signal * STRONG_SIGNAL_FLOOR_FACTOR`. Keeps a
+# confident hit (e.g. confirmed malware in MalwareBazaar/Hybrid Analysis)
+# from being averaged down by a low VirusTotal detection ratio.
+STRONG_SIGNAL_THRESHOLD: float = 0.70
+STRONG_SIGNAL_FLOOR_FACTOR: float = 0.70
 
 THREATFOX_CONF_MAP: dict[str, float] = {"High": 0.9, "Medium": 0.6, "Low": 0.3}
 
@@ -348,6 +355,10 @@ def compute_confidence_score(
     norm_weights = {p: w / total_w for p, w in active_weights.items()}
 
     weighted_sum = sum(active[p] * norm_weights[p] for p in active)
+
+    strong_signal = max(active.values())
+    if strong_signal >= STRONG_SIGNAL_THRESHOLD:
+        weighted_sum = max(weighted_sum, strong_signal * STRONG_SIGNAL_FLOOR_FACTOR)
 
     infra = _get_infra(vt, sh)
     final_score, infra_note = _apply_infra_modifier(weighted_sum, infra)
