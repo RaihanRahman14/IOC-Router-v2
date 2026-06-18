@@ -118,6 +118,11 @@ def render_results_output(output_format: str, run_results: dict) -> None:
         if pd:
             df = pd.DataFrame(rows)
 
+            if "ActiveProviders" in df.columns:
+                df["ActiveProviders"] = df["ActiveProviders"].apply(
+                    lambda v: ", ".join(v) if isinstance(v, (list, tuple)) else ("" if v is None else str(v))
+                )
+
             def _style_row(row: "pd.Series") -> list[str]:
                 """Apply white background to every cell, color only the Verdict cell.
 
