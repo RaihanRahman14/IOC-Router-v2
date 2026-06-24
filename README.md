@@ -178,9 +178,9 @@ A dedicated panel surfaces recent CVEs from the **NVD API v2**, enriched with th
 - **Lazy loading** — 10 entries per page so large NVD windows stay responsive.
 - **Severity filtering** — pick from `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `Common`, `ALL`, or a custom `Select` set.
 - **Common-app detection** — vendor/product matching against a curated keyword list (Cisco, Fortinet, Palo Alto, VMware, Microsoft, Chrome, Zoom, Slack, WhatsApp Desktop, Telegram Desktop, etc.) so SOC-relevant CVEs surface first.
-- **MITRE enrichment** — pulls vendor / product / affected version range from `affected[]` and a short CAPEC attack-pattern label from `impacts[]`, plus the **CWE-N** id from the NVD weaknesses list. Records are fetched in parallel (8 workers) and cached for 24 hours.
+- **MITRE enrichment** — pulls vendor / product / affected version range from `affected[]` and a short CAPEC attack-pattern label from `impacts[]`, plus the **CWE-N** id from the NVD weaknesses list. Records are fetched in parallel (12 workers) and cached for 24 hours.
 - **KEV expansion** — when a CVE is in the CISA KEV catalog, the card carries the KEV `shortDescription`, `requiredAction`, `knownRansomwareCampaignUse`, and `vulnerabilityName` fields alongside the standard NVD data.
-- **NVD-aware caching** — short TTL (15 min) keeps the rolling 3-hour window fresh while avoiding rate-limit pressure; MITRE responses use a separate 24h TTL.
+- **NVD-aware caching** — 1-hour TTL on NVD + KEV responses keeps the rolling window reasonably fresh while easing rate-limit pressure; MITRE responses use a separate 24h TTL. Optional `CVE_NVD_KEY` env variable injects an NVD API key for higher rate limits (50 req/30s vs 5).
 - **Copy formatter** — one-click copy formatted for WhatsApp/SOC handoff: bold styling, raw CVE URLs, and grouped severity output.
 
 Source: [ui/components/cve_panel.py](ui/components/cve_panel.py) · Tests: [tests/test_cve_panel_copy.py](tests/test_cve_panel_copy.py)
@@ -406,6 +406,7 @@ GEMINI_KEY_BACKUP=your_gemini_backup_key          # optional
 GEMINI_MODEL=gemini-2.5-flash                     # optional, this is the default
 GEMINI_API_VERSION=v1                             # optional, this is the default
 GROQ_KEY=your_groq_key
+CVE_NVD_KEY=your_nvd_api_key                      # optional, raises NVD rate limit
 ```
 
 > API keys can also be entered directly in the app UI via the key drawer — they are stored in session only and never written to disk.
