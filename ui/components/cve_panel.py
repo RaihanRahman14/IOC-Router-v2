@@ -16,16 +16,20 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 
+from config import Settings
+
 logger = logging.getLogger(__name__)
+
+_NVD_API_KEY = (Settings.from_env().cve_nvd_key or "").strip()
 
 NVD_CVE_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 CISA_KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 MITRE_CVE_URL = "https://cveawg.mitre.org/api/cve/{cve_id}"
 
 _NVD_MAX_PAGE = 2000  # NVD API hard limit per request
-_CACHE_TTL = 900  # 15 minutes — shorter TTL to keep 3-hour window fresh
+_CACHE_TTL = 3600  # 1 hour — balances freshness with API quota / latency
 _MITRE_CACHE_TTL = 86400  # 24h — MITRE record changes rarely once published
-_MITRE_PARALLEL_WORKERS = 8
+_MITRE_PARALLEL_WORKERS = 12
 
 _SEVERITY_STYLE: dict[str, tuple[str, str]] = {
     "CRITICAL": ("#ef4444", "#2d0a0a"),
@@ -580,7 +584,7 @@ def _fetch_kev_data() -> dict[str, dict]:
         knownRansomwareCampaignUse fields.
     """
     try:
-        resp = requests.get(CISA_KEV_URL, timeout=15)
+        resp = requests.get(CISA_KEV_URL, timeout=30)
         resp.raise_for_status()
         return {
             v.get("cveID", ""): {
@@ -616,7 +620,7 @@ def _fetch_mitre_cve(cve_id: str) -> dict:
         resp = requests.get(
             MITRE_CVE_URL.format(cve_id=cve_id),
             headers={"Accept": "application/json"},
-            timeout=10,
+            timeout=20,
         )
         if resp.status_code != 200:
             return {}
@@ -638,6 +642,9 @@ def _fetch_nvd_page(pub_start: str, pub_end: str, start_index: int) -> dict:
     Returns:
         Dict with keys: items (raw NVD list), total (int), error (bool).
     """
+    headers = {"Accept": "application/json"}
+    if _NVD_API_KEY:
+        headers["apiKey"] = _NVD_API_KEY
     try:
         resp = requests.get(
             NVD_CVE_URL,
@@ -647,8 +654,8 @@ def _fetch_nvd_page(pub_start: str, pub_end: str, start_index: int) -> dict:
                 "resultsPerPage": _NVD_MAX_PAGE,
                 "startIndex": start_index,
             },
-            headers={"Accept": "application/json"},
-            timeout=20,
+            headers=headers,
+            timeout=45,
         )
         resp.raise_for_status()
         data = resp.json()
