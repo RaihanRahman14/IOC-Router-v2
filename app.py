@@ -1,4 +1,4 @@
-"""IOC Router - Streamlit app entrypoint (refactored)."""
+"""IOC Router - Streamlit app entrypoint (3-tab layout)."""
 from __future__ import annotations
 
 import time
@@ -15,13 +15,15 @@ from core.cache import (
     whoxy_cached, ransomware_live_cached,
     CACHE_REV,
 )
-from ui.styles import GLOBAL_CSS_AND_HEADER, LANDING_CSS
+from ui.styles import build_global_css_and_header, LANDING_CSS
 from ui.components.drawer import render_api_drawer
 from ui.components.output_renderer import render_results_output
 from ui.components.ioc_card import render_ioc_cards
 from ui.components.ai_panel import render_ai_panel
 from ui.components.cve_panel import render_cve_panel
 from ui.components.bug_report import render_bug_report_button
+from ui.components.note_popup import render_note_button
+from ui.components.tab_switcher import render_tab_switch_buttons
 
 st.set_page_config(
     page_title="IOC Router",
@@ -30,11 +32,27 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.markdown(GLOBAL_CSS_AND_HEADER, unsafe_allow_html=True)
+# Pre-header state init: the header HTML embeds tab buttons whose active
+# state depends on st.session_state["active_tab"], so it MUST be resolved
+# before we build the header markup. The same applies to a pending tab
+# switch queued by the enrichment run (writes session_state directly here
+# are safe because no widget with that key has been instantiated yet).
+if "active_tab" not in st.session_state:
+    st.session_state["active_tab"] = "Input"
+_pending_tab = st.session_state.pop("_pending_tab_switch", None)
+if _pending_tab in ("Input", "Result", "NVD"):
+    st.session_state["active_tab"] = _pending_tab
+
+st.markdown(
+    build_global_css_and_header(st.session_state["active_tab"]),
+    unsafe_allow_html=True,
+)
 
 render_bug_report_button()
+render_note_button()
+render_tab_switch_buttons()
 
-# JavaScript drawer controller — runs in a zero-height iframe so it
+# JavaScript drawer + header-button controller — runs in a zero-height iframe so it
 # actually executes (React blocks <script> injected via innerHTML).
 # Uses window.parent to reach the Streamlit app's real document.
 components.html(
@@ -86,24 +104,55 @@ components.html(
             }
         }
 
-        function attachReportBtn() {
-            var headerBtn = pd.getElementById('report-bug-header-btn');
-            if (headerBtn && !headerBtn._rbReady) {
-                headerBtn._rbReady = true;
-                headerBtn.addEventListener('click', function(e) {
+        function clickHiddenButton(labelText) {
+            var stBtns = pd.querySelectorAll('[data-testid="stButton"] button');
+            stBtns.forEach(function(b) {
+                if (b.textContent.trim() === labelText) {
+                    b.click();
+                }
+            });
+        }
+
+        function attachHeaderButtons() {
+            var rb = pd.getElementById('report-bug-header-btn');
+            if (rb && !rb._rbReady) {
+                rb._rbReady = true;
+                rb.addEventListener('click', function(e) {
                     e.stopPropagation();
-                    // Find and click the hidden Streamlit trigger button
-                    var stBtns = pd.querySelectorAll('[data-testid="stButton"] button');
-                    stBtns.forEach(function(b) {
-                        if (b.textContent.trim() === 'Report Bug 🐞') {
-                            b.click();
-                        }
-                    });
+                    clickHiddenButton('Report Bug 🐞');
                 });
             }
-            // Hide the Streamlit trigger button (replaced by the header HTML button)
+            var nb = pd.getElementById('note-header-btn');
+            if (nb && !nb._noteReady) {
+                nb._noteReady = true;
+                nb.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    clickHiddenButton('Notes ⓘ');
+                });
+            }
+            // Header tab buttons (Input / Result / NVD) → forward to hidden
+            // Streamlit buttons identified by their st-key-* wrapper class.
+            // Targeting the key class is more reliable than text matching
+            // (which can break on emoji whitespace / DOM wrapping).
+            ['Input', 'Result', 'NVD'].forEach(function(tabName) {
+                var tb = pd.getElementById('tab-btn-' + tabName);
+                if (tb && !tb._tabReady) {
+                    tb._tabReady = true;
+                    tb.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        var hidden = pd.querySelector(
+                            '.st-key-tab_switch_btn_' + tabName + ' button'
+                        );
+                        if (hidden) hidden.click();
+                    });
+                }
+            });
+            // Hide the Report Bug + Notes Streamlit trigger buttons (replaced by header HTML).
+            // The Switch-to-* buttons are hidden via CSS (.st-key-tab_switch_btn_*).
+            var HIDE_LABELS = ['Report Bug 🐞', 'Notes ⓘ'];
             pd.querySelectorAll('[data-testid="stButton"] button').forEach(function(b) {
-                if (b.textContent.trim() === 'Report Bug 🐞') {
+                var t = b.textContent.trim();
+                if (HIDE_LABELS.indexOf(t) !== -1) {
                     var wrapper = b.closest('[data-testid="stButton"]');
                     if (wrapper && wrapper.parentElement) {
                         wrapper.parentElement.style.setProperty('display', 'none', 'important');
@@ -118,7 +167,7 @@ components.html(
                 pw._applyDrawer(pw._drawerOpen);
                 attachBurger();
                 attachBackdrop();
-                attachReportBtn();
+                attachHeaderButtons();
             } else if (tries < 50) {
                 setTimeout(function() { init(tries + 1); }, 100);
             }
@@ -132,7 +181,7 @@ components.html(
             _t = setTimeout(function() {
                 attachBurger();
                 attachBackdrop();
-                attachReportBtn();
+                attachHeaderButtons();
                 var sb = pd.querySelector('section[data-testid="stSidebar"]');
                 if (sb) {
                     var want = pw._drawerOpen ? 'translateX(0px)' : 'translateX(-300px)';
@@ -169,6 +218,7 @@ for _k, _v in {
     "auto_detect_and_provider": True,
     "analysis_mode": "Triage",
     "triage_speed": "Detailed",
+    "active_tab": "Input",
 }.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
@@ -214,14 +264,32 @@ def _clear_all_outputs() -> None:
     _clear_ai_outputs()
 
 
+# Input-tab context keys that the user fills in PRE-Run. On a successful Run
+# these values are snapshotted into ``result_<key>`` so the Result tab gets
+# its own editable copy (edits in Result do NOT propagate back to Input).
+_INPUT_CONTEXT_KEYS: tuple[str, ...] = (
+    "output_format", "alert_name", "host", "host_ip", "time_detected",
+    "device_action", "device_action_others", "critical_asset_sel",
+    "file_path", "parent_process", "child_process", "raw_log",
+)
+
+
+def _snapshot_input_context_to_result() -> None:
+    """Copy each Input-tab context value into its ``result_``-prefixed twin.
+
+    Called from the enrichment block on a successful Run so the Result tab's
+    AI context expander shows what the user actually ran with — and any
+    subsequent edits there stay isolated from the Input tab.
+    """
+    for _k in _INPUT_CONTEXT_KEYS:
+        if _k in st.session_state:
+            st.session_state[f"result_{_k}"] = st.session_state[_k]
+
+
 render_api_drawer()
 
 if not settings.vt_key:
     st.warning("VirusTotal API key belum di-set. Set env var: VT_KEY")
-
-# ── Pre-compute layout mode ───────────────────────────────────────────────────
-_has_results = bool(st.session_state["run_results"])
-_was_landing = not _has_results  # True when Run is first clicked from chat UI
 
 # ── Variable defaults (overridden by widgets below) ───────────────────────────
 output_format: str = st.session_state.get("output_format", "Ticket notes")
@@ -232,8 +300,6 @@ auto_choose_provider: bool = auto_detect_and_provider
 critical_asset: bool = st.session_state.get("critical_asset_sel", "Non Critical Asset") == "Critical Asset"
 allow_urlscan_submit: bool = True
 run: bool = False
-clear: bool = False
-load_sample: bool = False
 raw: str = st.session_state.get("ioc_input", "")
 raw_log: str = st.session_state.get("raw_log", "")
 alert_name: str = st.session_state.get("alert_name", "")
@@ -407,36 +473,157 @@ def _render_providers_expander(expanded: bool = True, mode: str = "Triage") -> N
                 st.divider()
 
 
-if not _has_results:
-    # ── LANDING: Note left | Input center | CVE right ─────────────────────────
+def _render_context_expander(
+    key_suffix: str,
+    include_ai_settings: bool = False,
+    key_prefix: str = "",
+) -> None:
+    """Render the Context expander (Output format + alert metadata + raw log).
+
+    Widget ``key`` is built as ``f"{key_prefix}{field_name}"``. Pass
+    ``key_prefix=""`` (default) for the Input tab — those widgets own the
+    canonical keys (``output_format``, ``alert_name``, ...). Pass
+    ``key_prefix="result_"`` for the Result tab so its widgets bind to a
+    separate ``result_*`` namespace; edits there stay isolated and do NOT
+    propagate back to the Input tab. The two namespaces are linked one-way:
+    on a successful Run, :func:`_snapshot_input_context_to_result` copies
+    Input values into the ``result_*`` keys.
+
+    Args:
+        key_suffix: Suffix appended to button keys (Clear / Load Sample) to
+            keep them unique across tabs (``"input"`` vs ``"result"``).
+        include_ai_settings: When True, appends an "AI settings" section and
+            renames the expander to "AI context" (Result tab only).
+        key_prefix: Prefix prepended to every stateful widget key. Use
+            ``"result_"`` for Result tab.
+    """
+    global output_format, alert_name, host, host_ip, time_detected
+    global device_action, device_action_others, critical_asset
+    global file_path, parent_process, child_process, raw_log
+    _title = "🗂️ AI context" if include_ai_settings else "🗂️ Context"
+    _kp = key_prefix
+    with st.expander(_title):
+        output_format = st.selectbox(
+            "Output format", ["Ticket notes", "Table", "JSON", "Shareable Text"], index=0, key=f"{_kp}output_format"
+        )
+
+        _opt = st.columns(2)
+        with _opt[0]:
+            alert_name = st.text_input(
+                "Alert Name", placeholder="e.g. Suspicious Outbound", key=f"{_kp}alert_name"
+            )
+            host_ip = st.text_input("Host IP", placeholder="192.168.x.x", key=f"{_kp}host_ip")
+        with _opt[1]:
+            host = st.text_input("Host", placeholder="hostname", key=f"{_kp}host")
+            time_detected = st.text_input(
+                "Time Detected", placeholder="2025-01-01 08:00:00", key=f"{_kp}time_detected"
+            )
+
+        _proc = st.columns([2, 1])
+        with _proc[0]:
+            device_action = st.selectbox(
+                "Device Action",
+                ["None", "Blocked", "Isolated", "Prevented", "Allowed", "Detected", "File Cleaned", "Others"],
+                key=f"{_kp}device_action",
+            )
+        with _proc[1]:
+            _asset_sel = st.selectbox(
+                "Asset Criticality",
+                ["Non Critical Asset", "Critical Asset"],
+                index=0, key=f"{_kp}critical_asset_sel",
+            )
+            critical_asset = _asset_sel == "Critical Asset"
+        if device_action == "Others":
+            device_action_others = st.text_input(
+                "Specify Action",
+                placeholder="e.g. Terminated, Logged, Alerted...",
+                key=f"{_kp}device_action_others",
+            )
+
+        file_path = st.text_input(
+            "File Path", placeholder="e.g. C:\\Users\\user\\Downloads\\malware.exe", key=f"{_kp}file_path"
+        )
+        parent_process = st.text_input(
+            "Parent Process", placeholder="e.g. explorer.exe", key=f"{_kp}parent_process"
+        )
+        child_process = st.text_input(
+            "Child Process", placeholder="e.g. cmd.exe", key=f"{_kp}child_process"
+        )
+
+        raw_log = st.text_area(
+            "Context (optional)",
+            placeholder="Paste raw log or describe context here for additional AI context...",
+            height=80,
+            key=f"{_kp}raw_log",
+        )
+
+        # AI settings — only rendered in Result tab (where AI Description lives).
+        # Lazy import keeps the Input tab free of the providers.gemini import path.
+        if include_ai_settings:
+            st.divider()
+            st.markdown("**AI settings**")
+            if not settings.gemini_key:
+                st.info("Gemini API key not set. Set the env var: GEMINI_KEY")
+            _ai_col1, _ai_col2 = st.columns(2)
+            with _ai_col1:
+                st.selectbox("AI Provider", ["Gemini", "Groq"], key="ai_provider")
+            with _ai_col2:
+                st.selectbox(
+                    "Tone",
+                    ["High level language", "SOC L1 concise", "More formal"],
+                    key="ai_tone",
+                )
+            _c1, _c2 = st.columns(2)
+            with _c1:
+                st.checkbox("Use only evidence shown (no guessing)", key="ai_use_only_evidence")
+            with _c2:
+                st.checkbox("Sanitize sensitive data", key="ai_sanitize")
+            if st.session_state.get("ai_provider") == "Gemini":
+                from providers.gemini import gemini_list_models  # local import — only needed here
+                if st.button("Fetch Gemini Models", key=f"fetch_gemini_models_{key_suffix}"):
+                    _models, _err = gemini_list_models(settings)
+                    st.session_state["gemini_models"] = _models
+                    st.session_state["gemini_models_err"] = _err
+                if st.session_state.get("gemini_models_err"):
+                    st.error(st.session_state["gemini_models_err"])
+                _gm_list = st.session_state.get("gemini_models", [])
+                if _gm_list:
+                    _default_model = settings.gemini_model or "gemini-2.5-flash"
+                    _default_index = _gm_list.index(_default_model) if _default_model in _gm_list else 0
+                    st.selectbox(
+                        "Gemini Model (from list)", _gm_list,
+                        index=_default_index, key="gemini_model_select",
+                    )
+                    settings.gemini_model = st.session_state.get("gemini_model_select") or settings.gemini_model
+                settings.gemini_api_version = "v1"
+            st.divider()
+
+        _act = st.columns(2)
+        with _act[0]:
+            if st.button("🗑️ Clear", use_container_width=True, key=f"clear_{key_suffix}"):
+                _clear_all_outputs()
+                st.session_state["reset_input"] = True
+                st.rerun()
+        with _act[1]:
+            if st.button("📋 Load Sample IOCs", use_container_width=True, key=f"load_sample_{key_suffix}"):
+                st.session_state["load_sample"] = True
+                st.rerun()
+
+
+# ── Tab bar ───────────────────────────────────────────────────────────────────
+# The tab bar is rendered in the fixed header (see build_global_css_and_header).
+# active_tab was already resolved at the top of this script (before the header
+# was built) — we just read it back here.
+active_tab: str = st.session_state["active_tab"]
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Tab 1 — INPUT (center column from landing, no Note column, no CVE column)
+# ══════════════════════════════════════════════════════════════════════════════
+if active_tab == "Input":
     st.markdown(LANDING_CSS, unsafe_allow_html=True)
 
-    _note_col, _center_col, _right_col = st.columns([0.75, 2.4, 0.9], gap="large")
-
-    with _note_col:
-        st.markdown(
-            '<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.88rem;'
-            'font-weight:700;color:#f5f7fb;letter-spacing:0.01em;margin-bottom:10px;">Note</div>',
-            unsafe_allow_html=True,
-        )
-        _notes = [
-            "<strong>Gemini, Grok, and MxToolBox</strong> require own API key",
-            "For more efficient and fast query turn off Auto Provider and deselect not needed providers",
-            "Whoxy provider is currently not available",
-            "To refresh output do a hard refresh",
-            "Project is still Under development",
-        ]
-        _note_items = "".join(
-            f'<li style="margin-bottom:10px;line-height:1.5;">{n}</li>'
-            for n in _notes
-        )
-        st.markdown(
-            f'<ul style="font-family:\'JetBrains Mono\',monospace;font-size:0.72rem;'
-            f'color:#9ca3af;padding-left:1.1rem;margin:0;list-style-type:disc;">'
-            f'{_note_items}'
-            f'</ul>',
-            unsafe_allow_html=True,
-        )
+    # Center the input column with reasonable max width (no side columns now)
+    _l, _center_col, _r = st.columns([0.5, 3.0, 0.5], gap="large")
 
     with _center_col:
         # Hint pills
@@ -532,64 +719,7 @@ if not _has_results:
             )
 
         # Context expander
-        with st.expander("🗂️ Context"):
-            output_format = st.selectbox(
-                "Output format", ["Ticket notes", "Table", "JSON", "Shareable Text"], index=0, key="output_format"
-            )
-
-            _opt = st.columns(2)
-            with _opt[0]:
-                alert_name = st.text_input(
-                    "Alert Name", placeholder="e.g. Suspicious Outbound", key="alert_name"
-                )
-                host_ip = st.text_input("Host IP", placeholder="192.168.x.x", key="host_ip")
-            with _opt[1]:
-                host = st.text_input("Host", placeholder="hostname", key="host")
-                time_detected = st.text_input(
-                    "Time Detected", placeholder="2025-01-01 08:00:00", key="time_detected"
-                )
-
-            _proc = st.columns([2, 1])
-            with _proc[0]:
-                device_action = st.selectbox(
-                    "Device Action",
-                    ["None", "Blocked", "Isolated", "Prevented", "Allowed", "Detected", "File Cleaned", "Others"],
-                    key="device_action",
-                )
-            with _proc[1]:
-                _asset_sel = st.selectbox("Asset Criticality", ["Non Critical Asset", "Critical Asset"], index=0, key="critical_asset_sel")
-                critical_asset = _asset_sel == "Critical Asset"
-            if device_action == "Others":
-                device_action_others = st.text_input(
-                    "Specify Action",
-                    placeholder="e.g. Terminated, Logged, Alerted...",
-                    key="device_action_others",
-                )
-
-            file_path = st.text_input(
-                "File Path", placeholder="e.g. C:\\Users\\user\\Downloads\\malware.exe", key="file_path"
-            )
-            parent_process = st.text_input(
-                "Parent Process", placeholder="e.g. explorer.exe", key="parent_process"
-            )
-            child_process = st.text_input(
-                "Child Process", placeholder="e.g. cmd.exe", key="child_process"
-            )
-
-            raw_log = st.text_area(
-                "Context (optional)",
-                placeholder="Paste raw log or describe context here for additional AI context...",
-                height=80,
-                key="raw_log",
-            )
-
-            _act = st.columns(2)
-            with _act[0]:
-                clear = st.button("🗑️ Clear", use_container_width=True, key="clear_landing")
-            with _act[1]:
-                load_sample = st.button(
-                    "📋 Load Sample IOCs", use_container_width=True, key="load_sample_landing"
-                )
+        _render_context_expander(key_suffix="input")
 
         st.markdown(
             '<p style="text-align:center;font-family:\'JetBrains Mono\',monospace;'
@@ -603,22 +733,28 @@ if not _has_results:
             unsafe_allow_html=True,
         )
 
-    with _right_col:
-        render_cve_panel()
+# ══════════════════════════════════════════════════════════════════════════════
+# Tab 3 — NVD (full-width CVE feed)
+# ══════════════════════════════════════════════════════════════════════════════
+elif active_tab == "NVD":
+    render_cve_panel()
 
-    split_right = _right_col
-    split_left = _center_col
-
-else:
-    # ── SPLIT LAYOUT: Input left + Results right ──────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# Tab 2 — RESULT (left = TA + Timing + AI Output + Context; right = Results)
+# ══════════════════════════════════════════════════════════════════════════════
+else:  # active_tab == "Result"
     components.html(
         """
         <script>
         (function() {
             function tagMainSplit() {
                 var blocks = window.parent.document.querySelectorAll('[data-testid="stHorizontalBlock"]');
-                if (blocks.length > 0) {
-                    blocks[0].classList.add('ioc-main-split');
+                // Skip the radio's internal block — find the next horizontal block
+                for (var i = 0; i < blocks.length; i++) {
+                    if (!blocks[i].closest('[data-testid="stRadio"]')) {
+                        blocks[i].classList.add('ioc-main-split');
+                        break;
+                    }
                 }
             }
             if (document.readyState === 'complete') { tagMainSplit(); }
@@ -632,124 +768,7 @@ else:
 
     split_left, split_right = st.columns([1, 1], gap="small")
 
-    with split_left:
-        st.subheader("Input")
-        raw = st.text_area(
-            "IOC",
-            placeholder="8.8.8.8\nexample.com\nhttps://evil.com/login\n<hash>",
-            height=160,
-            key="ioc_input",
-        )
-        raw_log = st.text_area(
-            "Context (optional)",
-            placeholder="Paste raw log or describe context here for additional AI description context",
-            height=120,
-            key="raw_log",
-        )
-        alert_name = st.text_input("Alert Name (optional)", key="alert_name")
-        host = st.text_input("Host (optional)", key="host")
-        host_ip = st.text_input("Host IP (optional)", key="host_ip")
-        time_detected = st.text_input("Time Detected (optional)", key="time_detected")
-
-        _sp_proc = st.columns(3)
-        with _sp_proc[0]:
-            device_action = st.selectbox(
-                "Device Action",
-                ["None", "Blocked", "Isolated", "Prevented", "Allowed", "Detected", "File Cleaned", "Others"],
-                key="device_action",
-            )
-        with _sp_proc[1]:
-            parent_process = st.text_input(
-                "Parent Process", placeholder="e.g. explorer.exe", key="parent_process"
-            )
-        with _sp_proc[2]:
-            child_process = st.text_input(
-                "Child Process", placeholder="e.g. cmd.exe", key="child_process"
-            )
-        if device_action == "Others":
-            device_action_others = st.text_input(
-                "Specify Action",
-                placeholder="e.g. Terminated, Logged, Alerted...",
-                key="device_action_others",
-            )
-
-        _current_mode_r = st.session_state.get("analysis_mode", "Triage")
-        _auto_on_r = st.session_state.get("auto_detect_and_provider", True)
-        _show_speed_r = _current_mode_r == "Triage" and _auto_on_r
-        if _show_speed_r:
-            col_chk = st.columns([0.6, 0.55, 1.0, 1.0, 1.0])
-        else:
-            col_chk = st.columns([0.6, 1.2, 1.0, 1.0])
-        _auto_label_r = (
-            "Auto detect Lookup & Provider"
-            if _current_mode_r == "Lookup"
-            else "Auto detect & Provider"
-        )
-        with col_chk[0]:
-            with st.popover(f"{_current_mode_r} ▾", use_container_width=True):
-                st.radio(
-                    "Mode",
-                    ["Triage", "Lookup"],
-                    index=0 if _current_mode_r == "Triage" else 1,
-                    key="analysis_mode",
-                    label_visibility="collapsed",
-                )
-        if _show_speed_r:
-            with col_chk[1]:
-                _current_speed_r = st.session_state.get("triage_speed", "Detailed")
-                with st.popover(f"{_current_speed_r} ▾", use_container_width=True):
-                    st.radio(
-                        "Triage speed",
-                        ["Fast", "Detailed"],
-                        index=0 if _current_speed_r == "Fast" else 1,
-                        key="triage_speed",
-                        label_visibility="collapsed",
-                    )
-            with col_chk[2]:
-                st.checkbox(_auto_label_r, value=True, key="auto_detect_and_provider")
-            _gen_col, _asset_col = col_chk[3], col_chk[4]
-        else:
-            with col_chk[1]:
-                st.checkbox(_auto_label_r, value=True, key="auto_detect_and_provider")
-            _gen_col, _asset_col = col_chk[2], col_chk[3]
-        with _gen_col:
-            auto_generate_on_run = st.checkbox(
-                "Auto Generate AI Output", value=False, key="auto_generate_on_run"
-            )
-        with _asset_col:
-            _asset_sel = st.selectbox("Asset Criticality", ["Non Critical Asset", "Critical Asset"], index=0, key="critical_asset_sel")
-            critical_asset = _asset_sel == "Critical Asset"
-
-        if auto_generate_on_run:
-            col_drop = st.columns([1, 1, 3])
-            with col_drop[0]:
-                st.selectbox("AI Provider", ["Gemini", "Groq"], index=0, key="auto_ai_provider")
-            with col_drop[1]:
-                output_format = st.selectbox(
-                    "Output format", ["Ticket notes", "Table", "JSON", "Shareable Text"], index=0, key="output_format"
-                )
-        else:
-            col_drop = st.columns([1, 4])
-            with col_drop[0]:
-                output_format = st.selectbox(
-                    "Output format", ["Ticket notes", "Table", "JSON", "Shareable Text"], index=0, key="output_format"
-                )
-
-        if not auto_detect_and_provider:
-            _render_providers_expander(
-                expanded=False,
-                mode=st.session_state.get("analysis_mode", "Triage"),
-            )
-
-        col_btn = st.columns([1.6, 0.8, 1.8, 2.8], gap="small")
-        with col_btn[0]:
-            run = st.button("Run Enrichment", type="primary", key="run_btn_split")
-        with col_btn[1]:
-            clear = st.button("Clear", key="clear_split")
-        with col_btn[2]:
-            load_sample = st.button("Load sample IOCs", key="load_sample_split")
-
-# ── IOC change detection ──────────────────────────────────────────────────────
+# ── IOC change detection (always run so verdicts stay aligned with input) ────
 _allowed_ioc_types: set[str] | None = None
 if not auto_detect:
     _allowed_ioc_types = set()
@@ -767,19 +786,17 @@ parsed_input_items = parse_iocs(raw, auto_detect=auto_detect, allowed_types=_all
 current_ioc_signature = tuple((ioc.value, ioc.type) for ioc in parsed_input_items)
 previous_ioc_signature = st.session_state.get("ioc_signature_last")
 ioc_changed = previous_ioc_signature is not None and previous_ioc_signature != current_ioc_signature
-if ioc_changed:
+# Only clear results when the user is in the Input tab — that's the only
+# place the IOC list can actually be edited. Restricting the clear here
+# prevents the Result tab's context edits (which trigger a rerun but never
+# touch ``ioc_input``) from spuriously wiping ``run_results``.
+if ioc_changed and active_tab == "Input":
     _clear_all_outputs()
 st.session_state["ioc_signature_last"] = current_ioc_signature
 
 # ── Action handlers ───────────────────────────────────────────────────────────
-if clear:
-    _clear_all_outputs()
-    st.session_state["reset_input"] = True
-    st.rerun()
-
-if load_sample:
-    st.session_state["load_sample"] = True
-    st.rerun()
+# Clear / Load Sample are handled inline inside _render_context_expander —
+# they call st.rerun() directly on click, no module-level handler needed here.
 
 auto_run_enrichment = bool(st.session_state.get("auto_run_enrichment"))
 if auto_run_enrichment:
@@ -887,116 +904,139 @@ def _manual_allowed_by_type(items: list[IOC]) -> dict[str, set[str]]:
     return out
 
 
-# ── Right panel / Results ─────────────────────────────────────────────────────
-with split_right:
-    if not _was_landing:
-        st.subheader("Results")
-    if run_requested and raw.strip():
-        items = parsed_input_items
-        if not items:
-            st.info("Tidak ada IOC valid setelah parsing.")
-        else:
-            if auto_choose_provider:
-                _current_mode = st.session_state.get("analysis_mode", "Triage")
-                _is_triage_fast = (
-                    _current_mode == "Triage"
-                    and st.session_state.get("triage_speed", "Detailed") == "Fast"
-                )
-                allowed_by_type = _auto_allowed_by_type(
-                    items, settings, mode=_current_mode, fast=_is_triage_fast,
-                )
-            else:
-                allowed_by_type = _manual_allowed_by_type(items)
-
-            def _payload(p: str) -> list[tuple[str, str]]:
-                return [
-                    (ioc.value, ioc.type)
-                    for ioc in items
-                    if p in allowed_by_type.get(ioc.type, set())
-                ]
-
-            provider_flags = {p: bool(_payload(p)) for p in _PROVIDER_KEYS}
-
-            _provider_timings: dict[str, dict] = {}
-
-            def _timed(key: str, enabled: bool, call_fn):
-                """Run a provider call, measure wall time, record n_iocs.
-
-                Args:
-                    key: Provider short key (matches _PROVIDER_KEYS).
-                    enabled: Whether this provider has any IOC to query.
-                    call_fn: Zero-arg callable returning the provider result dict.
-
-                Returns:
-                    The provider result dict, or {} when disabled.
-                """
-                payload = _payload(key) if enabled else []
-                if not enabled:
-                    _provider_timings[key] = {"time": 0.0, "n": 0}
-                    return {}
-                t0 = time.perf_counter()
-                result = call_fn()
-                _provider_timings[key] = {
-                    "time": time.perf_counter() - t0,
-                    "n": len(payload),
-                }
-                return result
-
-            vt_results              = _timed("vt",              provider_flags["vt"],              lambda: vt_cached(_payload("vt"), settings.vt_key))
-            urlscan_results         = _timed("urlscan",         provider_flags["urlscan"],         lambda: urlscan_cached(_payload("urlscan"), settings.urlscan_key, allow_urlscan_submit))
-            abuse_results           = _timed("abuse",           provider_flags["abuse"],           lambda: abuse_cached(_payload("abuse"), settings.abuse_key, CACHE_REV))
-            tf_results              = _timed("tf",              provider_flags["tf"],              lambda: tf_cached(_payload("tf"), settings.threatfox_key, CACHE_REV))
-            mb_results              = _timed("mb",              provider_flags["mb"],              lambda: mb_cached(_payload("mb"), settings.malwarebazaar_key, CACHE_REV))
-            shodan_results          = _timed("shodan",          provider_flags["shodan"],          lambda: shodan_cached(_payload("shodan"), settings.shodan_key, CACHE_REV))
-            dnsd_results            = _timed("dns",             provider_flags["dns"],             lambda: dnsd_cached(_payload("dns"), settings.dnsdumpster_key, CACHE_REV))
-            ha_results              = _timed("ha",              provider_flags["ha"],              lambda: ha_cached(_payload("ha"), settings.hybrid_analysis_key, CACHE_REV))
-            mxtoolbox_results       = _timed("mxtoolbox",       provider_flags["mxtoolbox"],       lambda: mxtoolbox_cached(_payload("mxtoolbox"), settings.mxtoolbox_key, CACHE_REV))
-            whoxy_results           = _timed("whoxy",           provider_flags["whoxy"],           lambda: whoxy_cached(_payload("whoxy"), settings.whoxy_key, CACHE_REV))
-            ransomware_live_results = _timed("ransomware_live", provider_flags["ransomware_live"], lambda: ransomware_live_cached(_payload("ransomware_live"), settings.ransomware_live_key, CACHE_REV))
-            summary, rows = summarize_results(
-                items,
-                vt_results,
-                urlscan_results,
-                abuse_results,
-                tf_results,
-                mb_results,
-                shodan_results=shodan_results,
-                hybrid_results=ha_results,
+# ── Enrichment execution (triggered from Input tab Run button) ───────────────
+if run_requested and raw.strip():
+    items = parsed_input_items
+    if not items:
+        st.info("Tidak ada IOC valid setelah parsing.")
+    else:
+        if auto_choose_provider:
+            _current_mode = st.session_state.get("analysis_mode", "Triage")
+            _is_triage_fast = (
+                _current_mode == "Triage"
+                and st.session_state.get("triage_speed", "Detailed") == "Fast"
             )
-            st.session_state["run_results"] = {
-                "items": items,
-                "summary": summary,
-                "rows": rows,
-                "vt": vt_results,
-                "urlscan": urlscan_results,
-                "abuse": abuse_results,
-                "tf": tf_results,
-                "mb": mb_results,
-                "shodan": shodan_results,
-                "dnsd": dnsd_results,
-                "ha": ha_results,
-                "mxtoolbox": mxtoolbox_results,
-                "whoxy": whoxy_results,
-                "ransomware_live": ransomware_live_results,
-                "provider_flags": provider_flags,
-                "allowed_by_type": {t: sorted(ps) for t, ps in allowed_by_type.items()},
-                "timings": {
-                    "providers": _provider_timings,
-                    "providers_total": sum(v["time"] for v in _provider_timings.values()),
-                },
+            allowed_by_type = _auto_allowed_by_type(
+                items, settings, mode=_current_mode, fast=_is_triage_fast,
+            )
+        else:
+            allowed_by_type = _manual_allowed_by_type(items)
+
+        def _payload(p: str) -> list[tuple[str, str]]:
+            return [
+                (ioc.value, ioc.type)
+                for ioc in items
+                if p in allowed_by_type.get(ioc.type, set())
+            ]
+
+        provider_flags = {p: bool(_payload(p)) for p in _PROVIDER_KEYS}
+
+        _provider_timings: dict[str, dict] = {}
+
+        def _timed(key: str, enabled: bool, call_fn):
+            """Run a provider call, measure wall time, record n_iocs.
+
+            Args:
+                key: Provider short key (matches _PROVIDER_KEYS).
+                enabled: Whether this provider has any IOC to query.
+                call_fn: Zero-arg callable returning the provider result dict.
+
+            Returns:
+                The provider result dict, or {} when disabled.
+            """
+            payload = _payload(key) if enabled else []
+            if not enabled:
+                _provider_timings[key] = {"time": 0.0, "n": 0}
+                return {}
+            t0 = time.perf_counter()
+            result = call_fn()
+            _provider_timings[key] = {
+                "time": time.perf_counter() - t0,
+                "n": len(payload),
             }
-            # New enrichment run invalidates any prior AI timing — it belongs to
-            # the previous result set. Auto-AI (if enabled) will repopulate it.
-            st.session_state.pop("ai_timing", None)
-            if _was_landing:
-                st.rerun()
+            return result
 
-    if st.session_state["run_results"]:
-        render_results_output(output_format, st.session_state["run_results"])
-        render_ioc_cards(st.session_state["run_results"])
-    elif run_requested and not _was_landing:
-        st.info("Please enter at least one IOC first.")
+        vt_results              = _timed("vt",              provider_flags["vt"],              lambda: vt_cached(_payload("vt"), settings.vt_key))
+        urlscan_results         = _timed("urlscan",         provider_flags["urlscan"],         lambda: urlscan_cached(_payload("urlscan"), settings.urlscan_key, allow_urlscan_submit))
+        abuse_results           = _timed("abuse",           provider_flags["abuse"],           lambda: abuse_cached(_payload("abuse"), settings.abuse_key, CACHE_REV))
+        tf_results              = _timed("tf",              provider_flags["tf"],              lambda: tf_cached(_payload("tf"), settings.threatfox_key, CACHE_REV))
+        mb_results              = _timed("mb",              provider_flags["mb"],              lambda: mb_cached(_payload("mb"), settings.malwarebazaar_key, CACHE_REV))
+        shodan_results          = _timed("shodan",          provider_flags["shodan"],          lambda: shodan_cached(_payload("shodan"), settings.shodan_key, CACHE_REV))
+        dnsd_results            = _timed("dns",             provider_flags["dns"],             lambda: dnsd_cached(_payload("dns"), settings.dnsdumpster_key, CACHE_REV))
+        ha_results              = _timed("ha",              provider_flags["ha"],              lambda: ha_cached(_payload("ha"), settings.hybrid_analysis_key, CACHE_REV))
+        mxtoolbox_results       = _timed("mxtoolbox",       provider_flags["mxtoolbox"],       lambda: mxtoolbox_cached(_payload("mxtoolbox"), settings.mxtoolbox_key, CACHE_REV))
+        whoxy_results           = _timed("whoxy",           provider_flags["whoxy"],           lambda: whoxy_cached(_payload("whoxy"), settings.whoxy_key, CACHE_REV))
+        ransomware_live_results = _timed("ransomware_live", provider_flags["ransomware_live"], lambda: ransomware_live_cached(_payload("ransomware_live"), settings.ransomware_live_key, CACHE_REV))
+        summary, rows = summarize_results(
+            items,
+            vt_results,
+            urlscan_results,
+            abuse_results,
+            tf_results,
+            mb_results,
+            shodan_results=shodan_results,
+            hybrid_results=ha_results,
+        )
+        st.session_state["run_results"] = {
+            "items": items,
+            "summary": summary,
+            "rows": rows,
+            "vt": vt_results,
+            "urlscan": urlscan_results,
+            "abuse": abuse_results,
+            "tf": tf_results,
+            "mb": mb_results,
+            "shodan": shodan_results,
+            "dnsd": dnsd_results,
+            "ha": ha_results,
+            "mxtoolbox": mxtoolbox_results,
+            "whoxy": whoxy_results,
+            "ransomware_live": ransomware_live_results,
+            "provider_flags": provider_flags,
+            "allowed_by_type": {t: sorted(ps) for t, ps in allowed_by_type.items()},
+            "timings": {
+                "providers": _provider_timings,
+                "providers_total": sum(v["time"] for v in _provider_timings.values()),
+            },
+        }
+        # New enrichment run invalidates any prior AI timing — it belongs to
+        # the previous result set. Auto-AI (if enabled) will repopulate it.
+        st.session_state.pop("ai_timing", None)
+        # Snapshot the Input-tab context fields into ``result_*`` keys so the
+        # Result tab's AI context expander has an isolated editable copy.
+        _snapshot_input_context_to_result()
+        # Auto-switch to Result tab so the user sees the new output immediately.
+        # Use a pending flag because writing session_state["active_tab"]
+        # directly after the segmented_control widget was instantiated above
+        # raises StreamlitAPIException. The flag is consumed at the top of the
+        # next script run, before the widget renders.
+        st.session_state["_pending_tab_switch"] = "Result"
+        st.rerun()
 
-with split_left:
-    if st.session_state.get("run_results"):
-        render_ai_panel(st.session_state["run_results"], settings)
+# ── Tab 2 (Result) rendering — runs after enrichment block above ─────────────
+if active_tab == "Result":
+    _has_run_results = bool(st.session_state.get("run_results"))
+
+    with split_left:
+        st.subheader("Threat Analysis & AI Output")
+        if _has_run_results:
+            # render_ai_panel renders: Threat Analysis → Timing → AI Description
+            render_ai_panel(st.session_state["run_results"], settings)
+            # "AI context" expander — owns its own ``result_*`` state namespace.
+            # Edits here do NOT propagate back to the Input tab. On the next Run
+            # the values are overwritten by snapshotting Input → result_*.
+            _render_context_expander(
+                key_suffix="result",
+                include_ai_settings=True,
+                key_prefix="result_",
+            )
+        else:
+            st.info("Belum ada hasil — kembali ke tab **Input** dan klik ▶ Run.")
+
+    with split_right:
+        st.subheader("Results")
+        if _has_run_results:
+            render_results_output(output_format, st.session_state["run_results"])
+            render_ioc_cards(st.session_state["run_results"])
+        else:
+            st.info("Tabel verdict dan kartu per-IOC akan muncul di sini.")

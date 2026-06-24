@@ -1,8 +1,42 @@
 """CSS and HTML string constants for IOC Router UI."""
 from __future__ import annotations
 
-# ── Global styles: header, split layout, drawer ──────────────────────────────
-GLOBAL_CSS_AND_HEADER = """
+_TAB_NAMES: tuple[str, ...] = ("Input", "Result", "NVD")
+
+
+def build_global_css_and_header(active_tab: str = "Input") -> str:
+    """Return the global stylesheet + fixed header HTML with the tab bar
+    highlighted for ``active_tab``.
+
+    The tab bar lives inside the fixed header (replacing the in-body
+    segmented_control). HTML tab buttons forward clicks via JS to hidden
+    Streamlit buttons rendered by :func:`ui.components.tab_switcher.render_tab_switch_buttons`.
+
+    Args:
+        active_tab: One of ``"Input"``, ``"Result"``, ``"NVD"``. Determines
+            which header tab gets the ``--active`` modifier class.
+
+    Returns:
+        The full ``<style>…</style><div class="fixed-app-header">…</div>``
+        markup ready for ``st.markdown(..., unsafe_allow_html=True)``.
+    """
+    def _tab(name: str) -> str:
+        cls = "header-tab-btn"
+        if active_tab == name:
+            cls += " header-tab-btn--active"
+        return f'<button class="{cls}" id="tab-btn-{name}">{name}</button>'
+
+    tabs_html = (
+        '<div class="header-tabs">'
+        + "".join(_tab(t) for t in _TAB_NAMES)
+        + "</div>"
+    )
+    return _GLOBAL_TEMPLATE.replace("{{TABS}}", tabs_html)
+
+
+# Backward-compat constant (used by tests / direct imports).
+# Defaults to Input as the active tab.
+_GLOBAL_TEMPLATE = """
     <style>
     .fixed-app-header {
         position: fixed;
@@ -210,6 +244,100 @@ GLOBAL_CSS_AND_HEADER = """
         border-color: rgba(255,255,255,0.3);
     }
 
+    /* Notes (ⓘ) button in header — sits to the LEFT of Report Bug */
+    .note-btn {
+        position: absolute;
+        right: calc(3rem + 130px);
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 1rem;
+        font-weight: 500;
+        font-family: inherit;
+        line-height: 1;
+        cursor: pointer;
+        color: rgba(245,247,251,0.82);
+        user-select: none;
+        z-index: 10001;
+        padding: 6px 12px;
+        border-radius: 6px;
+        background: rgba(255,255,255,0.07);
+        border: 1px solid rgba(255,255,255,0.18);
+        transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+    .note-btn:hover {
+        background: rgba(255,255,255,0.14);
+        color: #fff;
+        border-color: rgba(255,255,255,0.3);
+    }
+    @media (max-width: 768px) {
+        .note-btn {
+            right: calc(0.75rem + 70px);
+            padding: 5px 9px;
+            font-size: 0.95rem;
+        }
+    }
+
+    /* ── Header tab bar (segmented; replaces in-body segmented_control) ── */
+    .header-tabs {
+        position: absolute;
+        left: 13rem;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        gap: 0;
+        z-index: 10001;
+        border: 1px solid rgba(255,255,255,0.18);
+        border-radius: 8px;
+        background: rgba(255,255,255,0.04);
+        overflow: hidden;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    }
+    .header-tab-btn {
+        background: transparent;
+        border: none;
+        border-right: 1px solid rgba(255,255,255,0.08);
+        color: rgba(245,247,251,0.72);
+        font-family: 'Syne', 'Source Sans 3', sans-serif;
+        font-weight: 700;
+        font-size: 0.82rem;
+        line-height: 1;
+        padding: 8px 18px;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+        letter-spacing: 0.02em;
+    }
+    .header-tab-btn:last-child { border-right: none; }
+    .header-tab-btn:hover {
+        background: rgba(255,255,255,0.08);
+        color: #fff;
+    }
+    .header-tab-btn--active {
+        background: #e03b3b;
+        color: #fff;
+        box-shadow: inset 0 -2px 0 rgba(0,0,0,0.25);
+    }
+    .header-tab-btn--active:hover {
+        background: #ff4d4d;
+    }
+    @media (max-width: 900px) {
+        .header-tabs {
+            left: 4rem;
+        }
+        .header-tab-btn {
+            padding: 6px 12px;
+            font-size: 0.76rem;
+        }
+    }
+    @media (max-width: 600px) {
+        .header-tabs {
+            position: static;
+            transform: none;
+            margin: 6px auto 0;
+            display: flex;
+            width: max-content;
+        }
+    }
+
     /* Burger button in header */
     .drawer-burger {
         position: absolute;
@@ -318,6 +446,13 @@ GLOBAL_CSS_AND_HEADER = """
         color: #e6edf3 !important;
     }
 
+    /* ── Hide tab-switch trigger buttons (clicks come from header HTML tabs) ── */
+    .st-key-tab_switch_btn_Input,
+    .st-key-tab_switch_btn_Result,
+    .st-key-tab_switch_btn_NVD {
+        display: none !important;
+    }
+
     /* Triage speed segmented control — render options vertically */
     .st-key-triage_speed_wrap_chat [data-testid="stSegmentedControl"] > div,
     .st-key-triage_speed_wrap_split [data-testid="stSegmentedControl"] > div {
@@ -335,8 +470,10 @@ GLOBAL_CSS_AND_HEADER = """
     </style>
     <div class="fixed-app-header" style="cursor:default;">
         <span class="drawer-burger" id="drawer-burger-btn">☰</span>
+        {{TABS}}
         <h1 class="fixed-app-header__title" onclick="window.location.reload();" style="cursor:pointer;" title="Back to home">🛡️ IOC Router 🛡️</h1>
         <p class="fixed-app-header__subtitle">IOC enrichment by minzelo</p>
+        <button class="note-btn" id="note-header-btn" title="Notes">ⓘ</button>
         <button class="report-bug-btn" id="report-bug-header-btn"><span class="report-bug-text">Report Bug </span>🐞</button>
     </div>
     <div id="drawer-backdrop"></div>

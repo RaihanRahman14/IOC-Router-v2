@@ -1,6 +1,7 @@
 """Recent CVE panel using NVD API v2 with lazy loading (10 per page)."""
 from __future__ import annotations
 
+import html
 import logging
 import re
 import time
@@ -491,7 +492,7 @@ def _parse_nvd_item(
 
     Description resolution order:
       1. CISA KEV `shortDescription` (already SOC-friendly and concise)
-      2. NVD English description (truncated to 120 chars)
+      2. NVD English description (full text — visual clamp via CSS in card)
 
     Args:
         item: A single entry from NVD vulnerabilities list.
@@ -527,13 +528,12 @@ def _parse_nvd_item(
 
     kev_entry = kev_data.get(cve_id, {})
 
-    # Description: KEV shortDescription preferred when available, else NVD truncated
+    # Description: KEV shortDescription preferred when available, else full NVD.
+    # No char truncation — the card uses CSS -webkit-line-clamp for visual
+    # overflow, so the ellipsis only appears when the text actually exceeds
+    # the visible line count rather than at an arbitrary mid-sentence cutoff.
     kev_short = (kev_entry.get("shortDescription") or "").strip()
-    if kev_short:
-        desc_full = kev_short
-    else:
-        desc_full = nvd_desc_full
-    desc = desc_full[:117] + "..." if len(desc_full) > 120 else desc_full
+    desc = kev_short if kev_short else nvd_desc_full
 
     pub_raw = cve.get("published", "")
     try:
@@ -558,7 +558,7 @@ def _parse_nvd_item(
         "product": product,
         "versionRange": version_range,
         "description": desc,
-        "descriptionFull": desc_full,
+        "descriptionFull": desc,
         "datePublished": date_published,
         "timePublished": time_published,
         "publishedRaw": pub_raw,
@@ -887,24 +887,26 @@ def _card_html(v: dict, common_app: bool = False) -> str:
         tooltip = " · ".join(tooltip_bits).replace('"', "&quot;")
         # 2-line clamp keeps the card height tidy and consistent across cards.
         attack_line = (
-            f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.62rem;'
-            f'color:#a78bfa;margin-top:8px;line-height:1.4;letter-spacing:0.02em;'
+            f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.8rem;'
+            f'color:#a78bfa;margin-top:10px;line-height:1.45;letter-spacing:0.02em;'
             f'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;'
             f'overflow:hidden;" title="{tooltip}">'
             f'<span style="color:#6b7280;">Attack:</span> {attack_text}'
             f'</div>'
         )
 
-    # Required action line — from CISA KEV when available
+    # Required action line — from CISA KEV when available.
+    # Same whitespace-collapse treatment as description (see comment below).
     required_action = v.get("requiredAction", "")
     action_line = ""
     if required_action:
+        _clean_action = re.sub(r"\s+", " ", required_action).strip()
         action_line = (
-            f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.62rem;'
-            f'color:#fbbf24;margin-top:8px;line-height:1.45;'
+            f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.8rem;'
+            f'color:#fbbf24;margin-top:10px;line-height:1.5;'
             f'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;'
-            f'overflow:hidden;" title="{required_action.replace(chr(34), "&quot;")}">'
-            f'<span style="color:#6b7280;">Required action:</span> {required_action}'
+            f'overflow:hidden;" title="{html.escape(_clean_action, quote=True)}">'
+            f'<span style="color:#6b7280;">Required action:</span> {html.escape(_clean_action)}'
             f'</div>'
         )
 
@@ -915,33 +917,50 @@ def _card_html(v: dict, common_app: bool = False) -> str:
         border = "rgba(255,255,255,0.08)"
         bg = "rgba(255,255,255,0.02)"
 
+    # Normalize whitespace in description to a single line before escaping:
+    #   • Raw \n inside the title="…" attribute breaks Streamlit's markdown
+    #     pass-through (\n\n splits the HTML into separate paragraph blocks,
+    #     leaking the rest of the card markup as literal text).
+    #   • Leading 4-space indentation in CVE descriptions (common in Linux
+    #     kernel patch text) triggers markdown's indented-code-block rule,
+    #     producing a giant scrollable <pre> box inside the card.
+    # Collapsing whitespace solves both — text still wraps naturally via the
+    # CSS word-break/line-clamp on the container.
+    _clean_desc = re.sub(r"\s+", " ", v["description"]).strip()
+    desc_safe = html.escape(_clean_desc)
+    desc_tooltip = html.escape(_clean_desc, quote=True)
+
     return (
         f'<div style="border:1px solid {border};border-radius:8px;'
-        f'padding:14px 14px 12px 14px;margin-bottom:10px;background:{bg};">'
+        f'padding:16px 16px 14px 16px;margin-bottom:12px;background:{bg};">'
         # Header row
         f'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
         f'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
         f'<a href="https://www.cve.org/CVERecord?id={cve_id}" target="_blank" '
-        f'style="font-family:\'JetBrains Mono\',monospace;font-size:0.72rem;'
+        f'style="font-family:\'JetBrains Mono\',monospace;font-size:0.95rem;'
         f'color:#60a5fa;font-weight:600;text-decoration:none;" '
         f'onmouseover="this.style.textDecoration=\'underline\'" '
         f'onmouseout="this.style.textDecoration=\'none\'">{cve_id}</a>'
         f'{kev_tag}{ransomware_tag}'
         f'</div>'
-        f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.63rem;'
+        f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.8rem;'
         f'color:#6b7280;white-space:nowrap;" title="Waktu ditambahkan ke NVD (WIB)">{date_label}</span>'
         f'</div>'
         # Attack pattern (above description)
         f'{attack_line}'
-        # Description — truncated by parser to keep card height consistent.
-        f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.72rem;'
-        f'color:#e2e6f0;margin-top:8px;line-height:1.5;">{v["description"]}</div>'
+        # Description — full text, visually clamped to 6 lines with CSS overflow.
+        # Hover tooltip shows the complete text.
+        f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.88rem;'
+        f'color:#e2e6f0;margin-top:10px;line-height:1.55;'
+        f'display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;'
+        f'overflow:hidden;white-space:normal;word-break:break-word;" '
+        f'title="{desc_tooltip}">{desc_safe}</div>'
         # Required action (below description)
         f'{action_line}'
         # Footer row — vendor/product/version + severity badge
         f'<div style="display:flex;justify-content:space-between;align-items:center;'
-        f'margin-top:10px;gap:6px;">'
-        f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.63rem;'
+        f'margin-top:12px;gap:6px;">'
+        f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.82rem;'
         f'color:#9ca3af;">{vendor_product_html}</span>'
         f'{badge}'
         f'</div>'

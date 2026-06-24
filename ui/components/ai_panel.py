@@ -21,12 +21,17 @@ from core.geo import fetch_geo_ip_api, fetch_nominatim
 
 
 def _get_effective_device_action() -> str:
-    """Return the effective device action value, resolving 'Others' to the custom text input."""
-    action = (st.session_state.get("device_action") or "").strip()
+    """Return the effective device action value, resolving 'Others' to the custom text input.
+
+    Reads from the Result-tab snapshot (``result_*``) since this panel only
+    renders inside the Result tab (after :func:`app._snapshot_input_context_to_result`
+    has populated those keys).
+    """
+    action = (st.session_state.get("result_device_action") or "").strip()
     if action in ("", "None"):
         return ""
     if action == "Others":
-        return (st.session_state.get("device_action_others") or "").strip()
+        return (st.session_state.get("result_device_action_others") or "").strip()
     return action
 
 
@@ -56,27 +61,21 @@ def render_ai_panel(run_results: dict, settings) -> None:
     mxtoolbox_results = run_results.get("mxtoolbox", {})
     ransomware_live_results = run_results.get("ransomware_live", {})
 
-    st.subheader("AI-Output")
-    if not settings.gemini_key:
-        st.info("Gemini API key not set. Set the env var: GEMINI_KEY")
-    ai_provider = st.selectbox("AI Provider", ["Gemini", "Groq"], key="ai_provider")
-    tone = st.selectbox("Tone", ["High level language", "SOC L1 concise", "More formal"])
-    use_only_evidence = st.checkbox("Use only evidence shown (no guessing)", value=True)
-    sanitize = st.checkbox("Sanitize sensitive data", value=True)
-    if ai_provider == "Gemini":
-        if st.button("Fetch Gemini Models"):
-            models, err = gemini_list_models(settings)
-            st.session_state["gemini_models"] = models
-            st.session_state["gemini_models_err"] = err
-        if st.session_state.get("gemini_models_err"):
-            st.error(st.session_state["gemini_models_err"])
-        models = st.session_state.get("gemini_models", [])
-        if models:
-            default_model = settings.gemini_model or "gemini-2.5-flash"
-            default_index = models.index(default_model) if default_model in models else 0
-            st.selectbox("Gemini Model (from list)", models, index=default_index, key="gemini_model_select")
-            settings.gemini_model = st.session_state.get("gemini_model_select") or settings.gemini_model
-        settings.gemini_api_version = "v1"
+    # AI provider/tone/model selectors are rendered later, inline with the
+    # AI Output text area — but we read defaults here so prompt builders below
+    # work even before the user opens the inline settings expander.
+    if "ai_provider" not in st.session_state:
+        st.session_state["ai_provider"] = "Gemini"
+    if "ai_tone" not in st.session_state:
+        st.session_state["ai_tone"] = "High level language"
+    if "ai_use_only_evidence" not in st.session_state:
+        st.session_state["ai_use_only_evidence"] = True
+    if "ai_sanitize" not in st.session_state:
+        st.session_state["ai_sanitize"] = True
+    ai_provider = st.session_state.get("ai_provider", "Gemini")
+    tone = st.session_state.get("ai_tone", "High level language")
+    use_only_evidence = st.session_state.get("ai_use_only_evidence", True)
+    sanitize = st.session_state.get("ai_sanitize", True)
     selections = [ioc.value for ioc in items]
     selected = selections
 
@@ -237,9 +236,9 @@ def render_ai_panel(run_results: dict, settings) -> None:
             lines.append("Sanitize sensitive data where possible.")
         # Shared process/action context — always included when values are present
         _ctx_device_action = _get_effective_device_action()
-        _ctx_parent = st.session_state.get("parent_process") or ""
-        _ctx_child = st.session_state.get("child_process") or ""
-        _ctx_file_path = st.session_state.get("file_path") or ""
+        _ctx_parent = st.session_state.get("result_parent_process") or ""
+        _ctx_child = st.session_state.get("result_child_process") or ""
+        _ctx_file_path = st.session_state.get("result_file_path") or ""
         _has_process_ctx = bool(_ctx_device_action or _ctx_parent or _ctx_child or _ctx_file_path)
         if _has_process_ctx:
             lines.append("Additional endpoint context (use if present, do not invent):")
@@ -253,17 +252,17 @@ def render_ai_panel(run_results: dict, settings) -> None:
                 lines.append(f"  Child Process: {_ctx_child} — the process spawned as a result of the activity.")
 
         if section == "DESCRIPTION":
-            host_ip_value = st.session_state.get("host_ip") or st.session_state.get("source_ip") or "N/A"
-            raw_log_value = (st.session_state.get("raw_log") or "").strip()
+            host_ip_value = st.session_state.get("result_host_ip") or st.session_state.get("source_ip") or "N/A"
+            raw_log_value = (st.session_state.get("result_raw_log") or "").strip()
             lines.append("Use the available context fields below as part of the description narrative.")
             lines.append("Map them as follows: what/how=Alert Name, who=Host and Host IP (internal IP), when=Time Detected, where=Artifacts/IOCs.")
             lines.append("Treat Host IP as the affected internal IP. If an IOC is an IP, treat it as an external IP that may represent either the source or destination of the connection.")
             lines.append("Use Raw Log only as supporting context for the description. Do not invent fields that are not explicitly present.")
             lines.append("If a context field is present, incorporate it naturally into the paragraph.")
-            lines.append(f"Context what/how: {st.session_state.get('alert_name') or 'N/A'}")
-            lines.append(f"Context who host: {st.session_state.get('host') or 'N/A'}")
+            lines.append(f"Context what/how: {st.session_state.get('result_alert_name') or 'N/A'}")
+            lines.append(f"Context who host: {st.session_state.get('result_host') or 'N/A'}")
             lines.append(f"Context who host_ip (internal): {host_ip_value}")
-            lines.append(f"Context when: {st.session_state.get('time_detected') or 'N/A'}")
+            lines.append(f"Context when: {st.session_state.get('result_time_detected') or 'N/A'}")
             where_values = [f"{ioc.value} ({ioc.type})" for ioc in items if ioc.value in selected_values]
             lines.append(f"Context where artifacts: {', '.join(where_values) if where_values else 'N/A'}")
             lines.append(f"Context raw_log: {raw_log_value if raw_log_value else 'N/A'}")
@@ -428,7 +427,7 @@ def render_ai_panel(run_results: dict, settings) -> None:
             "evidence": evidence,
             "mitre_tactics": sorted(tactics),
             "risk_notes": notes[:8],
-            "asset_criticality": "critical" if st.session_state.get("critical_asset_sel") == "Critical Asset" else "standard",
+            "asset_criticality": "critical" if st.session_state.get("result_critical_asset_sel") == "Critical Asset" else "standard",
             "device_action": _get_effective_device_action(),
         }
 
@@ -571,40 +570,48 @@ def render_ai_panel(run_results: dict, settings) -> None:
         _clear_ai_outputs()
     st.session_state["ai_signature_last"] = current_ai_signature
 
-    if st.button("Generate AI Output", type="primary") or st.session_state.get("auto_generate_ai"):
+    def _run_ai_description_generation() -> None:
+        """Execute the AI Description call — called when the inline Generate button is clicked."""
         if not selected:
             st.warning("Select at least 1 IOC.")
-        elif ai_provider == "Gemini" and not settings.gemini_key:
-            st.warning("GEMINI_KEY belum di-set.")
-        elif ai_provider == "Groq" and not settings.groq_key:
-            st.warning("GROQ_KEY belum di-set.")
+            return
+        if ai_provider == "Gemini" and not settings.gemini_key:
+            st.warning("GEMINI_KEY is not set.")
+            return
+        if ai_provider == "Groq" and not settings.groq_key:
+            st.warning("GROQ_KEY is not set.")
+            return
+        st.session_state["auto_generate_ai"] = False
+        desc_prompt = _build_prompt(selected, "DESCRIPTION")
+        if use_only_evidence:
+            desc_prompt = "STRICT: Do not invent data. " + desc_prompt
+        _t_ai = time.perf_counter()
+        if ai_provider == "Gemini":
+            desc_out, desc_err = gemini_generate(desc_prompt, settings, use_backup=False)
         else:
-            st.session_state["auto_generate_ai"] = False
-            desc_prompt = _build_prompt(selected, "DESCRIPTION")
-            if use_only_evidence:
-                desc_prompt = "STRICT: Do not invent data. " + desc_prompt
-            _t_ai = time.perf_counter()
-            if ai_provider == "Gemini":
-                desc_out, desc_err = gemini_generate(desc_prompt, settings, use_backup=False)
+            desc_out, desc_err = groq_generate(desc_prompt, settings)
+        st.session_state["ai_timing"] = {
+            "provider": ai_provider,
+            "time": time.perf_counter() - _t_ai,
+        }
+        if not desc_out:
+            if desc_err:
+                st.error(f"AI Description failed — {desc_err}")
             else:
-                desc_out, desc_err = groq_generate(desc_prompt, settings)
-            st.session_state["ai_timing"] = {
-                "provider": ai_provider,
-                "time": time.perf_counter() - _t_ai,
-            }
-            if not desc_out:
-                if desc_err:
-                    st.error(f"AI Description gagal dibuat — {desc_err}")
-                else:
-                    st.error("AI Description gagal dibuat.")
-            if desc_out:
-                desc_clean = desc_out.strip()
-                if desc_clean.upper().startswith("DESCRIPTION:"):
-                    desc_clean = desc_clean.split(":", 1)[1].strip()
-                desc_clean = re.sub(r"\s+", " ", desc_clean).strip()
-                desc_clean = _obfuscate_domains_and_urls(desc_clean)
-                st.session_state["ai_desc"] = f"#Description: {desc_clean}" if desc_clean else "#Description:"
-                st.session_state["ai_ioc_links"] = _build_ioc_links(selected)
+                st.error("AI Description failed.")
+        if desc_out:
+            desc_clean = desc_out.strip()
+            if desc_clean.upper().startswith("DESCRIPTION:"):
+                desc_clean = desc_clean.split(":", 1)[1].strip()
+            desc_clean = re.sub(r"\s+", " ", desc_clean).strip()
+            desc_clean = _obfuscate_domains_and_urls(desc_clean)
+            st.session_state["ai_desc"] = f"#Description: {desc_clean}" if desc_clean else "#Description:"
+            st.session_state["ai_ioc_links"] = _build_ioc_links(selected)
+
+    # Auto-generate trigger fires once when enrichment Run completes with the
+    # "Auto AI Description" checkbox enabled. Cleared inside the helper.
+    if st.session_state.get("auto_generate_ai"):
+        _run_ai_description_generation()
 
     def _build_share_text(selected_values: list[str]) -> str:
         lines: list[str] = []
@@ -1347,13 +1354,27 @@ def render_ai_panel(run_results: dict, settings) -> None:
                     "has actually been generated."
                 )
 
-        # ── Description below (full width, with copy) ───────────────────
+        # ── AI Description block: [textarea | Generate button] ──
+        # The AI Output heading and AI settings expander were merged into the
+        # "AI context" expander rendered below by _render_context_expander —
+        # this block only owns the description text area + Generate trigger now.
         shown_desc = desc_text if desc_text else ""
         if st.session_state.get("ai_description") != shown_desc:
             st.session_state["ai_description"] = shown_desc
-        st.markdown("**IOC Description**")
         st.caption(f"~{len(shown_desc.split())} words" if shown_desc else "No description generated yet")
-        st.text_area("", height=180, key="ai_description", label_visibility="collapsed")
+
+        _desc_col, _btn_col = st.columns([5, 1.2])
+        with _desc_col:
+            st.text_area(
+                "AI Description",
+                height=180,
+                key="ai_description",
+                label_visibility="collapsed",
+            )
+        with _btn_col:
+            if st.button("Generate ▶", type="primary", key="generate_ai_desc_btn", use_container_width=True):
+                _run_ai_description_generation()
+                st.rerun()
         if shown_desc:
             _desc_b64 = base64.b64encode(shown_desc.encode("utf-8")).decode("ascii")
             _desc_html = f"""

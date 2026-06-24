@@ -26,46 +26,46 @@ logger = logging.getLogger(__name__)
 
 _HTTP_ERROR_MESSAGES: dict[int, str] = {
     400: (
-        "Permintaan tidak valid ke Gemini (Bad Request). "
-        "Periksa isi prompt atau parameter generationConfig."
+        "Invalid request to Gemini (Bad Request). "
+        "Check the prompt content or generationConfig parameters."
     ),
-    401: "API key Gemini tidak terautentikasi (401). Pastikan GEMINI_KEY masih valid.",
+    401: "Gemini API key not authenticated (401). Make sure GEMINI_KEY is still valid.",
     403: (
-        "Akses Gemini ditolak (403 Forbidden). "
-        "Kemungkinan: API key salah/dicabut, Generative Language API belum diaktifkan "
-        "di Google Cloud project, key dibatasi (referer/IP), atau region tidak didukung."
+        "Gemini access denied (403 Forbidden). "
+        "Possible causes: API key invalid/revoked, Generative Language API not enabled "
+        "in the Google Cloud project, key restricted (referer/IP), or region not supported."
     ),
     404: (
-        "Model Gemini tidak ditemukan (404). "
-        "Periksa nilai GEMINI_MODEL dan GEMINI_API_VERSION di .env."
+        "Gemini model not found (404). "
+        "Check the GEMINI_MODEL and GEMINI_API_VERSION values in .env."
     ),
-    408: "Gemini timeout di sisi server (408). Coba ulangi.",
-    413: "Payload terlalu besar untuk Gemini (413). Kurangi panjang prompt atau konteks.",
+    408: "Server-side timeout from Gemini (408). Please retry.",
+    413: "Payload too large for Gemini (413). Shorten the prompt or context.",
     429: (
-        "Quota / rate limit Gemini terlampaui (429). "
-        "Tunggu beberapa saat, kurangi frekuensi request, atau gunakan backup key."
+        "Gemini quota / rate limit exceeded (429). "
+        "Wait a moment, reduce request frequency, or use a backup key."
     ),
-    500: "Gemini mengalami error internal (500). Coba lagi beberapa saat.",
-    502: "Bad Gateway dari Gemini (502). Coba ulangi.",
-    503: "Layanan Gemini sedang sibuk / unavailable (503). Coba lagi nanti.",
-    504: "Gateway timeout dari Gemini (504). Coba lagi nanti.",
+    500: "Gemini hit an internal error (500). Try again shortly.",
+    502: "Bad Gateway from Gemini (502). Please retry.",
+    503: "Gemini service is busy / unavailable (503). Please try again later.",
+    504: "Gateway timeout from Gemini (504). Please try again later.",
 }
 
 _FINISH_REASON_MESSAGES: dict[str, str] = {
-    "SAFETY": "Output diblokir oleh safety filter Gemini.",
+    "SAFETY": "Output blocked by Gemini's safety filter.",
     "RECITATION": (
-        "Output diblokir karena dianggap recitation "
-        "(kemiripan dengan konten berhak cipta)."
+        "Output blocked as recitation "
+        "(too similar to copyrighted content)."
     ),
     "MAX_TOKENS": (
-        "Output dipotong karena melebihi maxOutputTokens. "
-        "Kurangi panjang prompt atau naikkan limit token."
+        "Output truncated — exceeded maxOutputTokens. "
+        "Shorten the prompt or raise the token limit."
     ),
-    "OTHER": "Gemini menghentikan generasi dengan alasan tidak spesifik (OTHER).",
-    "BLOCKLIST": "Output diblokir karena cocok dengan daftar terlarang Gemini.",
-    "PROHIBITED_CONTENT": "Output diblokir karena dianggap konten terlarang oleh Gemini.",
-    "SPII": "Output diblokir karena terdeteksi data sensitif/PII oleh Gemini.",
-    "LANGUAGE": "Output dihentikan karena bahasa tidak didukung oleh model.",
+    "OTHER": "Gemini stopped generation for an unspecified reason (OTHER).",
+    "BLOCKLIST": "Output blocked — matched Gemini's blocklist.",
+    "PROHIBITED_CONTENT": "Output blocked — flagged as prohibited content by Gemini.",
+    "SPII": "Output blocked — sensitive/PII data detected by Gemini.",
+    "LANGUAGE": "Output stopped — language not supported by the model.",
 }
 
 _RETRYABLE_WITH_BACKUP: frozenset[int] = frozenset({401, 403, 429})
@@ -111,7 +111,7 @@ def _format_http_error(status_code: int, body: str) -> str:
         Single-line message safe to display in UI; never raw JSON.
     """
     base = _HTTP_ERROR_MESSAGES.get(
-        status_code, f"Gemini mengembalikan HTTP {status_code} yang tidak dikenali."
+        status_code, f"Gemini returned an unrecognised HTTP {status_code}."
     )
     api_status, api_message = _extract_api_error(body)
     detail_parts: list[str] = []
@@ -142,20 +142,20 @@ def _parse_generate_response(data: dict[str, Any]) -> tuple[str, str]:
         explains why nothing was produced.
     """
     if not isinstance(data, dict):
-        return "", "Gemini mengembalikan struktur response yang tidak dikenali."
+        return "", "Gemini returned an unrecognised response structure."
 
     prompt_feedback = data.get("promptFeedback")
     if isinstance(prompt_feedback, dict):
         block_reason = prompt_feedback.get("blockReason")
         if block_reason:
             return "", (
-                f"Prompt diblokir oleh safety filter Gemini "
-                f"(alasan: {block_reason}). Coba ubah konten prompt."
+                f"Prompt blocked by Gemini's safety filter "
+                f"(reason: {block_reason}). Try modifying the prompt content."
             )
 
     candidates = data.get("candidates")
     if not candidates or not isinstance(candidates, list):
-        return "", "Gemini tidak mengembalikan kandidat jawaban (response kosong)."
+        return "", "Gemini returned no candidate responses (empty response)."
 
     first = candidates[0] if isinstance(candidates[0], dict) else {}
     finish_reason = str(first.get("finishReason") or "").strip()
@@ -174,8 +174,8 @@ def _parse_generate_response(data: dict[str, Any]) -> tuple[str, str]:
     if finish_reason in _FINISH_REASON_MESSAGES:
         return "", _FINISH_REASON_MESSAGES[finish_reason]
     if finish_reason:
-        return "", f"Gemini tidak menghasilkan teks (finishReason: {finish_reason})."
-    return "", "Gemini tidak menghasilkan teks dan tidak memberi alasan."
+        return "", f"Gemini produced no text (finishReason: {finish_reason})."
+    return "", "Gemini produced no text and gave no reason."
 
 
 def gemini_list_models(settings: Settings) -> tuple[list[str], str]:
@@ -187,11 +187,11 @@ def gemini_list_models(settings: Settings) -> tuple[list[str], str]:
 
     Returns:
         Tuple ``(model_names, error_message)``. On success ``error_message``
-        is empty. On failure the message is human-readable Indonesian text
+        is empty. On failure the message is human-readable English text
         (never raw JSON).
     """
     if not settings.gemini_key:
-        return [], "GEMINI_KEY belum di-set di .env."
+        return [], "GEMINI_KEY is not set in .env."
     version = settings.gemini_api_version or "v1beta"
     url = f"{GEMINI_BASE}/{version}/models"
     try:
@@ -201,12 +201,12 @@ def gemini_list_models(settings: Settings) -> tuple[list[str], str]:
             timeout=_LIST_MODELS_TIMEOUT_SECONDS,
         )
     except requests.Timeout:
-        return [], "Timeout saat mengambil daftar model Gemini (>15 detik)."
+        return [], "Timeout while fetching the Gemini model list (>15s)."
     except requests.ConnectionError:
-        return [], "Tidak bisa terhubung ke server Gemini. Periksa koneksi internet."
+        return [], "Cannot reach the Gemini server. Check your internet connection."
     except requests.RequestException as exc:
         logger.warning("gemini_list_models network error: %s", exc)
-        return [], "Network error saat memanggil Gemini."
+        return [], "Network error while calling Gemini."
 
     if response.status_code != 200:
         return [], _format_http_error(response.status_code, response.text)
@@ -214,7 +214,7 @@ def gemini_list_models(settings: Settings) -> tuple[list[str], str]:
     try:
         data = response.json()
     except ValueError:
-        return [], "Gemini mengembalikan body non-JSON saat list models."
+        return [], "Gemini returned a non-JSON body for list models."
 
     models: list[str] = []
     for entry in data.get("models", []):
@@ -247,7 +247,7 @@ def _generate_once(
     key = settings.gemini_key_backup if use_backup else settings.gemini_key
     if not key:
         label = "GEMINI_KEY_BACKUP" if use_backup else "GEMINI_KEY"
-        return "", f"{label} belum di-set di .env.", 0
+        return "", f"{label} is not set in .env.", 0
 
     version = settings.gemini_api_version or "v1beta"
     model = settings.gemini_model or "gemini-1.5-flash"
@@ -268,12 +268,12 @@ def _generate_once(
             timeout=_GENERATE_TIMEOUT_SECONDS,
         )
     except requests.Timeout:
-        return "", "Gemini tidak merespon dalam 20 detik (timeout). Coba lagi.", 0
+        return "", "Gemini did not respond within 20 seconds (timeout). Please retry.", 0
     except requests.ConnectionError:
-        return "", "Tidak bisa terhubung ke server Gemini. Periksa koneksi internet.", 0
+        return "", "Cannot reach the Gemini server. Check your internet connection.", 0
     except requests.RequestException as exc:
         logger.warning("gemini_generate network error (use_backup=%s): %s", use_backup, exc)
-        return "", "Network error saat memanggil Gemini.", 0
+        return "", "Network error while calling Gemini.", 0
 
     if response.status_code != 200:
         return (
@@ -326,9 +326,9 @@ def gemini_generate(
         return "", err
 
     logger.warning(
-        "Gemini primary key gagal (HTTP %s). Mencoba GEMINI_KEY_BACKUP...", status
+        "Gemini primary key failed (HTTP %s). Trying GEMINI_KEY_BACKUP...", status
     )
     backup_text, backup_err, _ = _generate_once(prompt, settings, use_backup=True)
     if backup_text:
         return backup_text, ""
-    return "", f"{err} | Backup key juga gagal: {backup_err}"
+    return "", f"{err} | Backup key also failed: {backup_err}"
