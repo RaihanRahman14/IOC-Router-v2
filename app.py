@@ -203,7 +203,6 @@ if "auto_generate_ai" not in st.session_state:
 
 def _clear_ai_outputs() -> None:
     """Clear all AI-generated session state outputs."""
-    st.session_state["ai_short"] = ""
     st.session_state["ai_desc"] = ""
     st.session_state["ai_threat_analysis"] = ""
     st.session_state["ai_ioc_links"] = ""

@@ -32,7 +32,7 @@ def _get_effective_device_action() -> str:
 
 def _clear_ai_outputs() -> None:
     """Clear all AI-generated session state outputs."""
-    for _k in ("ai_short", "ai_desc", "ai_threat_analysis", "ai_ioc_links", "ai_timing"):
+    for _k in ("ai_desc", "ai_threat_analysis", "ai_ioc_links", "ai_timing"):
         if _k in st.session_state:
             del st.session_state[_k]
 
@@ -580,37 +580,23 @@ def render_ai_panel(run_results: dict, settings) -> None:
             st.warning("GROQ_KEY belum di-set.")
         else:
             st.session_state["auto_generate_ai"] = False
-            short_prompt = _build_prompt(selected, "SHORT")
             desc_prompt = _build_prompt(selected, "DESCRIPTION")
             if use_only_evidence:
-                short_prompt = "STRICT: Do not invent data. " + short_prompt
                 desc_prompt = "STRICT: Do not invent data. " + desc_prompt
             _t_ai = time.perf_counter()
             if ai_provider == "Gemini":
-                short_out, short_err = gemini_generate(short_prompt, settings, use_backup=False)
                 desc_out, desc_err = gemini_generate(desc_prompt, settings, use_backup=False)
             else:
-                short_out, short_err = groq_generate(short_prompt, settings)
                 desc_out, desc_err = groq_generate(desc_prompt, settings)
             st.session_state["ai_timing"] = {
                 "provider": ai_provider,
                 "time": time.perf_counter() - _t_ai,
             }
-            if not short_out:
-                if short_err:
-                    st.error(f"AI Short Result gagal dibuat — {short_err}")
-                else:
-                    st.error("AI Short Result gagal dibuat.")
             if not desc_out:
                 if desc_err:
                     st.error(f"AI Description gagal dibuat — {desc_err}")
                 else:
                     st.error("AI Description gagal dibuat.")
-            if short_out:
-                short_clean = short_out.strip()
-                if short_clean.upper().startswith("SHORT:"):
-                    short_clean = short_clean.split(":", 1)[1].strip()
-                st.session_state["ai_short"] = short_clean
             if desc_out:
                 desc_clean = desc_out.strip()
                 if desc_clean.upper().startswith("DESCRIPTION:"):
@@ -811,7 +797,6 @@ def render_ai_panel(run_results: dict, settings) -> None:
         lines.append("=== End of Report ===")
         return "\n".join(lines)
 
-    short_text = st.session_state.get("ai_short", "")
     desc_text = st.session_state.get("ai_desc", "")
 
     def _text_with_copy(label: str, text: str, height: int, key: str) -> None:
