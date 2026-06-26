@@ -39,6 +39,29 @@ _COUNT_CARD_COLORS: dict[str, tuple[str, str]] = {
 }
 
 
+_HERO_RESPONSIVE_CSS = (
+    "<style>"
+    ".iocr-hero-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);"
+    "gap:20px;align-items:center;}"
+    ".iocr-counts-grid{display:grid;grid-template-columns:repeat(5, minmax(0,1fr));gap:8px;}"
+    ".iocr-count-card{background:var(--iocr-cbg);border:1px solid var(--iocr-cacc);"
+    "border-radius:10px;padding:12px 6px;text-align:center;min-width:0;"
+    "display:flex;flex-direction:column;align-items:center;justify-content:center;}"
+    ".iocr-count-value{font-size:1.7rem;font-weight:700;color:var(--iocr-cacc);line-height:1;}"
+    ".iocr-count-label{font-size:0.72rem;letter-spacing:0.05em;text-transform:uppercase;"
+    "color:#cfd3dc;margin-top:6px;}"
+    "@media (max-width: 640px){"
+    ".iocr-hero-grid{grid-template-columns:1fr;gap:12px;}"
+    ".iocr-counts-grid{grid-template-columns:1fr;gap:6px;}"
+    ".iocr-count-card{flex-direction:row;justify-content:space-between;"
+    "padding:6px 10px;gap:8px;}"
+    ".iocr-count-value{font-size:1.05rem;}"
+    ".iocr-count-label{font-size:0.65rem;margin-top:0;}"
+    "}"
+    "</style>"
+)
+
+
 def _count_card(label_name: str, value: int) -> str:
     """Return HTML for one count card used in the session hero block.
 
@@ -51,11 +74,9 @@ def _count_card(label_name: str, value: int) -> str:
     """
     cbg, cacc = _COUNT_CARD_COLORS.get(label_name, ("#1f1f24", "#9ca3af"))
     return (
-        f"<div style='background:{cbg};border:1px solid {cacc};border-radius:10px;"
-        f"padding:12px 6px;text-align:center;min-width:0;'>"
-        f"<div style='font-size:1.7rem;font-weight:700;color:{cacc};line-height:1;'>{value}</div>"
-        f"<div style='font-size:0.72rem;letter-spacing:0.05em;text-transform:uppercase;"
-        f"color:#cfd3dc;margin-top:6px;'>{label_name}</div>"
+        f"<div class='iocr-count-card' style='--iocr-cbg:{cbg};--iocr-cacc:{cacc};'>"
+        f"<div class='iocr-count-value'>{value}</div>"
+        f"<div class='iocr-count-label'>{label_name}</div>"
         f"</div>"
     )
 
@@ -80,7 +101,7 @@ def render_session_hero(summary: dict) -> None:
     ben_count: int = int(summary.get("benign", 0))
 
     cards_html = (
-        "<div style='display:grid;grid-template-columns:repeat(5, minmax(0,1fr));gap:8px;'>"
+        "<div class='iocr-counts-grid'>"
         f"{_count_card('Total', total_count)}"
         f"{_count_card('Malicious', mal_count)}"
         f"{_count_card('Suspicious', susp_count)}"
@@ -92,6 +113,7 @@ def render_session_hero(summary: dict) -> None:
     if not sess:
         # No session summary — show counts only, no score panel.
         html = (
+            f"{_HERO_RESPONSIVE_CSS}"
             "<div style='background:#14181f;border:1px solid #2a2f3a;border-radius:12px;"
             "padding:16px 20px;margin:6px 0 16px 0;'>"
             f"{cards_html}"
@@ -137,10 +159,10 @@ def render_session_hero(summary: dict) -> None:
     )
 
     html = (
+        f"{_HERO_RESPONSIVE_CSS}"
         f"<div style='background:{bg};border:1px solid {accent};border-radius:12px;"
         f"padding:16px 20px;margin:6px 0 16px 0;'>"
-        f"  <div style='display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);"
-        f"gap:20px;align-items:center;'>"
+        f"  <div class='iocr-hero-grid'>"
         f"    <div style='min-width:0;'>{left_html}</div>"
         f"    <div style='min-width:0;'>{cards_html}</div>"
         f"  </div>"

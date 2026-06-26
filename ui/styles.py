@@ -110,21 +110,30 @@ _GLOBAL_TEMPLATE = """
 
     @media (max-width: 768px) {
         .fixed-app-header {
-            padding-top: 2.15rem;
-            padding-bottom: 1.2rem;
+            padding: 2.5rem 1rem 4rem;
         }
 
         .fixed-app-header__title {
-            font-size: 1.55rem;
+            font-size: 1.25rem !important;
+            white-space: nowrap;
+            display: block;
+            text-align: center;
+            margin: 0 auto;
+            line-height: 1.05 !important;
         }
 
         .fixed-app-header__subtitle {
-            font-size: 0.82rem;
-            left: 0;
+            font-size: 0.7rem !important;
+            left: 0 !important;
+            margin: -0.1rem auto 0 !important;
+            text-align: center;
+            white-space: nowrap;
+            display: block;
+            line-height: 1 !important;
         }
 
         .fixed-app-header-spacer {
-            height: 144px;
+            height: 100px;
         }
 
         /* Hide "Insert API Keys" text label — keep only the ☰ icon */
@@ -280,9 +289,10 @@ _GLOBAL_TEMPLATE = """
     }
     @media (max-width: 768px) {
         .note-btn {
-            right: calc(0.75rem + 70px);
-            padding: 5px 9px;
-            font-size: 0.95rem;
+            right: auto;
+            left: calc(1.1rem + 36px + 40px + 6px);
+            padding: 3px 7px;
+            font-size: 0.8rem;
         }
     }
 
@@ -314,9 +324,10 @@ _GLOBAL_TEMPLATE = """
     }
     @media (max-width: 768px) {
         .timing-btn {
-            right: calc(0.75rem + 70px + 56px);
-            padding: 5px 9px;
-            font-size: 0.95rem;
+            right: auto;
+            left: calc(1.1rem + 36px);
+            padding: 3px 7px;
+            font-size: 0.8rem;
         }
     }
 
@@ -371,11 +382,15 @@ _GLOBAL_TEMPLATE = """
             font-size: 0.76rem;
         }
     }
-    @media (max-width: 600px) {
+    /* Mobile: drop the tab bar below the title/subtitle inside the header */
+    @media (max-width: 768px) {
         .header-tabs {
-            position: static;
-            transform: none;
-            margin: 6px auto 0;
+            position: absolute;
+            left: 50%;
+            top: auto;
+            bottom: 1.6rem;
+            transform: translateX(-50%);
+            margin: 0;
             display: flex;
             width: max-content;
         }

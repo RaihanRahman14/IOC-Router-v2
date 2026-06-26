@@ -1123,6 +1123,18 @@ def render_cve_panel() -> None:
     total_nvd: int = st.session_state.get("cve_total_nvd", 0)
     current_hours: int = st.session_state.get("cve_hours", 3)
 
+    # Mobile-only top spacer so the "New CVE" header sits below the fixed app header.
+    st.markdown(
+        '<style>'
+        '.cve-mobile-topspacer { height: 0; }'
+        '@media (max-width: 768px) {'
+        '  .cve-mobile-topspacer { height: 80px; }'
+        '}'
+        '</style>'
+        '<div class="cve-mobile-topspacer"></div>',
+        unsafe_allow_html=True,
+    )
+
     # ── Header ────────────────────────────────────────────────────────────────
     st.markdown(
         f'<div style="display:flex;justify-content:space-between;align-items:center;'

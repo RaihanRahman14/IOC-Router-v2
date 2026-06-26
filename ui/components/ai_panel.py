@@ -570,17 +570,24 @@ def render_ai_panel(run_results: dict, settings) -> None:
         _clear_ai_outputs()
     st.session_state["ai_signature_last"] = current_ai_signature
 
-    def _run_ai_description_generation() -> None:
-        """Execute the AI Description call — called when the inline Generate button is clicked."""
+    def _run_ai_description_generation() -> bool:
+        """Execute the AI Description call — called when the inline Generate button is clicked.
+
+        Returns:
+            True when ``ai_desc`` was updated and a rerun is needed for the
+            textarea to display it. False on validation failure or provider
+            error — the caller MUST NOT call ``st.rerun()`` in that case, or
+            the warning/error shown here will be wiped before the user sees it.
+        """
         if not selected:
             st.warning("Select at least 1 IOC.")
-            return
+            return False
         if ai_provider == "Gemini" and not settings.gemini_key:
             st.warning("GEMINI_KEY is not set.")
-            return
+            return False
         if ai_provider == "Groq" and not settings.groq_key:
             st.warning("GROQ_KEY is not set.")
-            return
+            return False
         st.session_state["auto_generate_ai"] = False
         desc_prompt = _build_prompt(selected, "DESCRIPTION")
         if use_only_evidence:
@@ -599,14 +606,15 @@ def render_ai_panel(run_results: dict, settings) -> None:
                 st.error(f"AI Description failed — {desc_err}")
             else:
                 st.error("AI Description failed.")
-        if desc_out:
-            desc_clean = desc_out.strip()
-            if desc_clean.upper().startswith("DESCRIPTION:"):
-                desc_clean = desc_clean.split(":", 1)[1].strip()
-            desc_clean = re.sub(r"\s+", " ", desc_clean).strip()
-            desc_clean = _obfuscate_domains_and_urls(desc_clean)
-            st.session_state["ai_desc"] = f"#Description: {desc_clean}" if desc_clean else "#Description:"
-            st.session_state["ai_ioc_links"] = _build_ioc_links(selected)
+            return False
+        desc_clean = desc_out.strip()
+        if desc_clean.upper().startswith("DESCRIPTION:"):
+            desc_clean = desc_clean.split(":", 1)[1].strip()
+        desc_clean = re.sub(r"\s+", " ", desc_clean).strip()
+        desc_clean = _obfuscate_domains_and_urls(desc_clean)
+        st.session_state["ai_desc"] = f"#Description: {desc_clean}" if desc_clean else "#Description:"
+        st.session_state["ai_ioc_links"] = _build_ioc_links(selected)
+        return True
 
     # Auto-generate trigger fires once when enrichment Run completes with the
     # "Auto AI Description" checkbox enabled. Cleared inside the helper.
@@ -1025,12 +1033,6 @@ def render_ai_panel(run_results: dict, settings) -> None:
         if st.session_state.get("ai_description") != shown_desc:
             st.session_state["ai_description"] = shown_desc
 
-        # Word-count caption only when there's content. When empty, the
-        # textarea's placeholder shows "No description generated yet" inside
-        # the box instead.
-        if shown_desc:
-            st.caption(f"~{len(shown_desc.split())} words")
-
         # The ➤ Generate button floats inside the textarea, vertically
         # centered on the right edge. We wrap the textarea + button in a
         # keyed container so `.st-key-ai_desc_wrap` becomes a positioning
@@ -1073,8 +1075,22 @@ def render_ai_panel(run_results: dict, settings) -> None:
                 placeholder="No description generated yet",
             )
             if st.button("➤", type="primary", key="generate_ai_desc_btn"):
-                _run_ai_description_generation()
-                st.rerun()
+                # Only rerun on success — a rerun after a warning/error wipes
+                # the toast before the user can see it, leaving the textarea
+                # apparently "reset to empty" with no feedback.
+                if _run_ai_description_generation():
+                    st.rerun()
+
+            # Word-count caption shown at the bottom-right of the textarea box.
+            # When empty, the textarea's placeholder shows "No description
+            # generated yet" inside the box instead.
+            if shown_desc:
+                st.markdown(
+                    f"<div style='text-align:right;color:#6c757d;"
+                    f"font-size:0.82rem;margin-top:-6px;'>"
+                    f"~{len(shown_desc.split())} words</div>",
+                    unsafe_allow_html=True,
+                )
 
         if shown_desc:
             _desc_b64 = base64.b64encode(shown_desc.encode("utf-8")).decode("ascii")
