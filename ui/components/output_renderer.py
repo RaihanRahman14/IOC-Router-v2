@@ -30,18 +30,74 @@ def _score_color(score: float) -> tuple[str, str]:
     return "#14321a", "#4ade80"
 
 
-def _render_session_threat_panel(summary: dict) -> None:
-    """Render the session-level threat score panel above the metric strip.
+_COUNT_CARD_COLORS: dict[str, tuple[str, str]] = {
+    "Total":      ("#1a2030", "#60a5fa"),  # neutral blue
+    "Malicious":  ("#3a1414", "#f87171"),  # red
+    "Suspicious": ("#3a2a14", "#fbbf24"),  # amber
+    "Unknown":    ("#1f1f24", "#9ca3af"),  # gray
+    "Benign":     ("#14321a", "#4ade80"),  # green
+}
 
-    Reads `summary["session_summary"]` produced by
-    `ioc.confidence_scorer.compute_session_summary`. Renders nothing if the
-    summary is missing or empty (graceful fallback for older sessions).
+
+def _count_card(label_name: str, value: int) -> str:
+    """Return HTML for one count card used in the session hero block.
+
+    Args:
+        label_name: One of Total/Malicious/Suspicious/Unknown/Benign.
+        value: Integer count to display.
+
+    Returns:
+        HTML string for the card.
+    """
+    cbg, cacc = _COUNT_CARD_COLORS.get(label_name, ("#1f1f24", "#9ca3af"))
+    return (
+        f"<div style='background:{cbg};border:1px solid {cacc};border-radius:10px;"
+        f"padding:12px 6px;text-align:center;min-width:0;'>"
+        f"<div style='font-size:1.7rem;font-weight:700;color:{cacc};line-height:1;'>{value}</div>"
+        f"<div style='font-size:0.72rem;letter-spacing:0.05em;text-transform:uppercase;"
+        f"color:#cfd3dc;margin-top:6px;'>{label_name}</div>"
+        f"</div>"
+    )
+
+
+def render_session_hero(summary: dict) -> None:
+    """Render the full-width session hero block: score panel + count cards.
+
+    Combines the session-level threat score (left) with the verdict counts
+    (right) into a single block intended to span the full Result-tab width,
+    sitting above the split columns. Falls back to a counts-only block when
+    no session summary is present (older runs).
 
     Args:
         summary: The aggregated summary dict returned by `summarize_results`.
     """
     sess = summary.get("session_summary") or {}
+
+    total_count: int = int(summary.get("total", 0))
+    mal_count: int = int(summary.get("malicious", 0))
+    susp_count: int = int(summary.get("suspicious", 0))
+    unk_count: int = int(summary.get("unknown", 0))
+    ben_count: int = int(summary.get("benign", 0))
+
+    cards_html = (
+        "<div style='display:grid;grid-template-columns:repeat(5, minmax(0,1fr));gap:8px;'>"
+        f"{_count_card('Total', total_count)}"
+        f"{_count_card('Malicious', mal_count)}"
+        f"{_count_card('Suspicious', susp_count)}"
+        f"{_count_card('Unknown', unk_count)}"
+        f"{_count_card('Benign', ben_count)}"
+        "</div>"
+    )
+
     if not sess:
+        # No session summary — show counts only, no score panel.
+        html = (
+            "<div style='background:#14181f;border:1px solid #2a2f3a;border-radius:12px;"
+            "padding:16px 20px;margin:6px 0 16px 0;'>"
+            f"{cards_html}"
+            "</div>"
+        )
+        st.markdown(html, unsafe_allow_html=True)
         return
 
     highest = float(sess.get("highest_score") or 0.0)
@@ -59,31 +115,35 @@ def _render_session_threat_panel(summary: dict) -> None:
         for verd, cnt in distribution.items()
     )
 
-    html = (
-        f"<div style='background:{bg};border:1px solid {accent};border-radius:10px;"
-        f"padding:14px 18px;margin:6px 0 14px 0;overflow:hidden;'>"
-        f"  <div style='display:flex;justify-content:space-between;align-items:flex-start;"
-        f"flex-wrap:wrap;gap:10px;'>"
-        f"    <div style='min-width:0;flex:1 1 auto;'>"
-        f"      <div style='font-size:0.78rem;letter-spacing:0.08em;text-transform:uppercase;"
+    left_html = (
+        f"<div style='font-size:0.78rem;letter-spacing:0.08em;text-transform:uppercase;"
         f"color:#9ea8cf;'>Session Threat Score</div>"
-        f"      <div style='font-size:2.1rem;font-weight:700;color:{accent};line-height:1.1;'>"
-        f"{highest:.1f}<span style='font-size:0.9rem;color:#9ea8cf;'> / 100</span></div>"
-        f"      <div style='font-size:0.95rem;color:#e8eaf0;margin-top:2px;'>{label}</div>"
-        f"    </div>"
-        f"    <div style='text-align:right;min-width:0;flex:1 1 180px;max-width:100%;'>"
-        f"      <div style='font-size:0.78rem;color:#9ea8cf;'>Highest IOC</div>"
-        f"      <div style='font-family:monospace;color:#e8eaf0;font-size:0.85rem;"
-        f"word-break:break-all;overflow-wrap:anywhere;'>"
-        f"{highest_ioc}</div>"
-        f"    </div>"
-        f"  </div>"
-        f"  <div style='background:#0f1117;border-radius:6px;height:8px;margin-top:10px;"
+        f"<div style='display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px;'>"
+        f"  <div style='font-size:1.85rem;font-weight:700;color:{accent};line-height:1.1;'>{label}</div>"
+        f"  <span style='background:#0f1117;border:1px solid {accent};color:{accent};"
+        f"border-radius:999px;padding:3px 12px;font-size:0.82rem;font-weight:600;'>"
+        f"score {highest:.1f} / 100</span>"
+        f"</div>"
+        f"<div style='font-size:0.82rem;color:#9ea8cf;margin-top:6px;'>"
+        f"Highest IOC: <span style='font-family:monospace;color:#e8eaf0;"
+        f"word-break:break-all;overflow-wrap:anywhere;'>{highest_ioc}</span>"
+        f"</div>"
+        f"<div style='background:#0f1117;border-radius:6px;height:8px;margin-top:10px;"
         f"overflow:hidden;'>"
-        f"    <div style='background:{accent};width:{fill_pct:.1f}%;height:100%;"
+        f"  <div style='background:{accent};width:{fill_pct:.1f}%;height:100%;"
         f"transition:width 0.3s;'></div>"
+        f"</div>"
+        f"<div style='margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;'>{dist_pills}</div>"
+    )
+
+    html = (
+        f"<div style='background:{bg};border:1px solid {accent};border-radius:12px;"
+        f"padding:16px 20px;margin:6px 0 16px 0;'>"
+        f"  <div style='display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);"
+        f"gap:20px;align-items:center;'>"
+        f"    <div style='min-width:0;'>{left_html}</div>"
+        f"    <div style='min-width:0;'>{cards_html}</div>"
         f"  </div>"
-        f"  <div style='margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;'>{dist_pills}</div>"
         f"</div>"
     )
     st.markdown(html, unsafe_allow_html=True)
@@ -104,15 +164,6 @@ def render_results_output(output_format: str, run_results: dict) -> None:
     mxtoolbox_results = run_results.get("mxtoolbox", {})
     whoxy_results = run_results.get("whoxy", {})
     ransomware_live_results = run_results.get("ransomware_live", {})
-
-    col_sum = st.columns(5)
-    col_sum[0].metric("Total", summary["total"])
-    col_sum[1].metric("Malicious", summary["malicious"])
-    col_sum[2].metric("Suspicious", summary["suspicious"])
-    col_sum[3].metric("Unknown", summary["unknown"])
-    col_sum[4].metric("Benign", summary["benign"])
-
-    _render_session_threat_panel(summary)
 
     if output_format == "Table":
         if pd:

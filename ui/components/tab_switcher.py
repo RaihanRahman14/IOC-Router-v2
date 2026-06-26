@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-_TABS: tuple[str, ...] = ("Input", "Result", "NVD")
+_TABS: tuple[str, ...] = ("Input", "Result", "CVE")
 
 
 def render_tab_switch_buttons() -> None:

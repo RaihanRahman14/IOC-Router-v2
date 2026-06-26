@@ -1020,7 +1020,87 @@ def render_ai_panel(run_results: dict, settings) -> None:
                 _rl_label = _rl_groups[0] if _rl_groups else f"{_rl_count} record(s)"
                 _ke_rows.append((_ioc.value, "Ransomware Group", _rl_label))
 
-        with st.expander("**Threat Analysis**", expanded=True):
+        # ── AI Description block (rendered ABOVE Threat Analysis) ──────────
+        shown_desc = desc_text if desc_text else ""
+        if st.session_state.get("ai_description") != shown_desc:
+            st.session_state["ai_description"] = shown_desc
+
+        # Word-count caption only when there's content. When empty, the
+        # textarea's placeholder shows "No description generated yet" inside
+        # the box instead.
+        if shown_desc:
+            st.caption(f"~{len(shown_desc.split())} words")
+
+        # The ➤ Generate button floats inside the textarea, vertically
+        # centered on the right edge. We wrap the textarea + button in a
+        # keyed container so `.st-key-ai_desc_wrap` becomes a positioning
+        # context for the absolutely-placed button (Streamlit 1.36+ adds
+        # `st-key-<key>` to keyed containers and widgets).
+        st.markdown(
+            """
+            <style>
+            div.st-key-ai_desc_wrap { position: relative !important; }
+            div.st-key-ai_desc_wrap [data-testid="stTextArea"] textarea {
+                padding-right: 78px !important;
+            }
+            div.st-key-ai_desc_wrap div.st-key-generate_ai_desc_btn {
+                position: absolute !important;
+                top: 50% !important;
+                right: 14px !important;
+                transform: translateY(-50%) !important;
+                width: auto !important;
+                margin: 0 !important;
+                z-index: 10 !important;
+            }
+            div.st-key-ai_desc_wrap div.st-key-generate_ai_desc_btn button {
+                min-width: 50px !important;
+                width: auto !important;
+                padding: 10px 18px !important;
+                font-size: 1.05rem !important;
+                line-height: 1 !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        with st.container(key="ai_desc_wrap"):
+            st.text_area(
+                "AI Description",
+                height=180,
+                key="ai_description",
+                label_visibility="collapsed",
+                placeholder="No description generated yet",
+            )
+            if st.button("➤", type="primary", key="generate_ai_desc_btn"):
+                _run_ai_description_generation()
+                st.rerun()
+
+        if shown_desc:
+            _desc_b64 = base64.b64encode(shown_desc.encode("utf-8")).decode("ascii")
+            _desc_html = f"""
+            <style>
+              .copy-wrap{{display:flex;align-items:center;gap:8px;margin-top:4px}}
+              .copy-btn{{padding:5px 10px;border:1px solid #ccc;border-radius:6px;background:#f7f7f7;cursor:pointer;font-size:0.88rem}}
+              .copy-msg{{color:#0a7b30;font-size:0.82rem}}
+            </style>
+            <div class="copy-wrap">
+              <button class="copy-btn" id="desc_copy_btn">Copy</button>
+              <span class="copy-msg" id="desc_copy_msg"></span>
+            </div>
+            <script>
+              (function(){{
+                var btn=document.getElementById("desc_copy_btn");
+                var msg=document.getElementById("desc_copy_msg");
+                if(btn){{btn.addEventListener("click",function(){{
+                  navigator.clipboard.writeText(atob("{_desc_b64}")).then(function(){{msg.textContent="copied!"}});
+                }})}}
+              }})();
+            </script>
+            """
+            components.html(_desc_html, height=50)
+
+        with st.expander("**Threat Analysis**", expanded=False):
             # ── Row 1: State + Level + Verdict with analyst override dropdowns ──
             _state_options = [
                 "Exposure", "Intrusion Attempt", "Compromise",
@@ -1302,102 +1382,6 @@ def render_ai_panel(run_results: dict, settings) -> None:
                             st.markdown(f"• [{_lname}]({_lurl}) — `{_lurl}`")
                         else:
                             st.markdown(f"• {_ll[2:]}")
-
-        # ── Timing breakdown (providers + AI) ───────────────────────────
-        _timings = run_results.get("timings") or {}
-        _prov_timings: dict = _timings.get("providers") or {}
-        _prov_total: float = float(_timings.get("providers_total") or 0.0)
-        _ai_timing = st.session_state.get("ai_timing") or {}
-        _ai_time: float = float(_ai_timing.get("time") or 0.0) if _ai_timing else 0.0
-        _grand_total = _prov_total + _ai_time
-
-        if _prov_timings:
-            _prov_label_map = {
-                "vt": "VirusTotal", "urlscan": "urlscan", "abuse": "AbuseIPDB",
-                "tf": "ThreatFox", "mb": "MalwareBazaar", "shodan": "Shodan",
-                "dns": "DNSDumpster", "ha": "Hybrid Analysis",
-                "mxtoolbox": "MxToolBox", "whoxy": "Whoxy",
-                "ransomware_live": "Ransomware.live",
-            }
-            _caption_bits = [f"Providers {_prov_total:.2f}s"]
-            if _ai_timing:
-                _caption_bits.append(f"AI {_ai_time:.2f}s")
-            _caption_bits.append(f"Total {_grand_total:.2f}s")
-            with st.expander(f"⏱ Timing — {' · '.join(_caption_bits)}", expanded=False):
-                _active = [
-                    (k, v) for k, v in _prov_timings.items()
-                    if v.get("n", 0) > 0 or v.get("time", 0.0) > 0
-                ]
-                _active.sort(key=lambda kv: kv[1].get("time", 0.0), reverse=True)
-                if _active:
-                    st.markdown("**Providers**")
-                    for _k, _v in _active:
-                        _name = _prov_label_map.get(_k, _k)
-                        _n = int(_v.get("n", 0))
-                        _t = float(_v.get("time", 0.0))
-                        st.markdown(
-                            f"- {_name}: `{_t:.2f}s` &nbsp;·&nbsp; {_n} IOC{'s' if _n != 1 else ''}",
-                            unsafe_allow_html=True,
-                        )
-                    st.markdown(f"**Providers subtotal:** `{_prov_total:.2f}s`")
-                if _ai_timing:
-                    st.divider()
-                    st.markdown("**AI (Threat Analysis)**")
-                    st.markdown(
-                        f"- {_ai_timing.get('provider', 'AI')}: `{_ai_time:.2f}s`"
-                    )
-                st.divider()
-                st.markdown(f"**Total elapsed:** `{_grand_total:.2f}s`")
-                st.caption(
-                    "Provider times include cache hits (near-instant) and "
-                    "network calls. AI time only appears once a Threat Analysis "
-                    "has actually been generated."
-                )
-
-        # ── AI Description block: [textarea | Generate button] ──
-        # The AI Output heading and AI settings expander were merged into the
-        # "AI context" expander rendered below by _render_context_expander —
-        # this block only owns the description text area + Generate trigger now.
-        shown_desc = desc_text if desc_text else ""
-        if st.session_state.get("ai_description") != shown_desc:
-            st.session_state["ai_description"] = shown_desc
-        st.caption(f"~{len(shown_desc.split())} words" if shown_desc else "No description generated yet")
-
-        _desc_col, _btn_col = st.columns([5, 1.2])
-        with _desc_col:
-            st.text_area(
-                "AI Description",
-                height=180,
-                key="ai_description",
-                label_visibility="collapsed",
-            )
-        with _btn_col:
-            if st.button("Generate ▶", type="primary", key="generate_ai_desc_btn", use_container_width=True):
-                _run_ai_description_generation()
-                st.rerun()
-        if shown_desc:
-            _desc_b64 = base64.b64encode(shown_desc.encode("utf-8")).decode("ascii")
-            _desc_html = f"""
-            <style>
-              .copy-wrap{{display:flex;align-items:center;gap:8px;margin-top:4px}}
-              .copy-btn{{padding:5px 10px;border:1px solid #ccc;border-radius:6px;background:#f7f7f7;cursor:pointer;font-size:0.88rem}}
-              .copy-msg{{color:#0a7b30;font-size:0.82rem}}
-            </style>
-            <div class="copy-wrap">
-              <button class="copy-btn" id="desc_copy_btn">Copy</button>
-              <span class="copy-msg" id="desc_copy_msg"></span>
-            </div>
-            <script>
-              (function(){{
-                var btn=document.getElementById("desc_copy_btn");
-                var msg=document.getElementById("desc_copy_msg");
-                if(btn){{btn.addEventListener("click",function(){{
-                  navigator.clipboard.writeText(atob("{_desc_b64}")).then(function(){{msg.textContent="copied!"}});
-                }})}}
-              }})();
-            </script>
-            """
-            components.html(_desc_html, height=50)
 
         # ── Pre-compute share text into session_state for output format ──
         st.session_state["share_text"] = _build_share_text([ioc.value for ioc in items])

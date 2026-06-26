@@ -17,12 +17,13 @@ from core.cache import (
 )
 from ui.styles import build_global_css_and_header, LANDING_CSS
 from ui.components.drawer import render_api_drawer
-from ui.components.output_renderer import render_results_output
+from ui.components.output_renderer import render_results_output, render_session_hero
 from ui.components.ioc_card import render_ioc_cards
 from ui.components.ai_panel import render_ai_panel
 from ui.components.cve_panel import render_cve_panel
 from ui.components.bug_report import render_bug_report_button
 from ui.components.note_popup import render_note_button
+from ui.components.timing_popup import render_timing_button
 from ui.components.tab_switcher import render_tab_switch_buttons
 
 st.set_page_config(
@@ -40,7 +41,7 @@ st.set_page_config(
 if "active_tab" not in st.session_state:
     st.session_state["active_tab"] = "Input"
 _pending_tab = st.session_state.pop("_pending_tab_switch", None)
-if _pending_tab in ("Input", "Result", "NVD"):
+if _pending_tab in ("Input", "Result", "CVE"):
     st.session_state["active_tab"] = _pending_tab
 
 st.markdown(
@@ -50,6 +51,7 @@ st.markdown(
 
 render_bug_report_button()
 render_note_button()
+render_timing_button()
 render_tab_switch_buttons()
 
 # JavaScript drawer + header-button controller — runs in a zero-height iframe so it
@@ -130,11 +132,19 @@ components.html(
                     clickHiddenButton('Notes ⓘ');
                 });
             }
-            // Header tab buttons (Input / Result / NVD) → forward to hidden
+            var tm = pd.getElementById('timing-header-btn');
+            if (tm && !tm._timingReady) {
+                tm._timingReady = true;
+                tm.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    clickHiddenButton('Timing ⏱');
+                });
+            }
+            // Header tab buttons (Input / Result / CVE) → forward to hidden
             // Streamlit buttons identified by their st-key-* wrapper class.
             // Targeting the key class is more reliable than text matching
             // (which can break on emoji whitespace / DOM wrapping).
-            ['Input', 'Result', 'NVD'].forEach(function(tabName) {
+            ['Input', 'Result', 'CVE'].forEach(function(tabName) {
                 var tb = pd.getElementById('tab-btn-' + tabName);
                 if (tb && !tb._tabReady) {
                     tb._tabReady = true;
@@ -149,7 +159,7 @@ components.html(
             });
             // Hide the Report Bug + Notes Streamlit trigger buttons (replaced by header HTML).
             // The Switch-to-* buttons are hidden via CSS (.st-key-tab_switch_btn_*).
-            var HIDE_LABELS = ['Report Bug 🐞', 'Notes ⓘ'];
+            var HIDE_LABELS = ['Report Bug 🐞', 'Notes ⓘ', 'Timing ⏱'];
             pd.querySelectorAll('[data-testid="stButton"] button').forEach(function(b) {
                 var t = b.textContent.trim();
                 if (HIDE_LABELS.indexOf(t) !== -1) {
@@ -734,9 +744,9 @@ if active_tab == "Input":
         )
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Tab 3 — NVD (full-width CVE feed)
+# Tab 3 — CVE (full-width CVE feed)
 # ══════════════════════════════════════════════════════════════════════════════
-elif active_tab == "NVD":
+elif active_tab == "CVE":
     render_cve_panel()
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -765,6 +775,11 @@ else:  # active_tab == "Result"
         """,
         height=0,
     )
+
+    # Full-width session hero (Score panel + verdict counts) — rendered above
+    # the split so it spans both the TA/AI Output column and the Results column.
+    if st.session_state.get("run_results"):
+        render_session_hero(st.session_state["run_results"]["summary"])
 
     split_left, split_right = st.columns([1, 1], gap="small")
 
@@ -1018,7 +1033,6 @@ if active_tab == "Result":
     _has_run_results = bool(st.session_state.get("run_results"))
 
     with split_left:
-        st.subheader("Threat Analysis & AI Output")
         if _has_run_results:
             # render_ai_panel renders: Threat Analysis → Timing → AI Description
             render_ai_panel(st.session_state["run_results"], settings)
@@ -1034,7 +1048,6 @@ if active_tab == "Result":
             st.info("Belum ada hasil — kembali ke tab **Input** dan klik ▶ Run.")
 
     with split_right:
-        st.subheader("Results")
         if _has_run_results:
             render_results_output(output_format, st.session_state["run_results"])
             render_ioc_cards(st.session_state["run_results"])

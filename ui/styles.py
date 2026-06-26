@@ -1,7 +1,7 @@
 """CSS and HTML string constants for IOC Router UI."""
 from __future__ import annotations
 
-_TAB_NAMES: tuple[str, ...] = ("Input", "Result", "NVD")
+_TAB_NAMES: tuple[str, ...] = ("Input", "Result", "CVE")
 
 
 def build_global_css_and_header(active_tab: str = "Input") -> str:
@@ -13,7 +13,7 @@ def build_global_css_and_header(active_tab: str = "Input") -> str:
     Streamlit buttons rendered by :func:`ui.components.tab_switcher.render_tab_switch_buttons`.
 
     Args:
-        active_tab: One of ``"Input"``, ``"Result"``, ``"NVD"``. Determines
+        active_tab: One of ``"Input"``, ``"Result"``, ``"CVE"``. Determines
             which header tab gets the ``--active`` modifier class.
 
     Returns:
@@ -38,6 +38,15 @@ def build_global_css_and_header(active_tab: str = "Input") -> str:
 # Defaults to Input as the active tab.
 _GLOBAL_TEMPLATE = """
     <style>
+    /* Kill Streamlit's default top padding on the main page so the only
+       gap between the fixed header and the first content row is the
+       spacer below. Without this the page opens with ~6rem of empty
+       space stacked on top of our spacer. */
+    [data-testid="stMainBlockContainer"],
+    section.main > div.block-container,
+    .main .block-container {
+        padding-top: 0 !important;
+    }
     .fixed-app-header {
         position: fixed;
         top: 0;
@@ -96,7 +105,7 @@ _GLOBAL_TEMPLATE = """
     }
 
     .fixed-app-header-spacer {
-        height: 128px;
+        height: 180px;
     }
 
     @media (max-width: 768px) {
@@ -115,7 +124,7 @@ _GLOBAL_TEMPLATE = """
         }
 
         .fixed-app-header-spacer {
-            height: 100px;
+            height: 144px;
         }
 
         /* Hide "Insert API Keys" text label — keep only the ☰ icon */
@@ -272,6 +281,40 @@ _GLOBAL_TEMPLATE = """
     @media (max-width: 768px) {
         .note-btn {
             right: calc(0.75rem + 70px);
+            padding: 5px 9px;
+            font-size: 0.95rem;
+        }
+    }
+
+    /* Timing (⏱) button in header — sits to the LEFT of Notes.
+       Offset chosen so the visual gap matches the Notes→Report Bug gap. */
+    .timing-btn {
+        position: absolute;
+        right: calc(3rem + 130px + 64px);
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 1rem;
+        font-weight: 500;
+        font-family: inherit;
+        line-height: 1;
+        cursor: pointer;
+        color: rgba(245,247,251,0.82);
+        user-select: none;
+        z-index: 10001;
+        padding: 6px 12px;
+        border-radius: 6px;
+        background: rgba(255,255,255,0.07);
+        border: 1px solid rgba(255,255,255,0.18);
+        transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+    .timing-btn:hover {
+        background: rgba(255,255,255,0.14);
+        color: #fff;
+        border-color: rgba(255,255,255,0.3);
+    }
+    @media (max-width: 768px) {
+        .timing-btn {
+            right: calc(0.75rem + 70px + 56px);
             padding: 5px 9px;
             font-size: 0.95rem;
         }
@@ -449,7 +492,7 @@ _GLOBAL_TEMPLATE = """
     /* ── Hide tab-switch trigger buttons (clicks come from header HTML tabs) ── */
     .st-key-tab_switch_btn_Input,
     .st-key-tab_switch_btn_Result,
-    .st-key-tab_switch_btn_NVD {
+    .st-key-tab_switch_btn_CVE {
         display: none !important;
     }
 
@@ -473,6 +516,7 @@ _GLOBAL_TEMPLATE = """
         {{TABS}}
         <h1 class="fixed-app-header__title" onclick="window.location.reload();" style="cursor:pointer;" title="Back to home">🛡️ IOC Router 🛡️</h1>
         <p class="fixed-app-header__subtitle">IOC enrichment by minzelo</p>
+        <button class="timing-btn" id="timing-header-btn" title="Timing">⏱</button>
         <button class="note-btn" id="note-header-btn" title="Notes">ⓘ</button>
         <button class="report-bug-btn" id="report-bug-header-btn"><span class="report-bug-text">Report Bug </span>🐞</button>
     </div>
