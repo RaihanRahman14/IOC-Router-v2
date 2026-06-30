@@ -25,6 +25,7 @@ from ui.components.bug_report import render_bug_report_button
 from ui.components.note_popup import render_note_button
 from ui.components.timing_popup import render_timing_button
 from ui.components.tab_switcher import render_tab_switch_buttons
+from ui.components.path_probe_panel import render_path_probe_panel
 
 st.set_page_config(
     page_title="IOC Router",
@@ -378,11 +379,15 @@ def _get_group_providers(mode: str) -> dict[str, list[str]]:
     """Return the IOC-group -> provider mapping for the given analysis mode.
 
     Args:
-        mode: Either "Triage" or "Lookup".
+        mode: ``"Triage"``, ``"Lookup"``, or ``"Path Probe"``.
 
     Returns:
-        Mapping of IOC group key to list of provider keys appropriate for the mode.
+        Mapping of IOC group key to list of provider keys appropriate for the
+        mode. ``"Path Probe"`` returns an empty mapping — that mode has its
+        own scanner and does not use the IOC provider pipeline.
     """
+    if mode == "Path Probe":
+        return {}
     if mode == "Lookup":
         return _GROUP_PROVIDERS_LOOKUP
     # Triage: exclude MxToolBox and the entire Keyword group; drop empty groups
@@ -635,113 +640,140 @@ if active_tab == "Input":
     # Center the input column with reasonable max width (no side columns now)
     _l, _center_col, _r = st.columns([0.5, 3.0, 0.5], gap="large")
 
-    with _center_col:
-        # Hint pills
-        st.markdown('<div class="ioc-hint-row">', unsafe_allow_html=True)
-        _hp = st.columns(5)
-        _hints = [
-            ("IP Address", "8.8.8.8"),
-            ("Domain", "evil.example.com"),
-            ("URL", "https://phish.example.com/login"),
-            ("MD5 Hash", "44d88612fea8a8f36de82e1278abb02f"),
-            ("Email", "user@suspicious.io"),
-        ]
-        for _i, (_label, _val) in enumerate(_hints):
-            with _hp[_i]:
-                if st.button(_label, key=f"hint_{_i}", use_container_width=True):
-                    _cur = st.session_state.get("ioc_input", "")
-                    st.session_state["ioc_input"] = (_cur + "\n" + _val).strip() if _cur else _val
-                    st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
+    _input_mode = st.session_state.get("analysis_mode", "Triage")
 
-        st.markdown("<div style='height:6px'/>", unsafe_allow_html=True)
-
-        # Chat card
-        with st.container(border=True):
-            raw = st.text_area(
-                "IOC",
-                placeholder="Enter IOCs — IP, domain, URL, hash, or email (one per line)...",
-                height=110,
-                key="ioc_input",
-                label_visibility="collapsed",
-            )
-            # Toolbar row inside card
-            _current_mode = st.session_state.get("analysis_mode", "Triage")
-            _auto_on = st.session_state.get("auto_detect_and_provider", True)
-            _show_speed = _current_mode == "Triage" and _auto_on
-            if _show_speed:
-                _tc_mode, _tc_speed, _tc1, _tc2, _tc_run = st.columns(
-                    [0.95, 0.85, 1.5, 1.15, 0.5]
-                )
-            else:
-                _tc_mode, _tc1, _tc2, _tc_run = st.columns([0.95, 1.8, 1.15, 0.5])
-            _auto_label = (
-                "Auto detect Lookup & Provider"
-                if _current_mode == "Lookup"
-                else "Auto detect IOC & Provider"
-            )
-            with _tc_mode:
-                with st.popover(f"{_current_mode} ▾", use_container_width=True):
+    if _input_mode == "Path Probe":
+        with _center_col:
+            # Mirror Mode popover — the in-card popover (where mode lives in
+            # IOC view) isn't rendered here, so we expose an identical one
+            # at the top of Path Probe so the user can switch back.
+            _pp_mode_opts = ("Triage", "Lookup", "Path Probe")
+            _pp_idx = _pp_mode_opts.index(_input_mode)
+            _pp_a, _pp_b = st.columns([1.5, 4])
+            with _pp_a:
+                with st.popover(f"{_input_mode} ▾", use_container_width=True):
                     st.radio(
                         "Mode",
-                        ["Triage", "Lookup"],
-                        index=0 if _current_mode == "Triage" else 1,
+                        _pp_mode_opts,
+                        index=_pp_idx,
                         key="analysis_mode",
                         label_visibility="collapsed",
                     )
-            with _tc1:
-                st.checkbox(_auto_label, key="auto_detect_and_provider")
-            if _show_speed:
-                with _tc_speed:
-                    _current_speed = st.session_state.get("triage_speed", "Detailed")
-                    with st.popover(f"{_current_speed} ▾", use_container_width=True):
+            render_path_probe_panel()
+    else:
+        with _center_col:
+            # Hint pills
+            st.markdown('<div class="ioc-hint-row">', unsafe_allow_html=True)
+            _hp = st.columns(5)
+            _hints = [
+                ("IP Address", "8.8.8.8"),
+                ("Domain", "evil.example.com"),
+                ("URL", "https://phish.example.com/login"),
+                ("MD5 Hash", "44d88612fea8a8f36de82e1278abb02f"),
+                ("Email", "user@suspicious.io"),
+            ]
+            for _i, (_label, _val) in enumerate(_hints):
+                with _hp[_i]:
+                    if st.button(_label, key=f"hint_{_i}", use_container_width=True):
+                        _cur = st.session_state.get("ioc_input", "")
+                        st.session_state["ioc_input"] = (_cur + "\n" + _val).strip() if _cur else _val
+                        st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            st.markdown("<div style='height:6px'/>", unsafe_allow_html=True)
+
+            # Chat card
+            with st.container(border=True):
+                raw = st.text_area(
+                    "IOC",
+                    placeholder="Enter IOCs — IP, domain, URL, hash, or email (one per line)...",
+                    height=110,
+                    key="ioc_input",
+                    label_visibility="collapsed",
+                )
+                # Toolbar row inside card
+                _current_mode = st.session_state.get("analysis_mode", "Triage")
+                _auto_on = st.session_state.get("auto_detect_and_provider", True)
+                _show_speed = _current_mode == "Triage" and _auto_on
+                if _show_speed:
+                    _tc_mode, _tc_speed, _tc1, _tc2, _tc_run = st.columns(
+                        [0.95, 0.85, 1.5, 1.15, 0.5]
+                    )
+                else:
+                    _tc_mode, _tc1, _tc2, _tc_run = st.columns([0.95, 1.8, 1.15, 0.5])
+                _auto_label = (
+                    "Auto detect Lookup & Provider"
+                    if _current_mode == "Lookup"
+                    else "Auto detect IOC & Provider"
+                )
+                _mode_opts_inline = ("Triage", "Lookup", "Path Probe")
+                _mode_idx_inline = (
+                    _mode_opts_inline.index(_current_mode)
+                    if _current_mode in _mode_opts_inline
+                    else 0
+                )
+                with _tc_mode:
+                    with st.popover(f"{_current_mode} ▾", use_container_width=True):
                         st.radio(
-                            "Triage speed",
-                            ["Fast", "Detailed"],
-                            index=0 if _current_speed == "Fast" else 1,
-                            key="triage_speed",
+                            "Mode",
+                            _mode_opts_inline,
+                            index=_mode_idx_inline,
+                            key="analysis_mode",
                             label_visibility="collapsed",
                         )
-            with _tc2:
-                auto_generate_on_run = st.checkbox("Auto AI Description", value=False, key="auto_generate_on_run")
-            with _tc_run:
-                run = st.button("▶", type="primary", key="run_btn_chat", use_container_width=True)
+                with _tc1:
+                    st.checkbox(_auto_label, key="auto_detect_and_provider")
+                if _show_speed:
+                    with _tc_speed:
+                        _current_speed = st.session_state.get("triage_speed", "Detailed")
+                        with st.popover(f"{_current_speed} ▾", use_container_width=True):
+                            st.radio(
+                                "Triage speed",
+                                ["Fast", "Detailed"],
+                                index=0 if _current_speed == "Fast" else 1,
+                                key="triage_speed",
+                                label_visibility="collapsed",
+                            )
+                with _tc2:
+                    auto_generate_on_run = st.checkbox("Auto AI Description", value=False, key="auto_generate_on_run")
+                with _tc_run:
+                    run = st.button("▶", type="primary", key="run_btn_chat", use_container_width=True)
 
-        # Auto AI Description settings dropdown — shown below the input card
-        if auto_generate_on_run:
-            with st.expander("🤖 AI Description", expanded=True):
-                _ai_col1, _ai_col2 = st.columns(2)
-                with _ai_col1:
-                    st.selectbox("AI Provider", ["Gemini", "Groq"], index=0, key="auto_ai_desc_provider")
-                with _ai_col2:
-                    st.selectbox("Tone", ["High level language", "SOC L1 concise", "More formal"], index=0, key="auto_ai_tone")
-                _chk1, _chk2 = st.columns(2)
-                with _chk1:
-                    st.checkbox("Use only evidence shown (no guessing)", value=True, key="auto_ai_use_only_evidence")
-                with _chk2:
-                    st.checkbox("Sanitize sensitive data", value=True, key="auto_ai_sanitize")
+            # Auto AI Description settings dropdown — shown below the input card
+            if auto_generate_on_run:
+                with st.expander("🤖 AI Description", expanded=True):
+                    _ai_col1, _ai_col2 = st.columns(2)
+                    with _ai_col1:
+                        st.selectbox("AI Provider", ["Gemini", "Groq"], index=0, key="auto_ai_desc_provider")
+                    with _ai_col2:
+                        st.selectbox("Tone", ["High level language", "SOC L1 concise", "More formal"], index=0, key="auto_ai_tone")
+                    _chk1, _chk2 = st.columns(2)
+                    with _chk1:
+                        st.checkbox("Use only evidence shown (no guessing)", value=True, key="auto_ai_use_only_evidence")
+                    with _chk2:
+                        st.checkbox("Sanitize sensitive data", value=True, key="auto_ai_sanitize")
 
-        # Providers section — shown when Auto detect & Provider is off
-        if not st.session_state.get("auto_detect_and_provider", True):
-            _render_providers_expander(
-                expanded=True,
-                mode=st.session_state.get("analysis_mode", "Triage"),
+            # Providers section — shown when Auto detect & Provider is off
+            if not st.session_state.get("auto_detect_and_provider", True):
+                _render_providers_expander(
+                    expanded=True,
+                    mode=st.session_state.get("analysis_mode", "Triage"),
+                )
+
+            # Context expander
+            _render_context_expander(key_suffix="input")
+
+            st.markdown(
+                '<p style="text-align:center;font-family:\'JetBrains Mono\',monospace;'
+                'font-size:0.72rem;color:#6b7280;margin-top:10px;line-height:1.8;">'
+                'Enter one or more IOCs above, then press '
+                '<strong style="color:#e2e6f0;">▶ Run</strong> to start the analysis.'
+                '<br>Official Documentation: '
+                '<a href="https://github.com/minzelo/IOC-Router-v2" target="_blank" '
+                'style="color:#6b7280;text-decoration:underline;">github.com/minzelo/IOC-Router-v2</a>'
+                "</p>",
+                unsafe_allow_html=True,
             )
-
-        # Context expander
-        _render_context_expander(key_suffix="input")
-
-        st.markdown(
-            '<p style="text-align:center;font-family:\'JetBrains Mono\',monospace;'
-            'font-size:0.72rem;color:#6b7280;margin-top:10px;line-height:1.8;">'
-            'Enter one or more IOCs above, then press '
-            '<strong style="color:#e2e6f0;">▶ Run</strong> to start the analysis.'
-            '<br>Official Documentation: '
-            '<a href="https://github.com/minzelo/IOC-Router-v2" target="_blank" '
-            'style="color:#6b7280;text-decoration:underline;">github.com/minzelo/IOC-Router-v2</a>'
-            "</p>",
-            unsafe_allow_html=True,
-        )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Tab 3 — CVE (full-width CVE feed)

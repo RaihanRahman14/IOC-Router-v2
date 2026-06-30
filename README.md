@@ -40,12 +40,13 @@ Automatically identifies and routes each indicator to the relevant providers —
 
 ---
 
-### 3. Analysis Modes — Triage & Lookup
+### 3. Analysis Modes — Triage, Lookup & Path Probe
 
-Two analysis modes are available from the toolbar to match different SOC workflows:
+Three analysis modes are available from the toolbar to match different SOC workflows:
 
 - **Triage** *(default)* — incident-focused analysis using the full threat-intel provider set (VirusTotal, URLScan, AbuseIPDB, Shodan, ThreatFox, MalwareBazaar, DNSDumpster, Hybrid Analysis, Ransomware.live). MxToolBox and the Keyword group are excluded to keep the output focused on verdict-relevant signals.
 - **Lookup** — lightweight reputation/infrastructure check using a minimal provider subset: IP → VirusTotal + AbuseIPDB + MxToolBox, Domain/URL → Shodan + MxToolBox, Email → MxToolBox. Useful when you only need a quick sanity check without the full ticket-grade analysis.
+- **Path Probe** — active WAF / path-existence scanner. Replaces the IOC card with a domain + bulk-paths input that fires parallel HTTP requests and classifies each response by status code (see [§3b](#3b-path-probe--waf--exists-scanner)).
 
 #### Triage Speed (Fast / Detailed)
 
@@ -58,6 +59,37 @@ When **Triage** mode is active together with **Auto detect IOC & Provider**, an 
   - Hash → VirusTotal, Hybrid Analysis
 
 Both **Mode** and **Speed** are exposed as compact popovers in the input toolbar (and in the post-result toolbar), so analysts can switch between deep-dive and fast-triage workflows without leaving the page.
+
+---
+
+### 3b. Path Probe — WAF / Exists Scanner
+
+Selectable as a third option (`Path Probe`) in the Mode popover. Switches the Input tab from passive threat-intel enrichment to **active path probing** against a single domain — useful for confirming exposed admin panels, leaked config files, or quickly mapping which routes a WAF lets through versus blocks.
+
+**Inputs:**
+
+- **Domain** — single target (`https://` is prepended if no scheme is given).
+- **URL Paths** — bulk text area. Accepts messy formats — `["/admin"]`, `'/login'`, `"/api"`, comma-separated, newline-separated, mixed.
+- **🧹 Clean input** checkbox *(directly below the paths input)* — when enabled, strips `"`, `'`, `[`, `]` and splits on both newlines and commas before scanning. Disable to preserve paths exactly as typed (newline-split only).
+- **Advanced settings** — timeout (3–30 s) and concurrency (1–50 parallel workers).
+
+**Classification rule** (per HTTP status of each path):
+
+| Status | Class | Notes |
+|---|---|---|
+| 200–399 | ✅ **Confirmed** | Endpoint reachable (incl. redirects) |
+| 400–403 | ✅ **Confirmed** | Endpoint exists but malformed / auth-required / forbidden — often a WAF block |
+| 404–599 | ❌ **Not Confirmed** | Not found, method not allowed, rate-limited, server error |
+| (network) | ⚠️ **Error** | Timeout / connection refused — reported separately, not conflated with a real 404 |
+
+**Output:**
+
+- Live progress bar + streaming results table during the scan.
+- Post-scan metrics row (Total / Confirmed / Not Confirmed / Errors).
+- Classification filter (`st.multiselect`) over the result table.
+- One-click **CSV export** of the visible (filtered) rows.
+
+Source: [providers/path_prober.py](providers/path_prober.py) · UI: [ui/components/path_probe_panel.py](ui/components/path_probe_panel.py) · Tests: [tests/test_path_prober.py](tests/test_path_prober.py)
 
 ---
 
@@ -305,6 +337,7 @@ ioc-router/
 │   ├── mxtoolbox.py              # MxToolBox DNS/blacklist/mail lookups
 │   ├── whoxy.py                  # Whoxy WHOIS + reverse WHOIS
 │   ├── ransomware_live.py        # Ransomware.live victim search
+│   ├── path_prober.py            # Path Probe HTTP scanner (parallel via ThreadPoolExecutor)
 │   ├── gemini.py                 # Google Gemini AI client
 │   └── groq.py                   # Groq AI client
 │
@@ -315,6 +348,7 @@ ioc-router/
 │       ├── ioc_card.py           # Per-IOC result card
 │       ├── ai_panel.py           # AI ticket generation panel
 │       ├── cve_panel.py          # CVE details panel (NVD + CISA KEV, lazy-loaded)
+│       ├── path_probe_panel.py   # Path Probe UI (domain + bulk paths + cleaner checkbox)
 │       ├── bug_report.py         # Bug report / feature request dialog → Telegram
 │       ├── map.py                # Interactive OSM map builder
 │       └── output_renderer.py    # Notes / Table / JSON / Shareable output
@@ -355,6 +389,7 @@ ioc-router/
     ├── test_hybrid_analysis_provider.py
     ├── test_infra_classifier.py
     ├── test_malwarebazaar_provider.py
+    ├── test_path_prober.py
     ├── test_shodan_internetdb.py
     ├── test_threat_analysis.py
     └── test_urlscan_processing.py
