@@ -6,7 +6,6 @@ Rendered inside the Input tab when the user toggles the mode switch to
 """
 from __future__ import annotations
 
-import io
 import logging
 
 import pandas as pd
@@ -137,44 +136,28 @@ def _run_probe(
 
 
 def _render_results() -> None:
-    """Render the persistent results section (filters + table + export)."""
+    """Render the persistent results section (filter + table).
+
+    The classification-filter multiselect spans the full container width so
+    the ``confirmed`` / ``not_confirmed`` / ``error`` pills stay on a single
+    row instead of wrapping.
+    """
     results: list[ProbeResult] = st.session_state.get(_SESSION_KEY_RESULTS) or []
     if not results:
         return
 
     st.markdown("---")
-    confirmed = sum(1 for r in results if r.classification == "confirmed")
-    not_conf = sum(1 for r in results if r.classification == "not_confirmed")
-    errored = sum(1 for r in results if r.classification == "error")
 
-    _m1, _m2, _m3, _m4 = st.columns(4)
-    _m1.metric("Total", len(results))
-    _m2.metric("Confirmed", confirmed)
-    _m3.metric("Not Confirmed", not_conf)
-    _m4.metric("Errors", errored)
-
-    _fcol, _ = st.columns([2, 3])
-    with _fcol:
-        active_classes = st.multiselect(
-            "Filter classification",
-            options=["confirmed", "not_confirmed", "error"],
-            default=["confirmed", "not_confirmed", "error"],
-            key="probe_filter_class",
-        )
+    active_classes = st.multiselect(
+        "Filter classification",
+        options=["confirmed", "not_confirmed", "error"],
+        default=["confirmed", "not_confirmed", "error"],
+        key="probe_filter_class",
+    )
 
     filtered = [r for r in results if r.classification in active_classes]
     df = _results_to_dataframe(filtered)
     st.dataframe(df, use_container_width=True, hide_index=True)
-
-    csv_buf = io.StringIO()
-    df.to_csv(csv_buf, index=False)
-    st.download_button(
-        "⬇️ Export CSV",
-        data=csv_buf.getvalue(),
-        file_name="path_probe_results.csv",
-        mime="text/csv",
-        key="probe_export_csv",
-    )
 
 
 def render_path_probe_panel() -> None:
@@ -186,7 +169,7 @@ def render_path_probe_panel() -> None:
         3. Cleaner checkbox (directly below the paths input)
         4. Advanced expander (timeout, concurrency)
         5. Run button
-        6. Results section (metrics + filter + table + CSV export)
+        6. Results section (classification filter + table)
     """
     _ensure_state()
 

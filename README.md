@@ -85,9 +85,8 @@ Selectable as a third option (`Path Probe`) in the Mode popover. Switches the In
 **Output:**
 
 - Live progress bar + streaming results table during the scan.
-- Post-scan metrics row (Total / Confirmed / Not Confirmed / Errors).
-- Classification filter (`st.multiselect`) over the result table.
-- One-click **CSV export** of the visible (filtered) rows.
+- Full-width classification filter (`st.multiselect`) so the `confirmed` / `not_confirmed` / `error` pills stay on a single row.
+- Results table with per-path Status, Class badge, Reason, response time, size, and final URL.
 
 Source: [providers/path_prober.py](providers/path_prober.py) · UI: [ui/components/path_probe_panel.py](ui/components/path_probe_panel.py) · Tests: [tests/test_path_prober.py](tests/test_path_prober.py)
 
