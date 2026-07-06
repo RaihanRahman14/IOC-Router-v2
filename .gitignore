@@ -2,6 +2,7 @@
 .env
 *.toml
 .streamlit/secrets.toml
+!.streamlit/config.toml
 
 # Python
 __pycache__/

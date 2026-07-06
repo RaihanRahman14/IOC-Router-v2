@@ -1,0 +1,41 @@
+# Streamlit runtime config — tuned to avoid "Cached ForwardMsg MISS" errors
+# on Streamlit Community Cloud.
+#
+# Background: Streamlit sends every UI update as a ForwardMsg over the
+# WebSocket, keyed by hash. When the browser reconnects (Cloud sleep/wake,
+# transient network blip, tab restore) it requests message content by hash.
+# If the server has already evicted the message from its ForwardMsg cache,
+# the client shows "Cached ForwardMsg MISS. This is not expected to happen."
+#
+# This app triggers many st.rerun() cycles (hint buttons, tab switches,
+# load-sample, run) and emits large HTML blocks. The default cache is too
+# tight for that traffic pattern, so we widen it here.
+
+[global]
+# Cache all forward messages regardless of size. Default is 10000 (10 KB),
+# which means small messages are never cached — those cause a MISS on any
+# client reconnect because the server has nothing to replay.
+minCachedMessageSize = 0
+
+# Keep each cached ForwardMsg alive for many more script runs before eviction.
+# Default is 2 — too tight for an app that reruns often on widget toggles.
+maxCachedMessageAge = 50
+
+[server]
+# WebSocket compression shrinks large HTML/JSON payloads, which reduces the
+# reconnect window during which a MISS can happen.
+enableWebsocketCompression = true
+
+# Serve static files via HTTP instead of the WebSocket when possible.
+enableStaticServing = true
+
+# Larger threshold so provider result blobs never fail the WebSocket send.
+maxMessageSize = 300
+
+[browser]
+gatherUsageStats = false
+
+[client]
+# Keep the toolbar available so users can grab the "Rerun" option after a
+# transient disconnect without a hard refresh (which loses session state).
+toolbarMode = "minimal"
