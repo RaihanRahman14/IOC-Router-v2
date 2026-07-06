@@ -360,6 +360,19 @@ _PROVIDER_LABELS: dict[str, str] = {
     "whoxy":           "WhoXY (unavailable)",
     "ransomware_live": "Ransomware Live",
 }
+_PROVIDER_HELP: dict[str, str] = {
+    "vt":              "Multi-engine antivirus and URL / domain / IP / hash reputation aggregator. Requires VT_KEY.",
+    "urlscan":         "Sandboxed URL scanner — captures a DOM screenshot, network requests, and a maliciousness verdict. Requires URLSCAN_KEY.",
+    "abuse":           "Community-reported IP abuse database. Returns an abuse confidence score 0–100 and recent report categories. Requires ABUSE_KEY.",
+    "tf":              "Abuse.ch ThreatFox feed of active malware C2 / payload URLs, mapped to malware families. Requires THREATFOX_KEY.",
+    "mb":              "Abuse.ch MalwareBazaar sample repository — tags, signatures, and YARA hits for known malware hashes. Requires MB_KEY.",
+    "shodan":          "Internet-wide scan data — open ports, service banners, and known CVEs on the target host. Requires SHODAN_KEY.",
+    "dns":             "Passive DNS + subdomain and DNS record discovery for the target domain. Requires DNSD_KEY.",
+    "ha":              "Hybrid Analysis Falcon Sandbox behavioural report — verdict, dropped files, and network indicators.",
+    "mxtoolbox":       "Mail-server and domain diagnostics — MX, SPF, DMARC, and RBL blacklist status. Requires MXTOOLBOX_KEY.",
+    "whoxy":           "WHOIS history and reverse WHOIS lookups. Currently unavailable in this build.",
+    "ransomware_live": "Ransomware leak-site tracker — checks whether the keyword appears as a victim listing on any known group's site.",
+}
 _PROVIDER_DISABLED: set[str] = {"whoxy"}
 _GROUP_PROVIDERS_FULL: dict[str, list[str]] = {
     "ip":         ["vt", "abuse", "tf", "shodan", "ha", "mxtoolbox"],
@@ -413,6 +426,13 @@ _GROUP_LABEL: dict[str, str] = {
     "hash":       "Hash",
     "email":      "Email",
     "keyword":    "Keyword",
+}
+_GROUP_HELP: dict[str, str] = {
+    "ip":         "Enable providers that lookup IPv4 / IPv6 addresses — reputation, geolocation, and open-port intelligence.",
+    "domain_url": "Enable providers that lookup domain names and URLs — reputation, DNS records, and sandbox / screenshot analysis.",
+    "hash":       "Enable providers that lookup file hashes (MD5 / SHA-1 / SHA-256) for known malware samples and behavioural reports.",
+    "email":      "Enable providers that lookup email addresses — mail-server reputation and blacklist status.",
+    "keyword":    "Enable providers that search free-form keywords across WHOIS history and ransomware leak-site listings.",
 }
 _PROVIDER_TO_GROUPS: dict[str, list[str]] = {}
 for _g, _ps in _GROUP_PROVIDERS.items():
@@ -470,6 +490,7 @@ def _render_providers_expander(expanded: bool = True, mode: str = "Triage") -> N
                 key=_GROUP_IOC_KEY[group],
                 on_change=_on_ioc_group_toggle,
                 args=(group,),
+                help=_GROUP_HELP.get(group),
             )
             _gap, _pcol = st.columns([0.05, 0.95])
             with _pcol:
@@ -483,6 +504,7 @@ def _render_providers_expander(expanded: bool = True, mode: str = "Triage") -> N
                             disabled=p in _PROVIDER_DISABLED or not ioc_active,
                             on_change=_on_provider_toggle,
                             args=(p, group),
+                            help=_PROVIDER_HELP.get(p),
                         )
             if i < len(group_providers) - 1:
                 st.divider()
@@ -590,9 +612,24 @@ def _render_context_expander(
                 )
             _c1, _c2 = st.columns(2)
             with _c1:
-                st.checkbox("Use only evidence shown (no guessing)", key="ai_use_only_evidence")
+                st.checkbox(
+                    "Use only evidence shown (no guessing)",
+                    key="ai_use_only_evidence",
+                    help=(
+                        "Restrict the AI to facts visible in the provider "
+                        "outputs. Prevents fabricated details when evidence is "
+                        "thin."
+                    ),
+                )
             with _c2:
-                st.checkbox("Sanitize sensitive data", key="ai_sanitize")
+                st.checkbox(
+                    "Sanitize sensitive data",
+                    key="ai_sanitize",
+                    help=(
+                        "Redact internal hostnames, IPs, and identifiers from "
+                        "the prompt before sending it to the AI provider."
+                    ),
+                )
             if st.session_state.get("ai_provider") == "Gemini":
                 from providers.gemini import gemini_list_models  # local import — only needed here
                 if st.button("Fetch Gemini Models", key=f"fetch_gemini_models_{key_suffix}"):
@@ -706,6 +743,16 @@ if active_tab == "Input":
                     if _current_mode == "Lookup"
                     else "Auto detect IOC & Provider"
                 )
+                _auto_help = (
+                    "Automatically classify each IOC and select the appropriate "
+                    "lookup providers for each type. Uncheck to pick lookup "
+                    "categories and providers manually below."
+                    if _current_mode == "Lookup"
+                    else "Automatically classify each IOC (IP / domain / URL / "
+                    "hash / email) and select an appropriate set of providers "
+                    "for each. Uncheck to pick IOC types and providers manually "
+                    "below."
+                )
                 _mode_opts_inline = ("Triage", "Lookup", "Path Probe")
                 _mode_idx_inline = (
                     _mode_opts_inline.index(_current_mode)
@@ -722,7 +769,11 @@ if active_tab == "Input":
                             label_visibility="collapsed",
                         )
                 with _tc1:
-                    st.checkbox(_auto_label, key="auto_detect_and_provider")
+                    st.checkbox(
+                        _auto_label,
+                        key="auto_detect_and_provider",
+                        help=_auto_help,
+                    )
                 if _show_speed:
                     with _tc_speed:
                         _current_speed = st.session_state.get("triage_speed", "Detailed")
@@ -735,7 +786,16 @@ if active_tab == "Input":
                                 label_visibility="collapsed",
                             )
                 with _tc2:
-                    auto_generate_on_run = st.checkbox("Auto AI Description", value=False, key="auto_generate_on_run")
+                    auto_generate_on_run = st.checkbox(
+                        "Auto AI Description",
+                        value=False,
+                        key="auto_generate_on_run",
+                        help=(
+                            "Automatically generate an AI-written incident "
+                            "description as soon as the enrichment finishes. "
+                            "Opens the AI Description settings panel below."
+                        ),
+                    )
                 with _tc_run:
                     run = st.button("▶", type="primary", key="run_btn_chat", use_container_width=True)
 
@@ -749,9 +809,27 @@ if active_tab == "Input":
                         st.selectbox("Tone", ["High level language", "SOC L1 concise", "More formal"], index=0, key="auto_ai_tone")
                     _chk1, _chk2 = st.columns(2)
                     with _chk1:
-                        st.checkbox("Use only evidence shown (no guessing)", value=True, key="auto_ai_use_only_evidence")
+                        st.checkbox(
+                            "Use only evidence shown (no guessing)",
+                            value=True,
+                            key="auto_ai_use_only_evidence",
+                            help=(
+                                "Restrict the AI to facts visible in the "
+                                "provider outputs. Prevents fabricated details "
+                                "when evidence is thin."
+                            ),
+                        )
                     with _chk2:
-                        st.checkbox("Sanitize sensitive data", value=True, key="auto_ai_sanitize")
+                        st.checkbox(
+                            "Sanitize sensitive data",
+                            value=True,
+                            key="auto_ai_sanitize",
+                            help=(
+                                "Redact internal hostnames, IPs, and "
+                                "identifiers from the prompt before sending it "
+                                "to the AI provider."
+                            ),
+                        )
 
             # Providers section — shown when Auto detect & Provider is off
             if not st.session_state.get("auto_detect_and_provider", True):
