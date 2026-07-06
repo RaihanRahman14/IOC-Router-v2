@@ -19,7 +19,10 @@ minCachedMessageSize = 0
 
 # Keep each cached ForwardMsg alive for many more script runs before eviction.
 # Default is 2 — too tight for an app that reruns often on widget toggles.
-maxCachedMessageAge = 50
+# We bump this hard because Streamlit Cloud may restart the container on
+# memory pressure or idle, and every extra script run bought here reduces
+# the chance the client requests a message that has already been evicted.
+maxCachedMessageAge = 200
 
 [server]
 # WebSocket compression shrinks large HTML/JSON payloads, which reduces the
@@ -39,3 +42,10 @@ gatherUsageStats = false
 # Keep the toolbar available so users can grab the "Rerun" option after a
 # transient disconnect without a hard refresh (which loses session state).
 toolbarMode = "minimal"
+
+[runner]
+# When a rerun is triggered while a previous run is still executing, stop the
+# older one immediately. This shortens the window during which the client
+# might hold a hash for a script run that will never finish rendering — a
+# common upstream cause of "Cached ForwardMsg MISS" after rapid interactions.
+fastReruns = true

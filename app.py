@@ -185,6 +185,28 @@ components.html(
         }
         init(0);
 
+        // Auto-dismiss the "Cached ForwardMsg MISS" connection-error modal.
+        // The underlying WebSocket auto-recovers on its own (Streamlit's client
+        // re-requests script state) so the modal is pure noise for the user.
+        // We match by the error text, then click the modal's close button — or
+        // hide the whole modal container if the close button isn't found.
+        function dismissCachedMissModal() {
+            var modals = pd.querySelectorAll('div[role="dialog"], div[data-testid="stModal"], div[data-testid="stAlert"]');
+            modals.forEach(function(m) {
+                var txt = (m.textContent || '');
+                if (txt.indexOf('Cached ForwardMsg') === -1) return;
+                var closeBtn = m.querySelector('button[aria-label="Close"], button[title="Close"], [data-testid="baseButton-close"]');
+                if (closeBtn) { closeBtn.click(); return; }
+                m.style.setProperty('display', 'none', 'important');
+                // Also drop any modal backdrop so the app stays interactive.
+                pd.querySelectorAll('[data-testid="stModalBackdrop"], .stModal, [class*="modalContainer"]').forEach(function(b) {
+                    if ((b.textContent || '').indexOf('Cached ForwardMsg') !== -1) {
+                        b.style.setProperty('display', 'none', 'important');
+                    }
+                });
+            });
+        }
+
         // Re-attach after every Streamlit DOM update
         var _t = null;
         new MutationObserver(function() {
@@ -193,6 +215,7 @@ components.html(
                 attachBurger();
                 attachBackdrop();
                 attachHeaderButtons();
+                dismissCachedMissModal();
                 var sb = pd.querySelector('section[data-testid="stSidebar"]');
                 if (sb) {
                     var want = pw._drawerOpen ? 'translateX(0px)' : 'translateX(-300px)';
