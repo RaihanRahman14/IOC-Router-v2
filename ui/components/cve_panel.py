@@ -55,9 +55,20 @@ _COMMON_APP_KEYWORDS: list[str] = [
     "google chrome", "chrome", "firefox", "zoom", "slack",
     "whatsapp desktop", "telegram desktop", "notion", "google drive",
     "bitwarden", "lastpass",
+    "aruba", "atmos agent", "beyondtrust", "bitdefender",
+    "check point", "checkpoint", "cyberark", "cyber ark",
+    "device42", "hillstone", "hsm nshield", "nshield",
+    "imperva", "nagios", "riverbed", "ruckus", "sangfor",
+    "seciron", "sentinelone", "sentinel one", "tenable",
+    "trend micro", "trendmicro", "veeam", "wordpress", "word press",
+    "xfusion",
 ]
-# Short/ambiguous tokens — matched against vendor+product only to avoid false positives.
-_COMMON_APP_VENDOR_ONLY: list[str] = ["hp", "edge"]
+# Short/ambiguous tokens — matched against vendor+product only to avoid false positives
+# (e.g. "padding oracle" in crypto CVEs, "runs on Linux", "azure" as a color).
+_COMMON_APP_VENDOR_ONLY: list[str] = [
+    "hp", "edge",
+    "aws", "azure", "f5", "linux", "oracle", "php", "mysql",
+]
 
 # Keyword → human-readable display label.
 # _match_common_keyword sorts longest-first so "microsoft edge" wins over "microsoft",
@@ -67,10 +78,33 @@ _COMMON_KEYWORD_LABEL: dict[str, str] = {
     "microsoft edge":          "Microsoft Edge",
     "whatsapp desktop":        "WhatsApp Desktop",
     "telegram desktop":        "Telegram Desktop",
+    "hsm nshield":             "HSM nShield Connect",
+    "sentinel one":            "SentinelOne",
     "google chrome":           "Google Chrome",
     "google drive":            "Google Drive",
     "palo alto":               "Palo Alto Networks",
     "paloalto":                "Palo Alto Networks",
+    "check point":             "Check Point",
+    "checkpoint":              "Check Point",
+    "cyber ark":               "CyberArk",
+    "cyberark":                "CyberArk",
+    "atmos agent":             "Atmos Agent",
+    "trend micro":             "Trend Micro",
+    "trendmicro":              "Trend Micro",
+    "word press":              "WordPress",
+    "wordpress":               "WordPress",
+    "sentinelone":             "SentinelOne",
+    "beyondtrust":             "BeyondTrust",
+    "bitdefender":             "Bitdefender",
+    "device42":                "Device42",
+    "hillstone":               "Hillstone",
+    "nshield":                 "HSM nShield Connect",
+    "imperva":                 "Imperva",
+    "riverbed":                "Riverbed",
+    "sangfor":                 "Sangfor",
+    "seciron":                 "SecIron",
+    "tenable":                 "Tenable",
+    "xfusion":                 "XFusion",
     "cisco":                   "Cisco",
     "fortinet":                "Fortinet",
     "vmware":                  "VMware",
@@ -84,8 +118,19 @@ _COMMON_KEYWORD_LABEL: dict[str, str] = {
     "notion":                  "Notion",
     "bitwarden":               "Bitwarden",
     "lastpass":                "LastPass",
+    "aruba":                   "Aruba",
+    "nagios":                  "Nagios",
+    "ruckus":                  "Ruckus",
+    "veeam":                   "Veeam",
     "hp":                      "HP",
     "edge":                    "Microsoft Edge",
+    "aws":                     "AWS",
+    "azure":                   "Azure",
+    "f5":                      "F5",
+    "linux":                   "Linux",
+    "oracle":                  "Oracle",
+    "php":                     "PHP",
+    "mysql":                   "MySQL",
 }
 
 # ── Description-based product extraction regexes ─────────────────────────────
