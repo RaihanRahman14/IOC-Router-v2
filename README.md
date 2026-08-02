@@ -149,9 +149,11 @@ Source: [ioc/confidence_scorer.py](ioc/confidence_scorer.py)
 
 ---
 
-### 6. Threat State & Level
+### 6. Threat State, Level, and Verdict
 
 Determines the threat lifecycle state (e.g. Reconnaissance, Persistence, Impact) and assigns a threat level (Low → Very High), adjusted for asset criticality when the **Critical** flag is set. Also surfaces a human-readable risk label, a list of reasons driving the assessment, all relevant MITRE ATT&CK tactics observed across providers, key evidence per IOC (malware family, domain age, open ports, first seen), and direct source links back to each provider's result page.
+
+See [Threat State, Level, and Verdict](docs/threat_state_level_verdict.md) for a full breakdown of each state, level, and verdict.
 
 <p align="center">
   <img src="image/Threat Analysis 1.jpeg" width="42%">

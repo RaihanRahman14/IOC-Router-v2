@@ -20,6 +20,40 @@ from providers.groq import groq_generate
 from core.geo import fetch_geo_ip_api, fetch_nominatim
 
 
+# ── Help text for the Threat State / Level / Verdict override dropdowns ──────
+# Rendered as the "?" tooltip next to each selectbox (Streamlit renders markdown).
+# See docs/threat_state_level_verdict.md for the full breakdown.
+_THREAT_STATE_HELP = (
+    "**How far the attack has progressed (kill-chain stage):**\n\n"
+    "- **Exposure** — asset merely exposed/visible; no attack activity.\n"
+    "- **Intrusion Attempt** — recon, phishing, or exploit attempt, *or* a "
+    "serious attack that was blocked by controls.\n"
+    "- **Compromise** — foothold gained: malware executed or C2 communication.\n"
+    "- **Privilege Escalation** — attacker gained higher privileges.\n"
+    "- **Lateral Movement** — attacker spreading to other systems.\n"
+    "- **Persistence** — attacker established a survival mechanism.\n"
+    "- **Impact** — real damage: data exfiltration or service disruption/encryption."
+)
+
+_THREAT_LEVEL_HELP = (
+    "**Severity / response priority:**\n\n"
+    "- **Low** — minimal risk; exposure or attempts with no real progress.\n"
+    "- **Medium** — confirmed compromise, limited scope; needs investigation.\n"
+    "- **High** — serious progression (priv-esc, lateral, persistence) or "
+    "critical-asset compromise; prompt response.\n"
+    "- **Very High** — active impact (exfiltration/encryption) or critical "
+    "assets under advanced attack; immediate escalation."
+)
+
+_VERDICT_HELP = (
+    "**The analyst's final call on the alert:**\n\n"
+    "- **True Positive** 🔴 — a genuine, meaningful threat; warrants action.\n"
+    "- **Benign Positive** 🟠 — real activity detected, but low-impact or "
+    "already contained (attempts, recon, blocked attacks).\n"
+    "- **False Positive** 🟢 — no actual threat signal; the alert can be dismissed."
+)
+
+
 def _get_effective_device_action() -> str:
     """Return the effective device action value, resolving 'Others' to the custom text input.
 
@@ -1131,18 +1165,21 @@ def render_ai_panel(run_results: dict, settings) -> None:
                     "Threat State", _state_options,
                     index=_state_options.index(_ta_state) if _ta_state in _state_options else 0,
                     key="ta_override_state",
+                    help=_THREAT_STATE_HELP,
                 )
             with _h2:
                 _sel_level = st.selectbox(
                     "Threat Level", _level_options,
                     index=_level_options.index(_ta_level) if _ta_level in _level_options else 0,
                     key="ta_override_level",
+                    help=_THREAT_LEVEL_HELP,
                 )
             with _h3:
                 _sel_verdict = st.selectbox(
                     "Verdict", _verdict_options,
                     index=_verdict_options.index(_ta_verdict) if _ta_verdict in _verdict_options else 0,
                     key="ta_override_verdict",
+                    help=_VERDICT_HELP,
                 )
 
             # Color each selectbox background to match its value
