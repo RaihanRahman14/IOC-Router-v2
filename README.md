@@ -208,7 +208,7 @@ A dedicated panel surfaces recent CVEs from the **NVD API v2**, enriched with th
 
 - **Lazy loading** — 10 entries per page so large NVD windows stay responsive.
 - **Severity filtering** — pick from `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `Common`, `ALL`, or a custom `Select` set.
-- **Common-app detection** — vendor/product matching against a curated keyword list (Cisco, Fortinet, Palo Alto, VMware, Microsoft, Chrome, Zoom, Slack, WhatsApp Desktop, Telegram Desktop, etc.) so SOC-relevant CVEs surface first.
+- **Common-app detection** — vendor/product matching against a curated keyword list (Cisco, Fortinet, Palo Alto, VMware, Microsoft, Chrome, Zoom, Slack, WhatsApp Desktop, Telegram Desktop, Check Point, CyberArk, BeyondTrust, SentinelOne, Bitdefender, Trend Micro, Aruba, Ruckus, Sangfor, Hillstone, Imperva, Riverbed, Nagios, Veeam, Tenable, WordPress, HSM nShield, Atmos Agent, Device42, XFusion, SecIron, etc.) so SOC-relevant CVEs surface first. Short/ambiguous tokens (`hp`, `edge`, `aws`, `azure`, `f5`, `linux`, `oracle`, `php`, `mysql`) are matched against vendor+product fields only to avoid false positives on unrelated CVE descriptions.
 - **MITRE enrichment** — pulls vendor / product / affected version range from `affected[]` and a short CAPEC attack-pattern label from `impacts[]`, plus the **CWE-N** id from the NVD weaknesses list. Records are fetched in parallel (12 workers) and cached for 24 hours.
 - **KEV expansion** — when a CVE is in the CISA KEV catalog, the card carries the KEV `shortDescription`, `requiredAction`, `knownRansomwareCampaignUse`, and `vulnerabilityName` fields alongside the standard NVD data.
 - **NVD-aware caching** — 1-hour TTL on NVD + KEV responses keeps the rolling window reasonably fresh while easing rate-limit pressure; MITRE responses use a separate 24h TTL. Optional `CVE_NVD_KEY` env variable injects an NVD API key for higher rate limits (50 req/30s vs 5).
@@ -221,6 +221,31 @@ Source: [ui/components/cve_panel.py](ui/components/cve_panel.py) · Tests: [test
 ### 11. Run Timing & Performance Tracking
 
 Every enrichment run records per-provider latency and total wall time, and the AI ticket call tracks its own elapsed duration (`ai_timing`). These timings are surfaced in the JSON output under the `timings` key (`providers`, `providers_total`) — useful for spotting slow providers and tracking AI cost/performance over time.
+
+The fixed header also exposes a **⏱ Timing** button that opens a dedicated dialog with a per-provider breakdown (elapsed seconds + IOC count), a providers subtotal, the AI (Threat Analysis) elapsed time, and the grand total — no need to open the JSON to see where a slow run went.
+
+Source: [ui/components/timing_popup.py](ui/components/timing_popup.py)
+
+---
+
+### 12. Header Notes & Tab Switcher
+
+- **ⓘ Notes popup** — a header button opens a small dialog with landing-page notes (API key requirements, provider availability, refresh tips, and dev status). Source: [ui/components/note_popup.py](ui/components/note_popup.py).
+- **Header tab switcher** — the fixed header carries `Input` / `Result` / `CVE` tab buttons that forward clicks to hidden Streamlit buttons so switching stays instant even while a run is in progress. Source: [ui/components/tab_switcher.py](ui/components/tab_switcher.py).
+- **Contextual help** — provider checkboxes and the Auto / Group / Speed toggles in the input toolbar now carry `help=` tooltips explaining what each option does and when to enable it.
+
+---
+
+### 13. Streamlit Runtime Reliability
+
+The app ships a tuned `.streamlit/config.toml` and a small JS shim to keep long-running SOC sessions stable on Streamlit Community Cloud:
+
+- **Aggressive ForwardMsg caching** — `minCachedMessageSize = 0` and `maxCachedMessageAge = 200` so that reconnects after Cloud sleep/wake or a transient network blip do not surface the `Cached ForwardMsg MISS` warning.
+- **WebSocket compression + static serving** — `enableWebsocketCompression` and `enableStaticServing` shrink and offload large provider result payloads.
+- **Fast reruns** — `runner.fastReruns = true` cancels stale script runs on rapid widget toggles so the client never holds a hash for a run that will never finish.
+- **Auto-dismiss connection modal** — a MutationObserver in [app.py](app.py) detects and auto-closes any residual `Cached ForwardMsg MISS` modal, keeping the app interactive without a hard refresh.
+
+Config: [.streamlit/config.toml](.streamlit/config.toml)
 
 ---
 
@@ -296,9 +321,11 @@ Output (Notes / Table / JSON / Shareable Text)
 
 ```
 ioc-router/
-├── app.py                        # Streamlit entry point
+├── app.py                        # Streamlit entry point (fixed header + tab/dialog JS shim)
 ├── config.py                     # API key config & environment loading
 ├── requirements.txt
+├── .streamlit/
+│   └── config.toml               # ForwardMsg cache tuning + WS compression for Cloud stability
 │
 ├── core/                         # Orchestration & shared utilities
 │   ├── orchestrator.py           # Async provider dispatch & result aggregation
@@ -349,6 +376,9 @@ ioc-router/
 │       ├── cve_panel.py          # CVE details panel (NVD + CISA KEV, lazy-loaded)
 │       ├── path_probe_panel.py   # Path Probe UI (domain + bulk paths + cleaner checkbox)
 │       ├── bug_report.py         # Bug report / feature request dialog → Telegram
+│       ├── note_popup.py         # ⓘ Notes dialog (landing-page notes from header)
+│       ├── timing_popup.py       # ⏱ Timing dialog (per-provider + AI breakdown)
+│       ├── tab_switcher.py       # Hidden Streamlit buttons for header tab switching
 │       ├── map.py                # Interactive OSM map builder
 │       └── output_renderer.py    # Notes / Table / JSON / Shareable output
 │
