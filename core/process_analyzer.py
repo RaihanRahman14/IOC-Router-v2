@@ -576,9 +576,46 @@ def match_pairing(parent_process: str | None, child_process: str | None) -> dict
 
 # ── Flag emission ────────────────────────────────────────────────────────────
 
+SIGMA_RULE_BASE_URL = (
+    "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation"
+)
+MITRE_TECHNIQUE_BASE_URL = "https://attack.mitre.org/techniques"
+
+
 def _field_suffix(field_name: str) -> str:
     """Return the flag-id suffix for a form field (``file_path`` -> ``FILE_PATH``)."""
     return field_name.upper()
+
+
+def _mitre_url(technique: str) -> str:
+    """Build the ATT&CK page URL for a technique id.
+
+    Args:
+        technique: e.g. ``"T1036.005"`` or ``"T1105"``.
+
+    Returns:
+        The technique's ATT&CK URL, or ``""`` for an unrecognised id.
+    """
+    value = str(technique or "").strip().upper()
+    if not value.startswith("T"):
+        return ""
+    return f"{MITRE_TECHNIQUE_BASE_URL}/{value.replace('.', '/')}/"
+
+
+def _sigma_rule_url(pairing: dict) -> str:
+    """Build the SigmaHQ source URL for a matched pairing.
+
+    Lets an analyst read the full original condition — which matters most for
+    the approximate matches, where this layer evaluated only part of the rule.
+
+    Args:
+        pairing: A pairing record carrying ``sigma_file``.
+
+    Returns:
+        The rule's GitHub URL, or ``""`` when the filename is missing.
+    """
+    filename = str(pairing.get("sigma_file") or "").strip().lstrip("/")
+    return f"{SIGMA_RULE_BASE_URL}/{filename}" if filename else ""
 
 
 def _impersonation_note(analysis: FieldAnalysis) -> str:
@@ -653,28 +690,40 @@ def build_flags(result: ProcessAnalysisResult) -> list[dict]:
             )
             # MITRE stays T1036.005 only. The impersonated binary's techniques
             # describe what the real tool can do, not what this file did.
-            flags.append(_flag(
-                f"{analysis.identity_flag}_{suffix}",
-                f"{label}: {analysis.value}",
-                threat_type,
-                "HIGH",
-                list(_MASQUERADE_MITRE),
-                _masquerade_detail(analysis),
-                "Process Analysis",
-            ))
+            flags.append({
+                **_flag(
+                    f"{analysis.identity_flag}_{suffix}",
+                    f"{label}: {analysis.value}",
+                    threat_type,
+                    "HIGH",
+                    list(_MASQUERADE_MITRE),
+                    _masquerade_detail(analysis),
+                    "Process Analysis",
+                ),
+                # Masquerading has no external record to cite, so point at the
+                # technique. If it impersonates a LOLBAS binary, that page is
+                # the more actionable read.
+                "source_url": (
+                    (analysis.impersonated_lolbas or {}).get("url")
+                    or _mitre_url(_MASQUERADE_MITRE[0])
+                ),
+            })
             continue
 
         if analysis.lolbas_match:
-            flags.append(_flag(
-                f"{DUAL_USE_BINARY}_{suffix}",
-                f"{label}: {analysis.value}",
-                "Dual-use binary documented as abusable",
-                "INFO",
-                lolbas_lookup.mitre_techniques(analysis.lolbas_match),
-                lolbas_lookup.abuse_summary(analysis.lolbas_match)
-                + " — not malicious by itself; review the command line",
-                "LOLBAS",
-            ))
+            flags.append({
+                **_flag(
+                    f"{DUAL_USE_BINARY}_{suffix}",
+                    f"{label}: {analysis.value}",
+                    "Dual-use binary documented as abusable",
+                    "INFO",
+                    lolbas_lookup.mitre_techniques(analysis.lolbas_match),
+                    lolbas_lookup.abuse_summary(analysis.lolbas_match)
+                    + " — not malicious by itself; review the command line",
+                    "LOLBAS",
+                ),
+                "source_url": analysis.lolbas_match.get("url", ""),
+            })
 
     pairing = result.pairing_flag
     if pairing:
@@ -685,28 +734,34 @@ def build_flags(result: ProcessAnalysisResult) -> list[dict]:
         detail = f"{pairing['parent']} spawned {pairing['child']} — {pairing.get('title', '')}"
         if pairing.get("approximate_note"):
             detail += f" [{pairing['approximate_note']}]"
-        flags.append(_flag(
-            SUSPICIOUS_PARENT_CHILD_PAIR,
-            f"Suspicious parent-child pair: {pairing['parent']} -> {pairing['child']}",
-            "Known-suspicious process lineage",
-            _SIGMA_LEVEL_TO_SEVERITY.get(level, "MEDIUM"),
-            [str(t) for t in techniques],
-            detail,
-            "Sigma (extracted)",
-        ))
+        flags.append({
+            **_flag(
+                SUSPICIOUS_PARENT_CHILD_PAIR,
+                f"Suspicious parent-child pair: {pairing['parent']} -> {pairing['child']}",
+                "Known-suspicious process lineage",
+                _SIGMA_LEVEL_TO_SEVERITY.get(level, "MEDIUM"),
+                [str(t) for t in techniques],
+                detail,
+                "Sigma (extracted)",
+            ),
+            "source_url": _sigma_rule_url(pairing),
+        })
 
     if result.chain_contamination and result.parent_process_analysis is not None:
         parent = result.parent_process_analysis
-        flags.append(_flag(
-            PARENT_CHAIN_CONTAMINATION,
-            f"Parent process is not what it claims: {parent.value}",
-            "Contaminated process lineage",
-            "HIGH",
-            list(_MASQUERADE_MITRE),
-            f"Parent flagged {parent.identity_flag} — any child it spawned inherits "
-            f"that doubt. {parent.identity_detail}",
-            "Process Analysis",
-        ))
+        flags.append({
+            **_flag(
+                PARENT_CHAIN_CONTAMINATION,
+                f"Parent process is not what it claims: {parent.value}",
+                "Contaminated process lineage",
+                "HIGH",
+                list(_MASQUERADE_MITRE),
+                f"Parent flagged {parent.identity_flag} — any child it spawned inherits "
+                f"that doubt. {parent.identity_detail}",
+                "Process Analysis",
+            ),
+            "source_url": _mitre_url(_MASQUERADE_MITRE[0]),
+        })
 
     order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
     flags.sort(key=lambda f: order.get(f["severity"], 5))

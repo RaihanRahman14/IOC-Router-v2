@@ -354,12 +354,14 @@ Analysis sees the process evidence, using the mappings added in D2.
 | 4 | `extract_sigma_pairs.py` → `sigma_parent_child_pairs.json` | — | done (1874 pairs) |
 | 5 | Layer 4 pairing + chain propagation + tests | 2, 4 | done |
 | 6 | Aggregation + flag emission + tests | 2, 3, 5 | done |
-| 7 | D2 evidence-mapping change in `ioc/flags/__init__.py` | 6 | pending |
-| 8 | D1 run-gate change + `app.py` wiring | 6 | pending |
-| 9 | Table / JSON / AI-prompt surfacing | 8 | pending |
+| 7 | D2 evidence-mapping change in `ioc/flags/__init__.py` | 6 | done |
+| 8 | D1 run-gate change + `app.py` wiring | 6 | done |
+| 9 | Table / JSON / AI-prompt surfacing | 8 | done |
 
-Steps 1-6 landed as 139 tests across `tests/test_process_analyzer.py`,
-`tests/test_lolbas_lookup.py` and `tests/test_sigma_pairs.py`.
+All nine steps landed as 170 tests across `tests/test_process_analyzer.py`,
+`tests/test_lolbas_lookup.py`, `tests/test_sigma_pairs.py` and
+`tests/test_process_integration.py`. The module is feature-complete against the
+briefing; what remains is calibration (§7), not construction.
 
 **Deviations from this plan, decided during implementation:**
 
@@ -373,6 +375,21 @@ Steps 1-6 landed as 139 tests across `tests/test_process_analyzer.py`,
   Levenshtein-on-filename misses at distance 3.
 - `has_path` became auto-detected from the value instead of passed per field, so
   a full path pasted into Parent Process is still path-checked.
+- **Process rows are kept out of `run_results["rows"]`.** §5.2 planned to merge
+  them in. A survey of the consumers found three that assume one entry per
+  atomic IOC: `ioc_card.py` indexes the list by `Artifact`, `ai_panel.py` filters
+  it against `selected_values`, and `summary` counts it for the session hero —
+  so merging would have desynced the hero counts from the table. They now live
+  in `run_results["process_rows"]` using the **identical column schema**, and
+  `output_renderer` concatenates the two lists at render time. A test asserts the
+  schemas match key-for-key.
+- **Evidence mapping is `malware_executed`, not `persistence_mechanism`.** §D2
+  proposed the latter, but `ioc/threat_analysis.py:31` maps that key straight to
+  Threat State "Persistence" — and impersonating a binary or spawning a shell
+  from Office says nothing about a persistence mechanism being installed. All
+  three process flags now map to `malware_executed` ("Compromise"). A prevented
+  Device Action still caps the state at "Intrusion Attempt", which is the safety
+  valve that makes this defensible. Both behaviours are tested.
 - **LOLBAS no longer emits a flag on a masquerading field.** Briefing §3 Layer 2
   states the lookup is "only meaningful on processes that passed Layer 1". The
   first implementation ran it unconditionally, producing a `DUAL_USE_BINARY`

@@ -163,6 +163,67 @@ class TestTableRowSchema(unittest.TestCase):
         self.assertFalse(df["Artifact"].isna().any())
 
 
+class TestFlagSourceLinks(unittest.TestCase):
+    """Every process flag cites a source the analyst can open.
+
+    The Threat Indicators panel makes the label and badges clickable only when
+    a URL is present; without one these flags rendered as dead text while every
+    provider flag was linked.
+    """
+
+    @staticmethod
+    def _flags(**kwargs) -> list[dict]:
+        return pa.analyze_process_event(pa.ProcessFilepathInput(**kwargs)).flags
+
+    def test_every_flag_carries_a_source_url(self) -> None:
+        cases = (
+            {"parent_process": "outlook.exe", "child_process": "cmd.exe"},
+            {"file_path": "C:\\Users\\Public\\certutil.exe"},
+            {"file_path": "C:\\Temp\\scvhost.exe"},
+            {"parent_process": "C:\\Users\\Public\\svchost.exe", "child_process": "notepad.exe"},
+            {"child_process": "mshta.exe"},
+        )
+        for case in cases:
+            for flag in self._flags(**case):
+                with self.subTest(case=case, flag=flag["id"]):
+                    self.assertTrue(flag.get("source_url"), f"{flag['id']} has no source_url")
+                    self.assertTrue(flag["source_url"].startswith("https://"))
+
+    def test_pairing_links_to_the_sigma_rule(self) -> None:
+        flag = next(f for f in self._flags(parent_process="outlook.exe", child_process="cmd.exe")
+                    if f["id"] == pa.SUSPICIOUS_PARENT_CHILD_PAIR)
+        self.assertIn("github.com/SigmaHQ/sigma", flag["source_url"])
+        self.assertTrue(flag["source_url"].endswith(".yml"))
+
+    def test_dual_use_links_to_the_lolbas_page(self) -> None:
+        flag = self._flags(child_process="certutil.exe")[0]
+        self.assertIn("lolbas-project.github.io", flag["source_url"])
+
+    def test_masquerading_prefers_the_impersonated_lolbas_page(self) -> None:
+        flag = self._flags(file_path="C:\\Users\\Public\\certutil.exe")[0]
+        self.assertIn("lolbas-project.github.io", flag["source_url"])
+
+    def test_masquerading_falls_back_to_the_attack_technique(self) -> None:
+        """svchost.exe is not a LOLBAS binary, so cite T1036.005 instead."""
+        flag = self._flags(file_path="C:\\Temp\\scvhost.exe")[0]
+        self.assertEqual(flag["source_url"], "https://attack.mitre.org/techniques/T1036/005/")
+
+    def test_mitre_url_builder(self) -> None:
+        self.assertEqual(pa._mitre_url("T1105"), "https://attack.mitre.org/techniques/T1105/")
+        self.assertEqual(pa._mitre_url("T1218.005"),
+                         "https://attack.mitre.org/techniques/T1218/005/")
+        self.assertEqual(pa._mitre_url(""), "")
+        self.assertEqual(pa._mitre_url("TA0002"), "https://attack.mitre.org/techniques/TA0002/")
+
+    def test_sigma_url_builder_handles_missing_file(self) -> None:
+        self.assertEqual(pa._sigma_rule_url({}), "")
+
+    def test_source_url_does_not_break_the_shared_flag_shape(self) -> None:
+        for flag in self._flags(parent_process="outlook.exe", child_process="cmd.exe"):
+            for key in ("id", "label", "threat_type", "severity", "mitre", "detail", "source"):
+                self.assertIn(key, flag)
+
+
 class TestHashHandoff(unittest.TestCase):
     """Step 8 — a hash found in Context is enriched, then dominates aggregation."""
 

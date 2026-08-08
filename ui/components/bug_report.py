@@ -8,6 +8,14 @@ from datetime import datetime, timedelta, timezone
 import requests
 import streamlit as st
 
+from ui.components.popup_state import (
+    POPUP_BUG_REPORT,
+    close_popup,
+    dismiss_callback,
+    is_open,
+    open_popup,
+)
+
 try:
     from dotenv import load_dotenv
     load_dotenv(override=True)
@@ -54,7 +62,10 @@ def _build_message(feature: str, what_happened: str, recommendation: str) -> str
     return "\n".join(parts)
 
 
-@st.dialog("📣 Report a Bug / Request Feature")
+@st.dialog(
+    "📣 Report a Bug / Request Feature",
+    on_dismiss=dismiss_callback(POPUP_BUG_REPORT),
+)
 def _bug_report_dialog() -> None:
     _FEATURES = ["AI Description", "Provider's Output", "Threat Analysis", "Analyst Result", "UI", "Others"]
 
@@ -103,7 +114,7 @@ def _bug_report_dialog() -> None:
                 ok = _send_telegram(bot_token, chat_id, msg)
 
             if ok:
-                st.session_state["show_bug_report"] = False
+                close_popup(POPUP_BUG_REPORT)
                 st.toast("Report sent! Thank you 🙏", icon="✅")
                 st.rerun()
             else:
@@ -111,18 +122,15 @@ def _bug_report_dialog() -> None:
 
     with col_cancel:
         if st.button("Cancel", use_container_width=True, key="br_cancel"):
-            st.session_state["show_bug_report"] = False
+            close_popup(POPUP_BUG_REPORT)
             st.rerun()
 
 
 def render_bug_report_button() -> None:
     """Render the Report Bug button. JS in app.py positions it in the header."""
-    if "show_bug_report" not in st.session_state:
-        st.session_state["show_bug_report"] = False
-
     if st.button("Report Bug 🐞", key="report_bug_btn"):
-        st.session_state["show_bug_report"] = True
+        open_popup(POPUP_BUG_REPORT)
         st.rerun()
 
-    if st.session_state.get("show_bug_report"):
+    if is_open(POPUP_BUG_REPORT):
         _bug_report_dialog()

@@ -3,6 +3,14 @@ from __future__ import annotations
 
 import streamlit as st
 
+from ui.components.popup_state import (
+    POPUP_NOTE,
+    close_popup,
+    dismiss_callback,
+    is_open,
+    open_popup,
+)
+
 _NOTES: tuple[str, ...] = (
     "<strong>Gemini, Grok, and MxToolBox</strong> require own API key",
     "For more efficient and fast query turn off Auto Provider and deselect not needed providers",
@@ -12,7 +20,7 @@ _NOTES: tuple[str, ...] = (
 )
 
 
-@st.dialog("Notes")
+@st.dialog("Notes", on_dismiss=dismiss_callback(POPUP_NOTE))
 def _note_dialog() -> None:
     """Render the notes dialog body. Close X is hidden — only the Back button closes."""
     # Marker + scoped CSS: hide Streamlit's built-in dialog close button only
@@ -44,18 +52,15 @@ def _note_dialog() -> None:
     )
 
     if st.button("← Back", use_container_width=True, key="note_back_btn"):
-        st.session_state["show_note_popup"] = False
+        close_popup(POPUP_NOTE)
         st.rerun()
 
 
 def render_note_button() -> None:
     """Render the Note (ⓘ) button. JS in app.py positions it next to Report Bug."""
-    if "show_note_popup" not in st.session_state:
-        st.session_state["show_note_popup"] = False
-
     if st.button("Notes ⓘ", key="note_popup_btn"):
-        st.session_state["show_note_popup"] = True
+        open_popup(POPUP_NOTE)
         st.rerun()
 
-    if st.session_state.get("show_note_popup"):
+    if is_open(POPUP_NOTE):
         _note_dialog()

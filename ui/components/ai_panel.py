@@ -1300,8 +1300,10 @@ def render_ai_panel(run_results: dict, settings) -> None:
                     _mitre_text = ", ".join(
                         f"{t} ({_mitre_names.get(t, t)})" for t in _tactic_ids
                     ) or "—"
+                    _SEV_EXPORT_LABEL = {"INFO": "INFORMATIONAL"}
                     _ti_lines = [
-                        f"  [{_f['severity']}] {_f['label']} ({_f['source']}): {_f['threat_type']}"
+                        f"  [{_SEV_EXPORT_LABEL.get(_f['severity'], _f['severity'])}] "
+                        f"{_f['label']} ({_f['source']}): {_f['threat_type']}"
                         for _f in _deduped_flags[:20]
                     ]
                     _ti_text = "\n".join(_ti_lines) or "—"
@@ -1387,24 +1389,32 @@ def render_ai_panel(run_results: dict, settings) -> None:
             if _deduped_flags:
                 st.divider()
                 st.markdown("**Threat Indicators**")
+                # Display labels only — the stored severity value stays "INFO",
+                # which the sort orders and every provider flag module rely on.
                 _sev_cfg = {
-                    "CRITICAL": ("#c0392b", "🔴"),
-                    "HIGH":     ("#e67e22", "🟠"),
-                    "MEDIUM":   ("#f39c12", "🟡"),
-                    "LOW":      ("#27ae60", "🟢"),
-                    "INFO":     ("#7f8c8d", "ℹ️"),
+                    "CRITICAL": ("#c0392b", "🔴", "CRITICAL"),
+                    "HIGH":     ("#e67e22", "🟠", "HIGH"),
+                    "MEDIUM":   ("#f39c12", "🟡", "MEDIUM"),
+                    "LOW":      ("#27ae60", "🟢", "LOW"),
+                    "INFO":     ("#7f8c8d", "ℹ️", "INFORMATIONAL"),
                 }
                 for _sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"):
                     _grp = [_f for _f in _deduped_flags if _f["severity"] == _sev]
                     if not _grp:
                         continue
-                    _sc, _se = _sev_cfg[_sev]
-                    with st.expander(f"{_se} {_sev} — {len(_grp)} indicator(s)"):
+                    _sc, _se, _sev_label = _sev_cfg[_sev]
+                    with st.expander(f"{_se} {_sev_label} — {len(_grp)} indicator(s)"):
                         for _f in _grp:
                             _mitre_str = " · ".join(_f["mitre"]) if _f["mitre"] else "—"
                             _f_ioc_val  = _f.get("ioc_value", "")
                             _f_ioc_type = _f.get("ioc_type", "")
-                            _f_src_url  = _flag_source_url(_f["source"], _f_ioc_val, _f_ioc_type)
+                            # A flag may carry its own source link (LOLBAS page,
+                            # SigmaHQ rule, ATT&CK technique); otherwise derive
+                            # one from the provider + IOC.
+                            _f_src_url = (
+                                _f.get("source_url")
+                                or _flag_source_url(_f["source"], _f_ioc_val, _f_ioc_type)
+                            )
                             _src_badge = (
                                 f'<a href="{_f_src_url}" target="_blank" style="text-decoration:none">'
                                 f'<span style="background:#34495e;color:#ecf0f1;padding:1px 7px;'

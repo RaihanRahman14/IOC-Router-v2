@@ -3,6 +3,14 @@ from __future__ import annotations
 
 import streamlit as st
 
+from ui.components.popup_state import (
+    POPUP_TIMING,
+    close_popup,
+    dismiss_callback,
+    is_open,
+    open_popup,
+)
+
 _PROV_LABEL_MAP: dict[str, str] = {
     "vt": "VirusTotal", "urlscan": "urlscan", "abuse": "AbuseIPDB",
     "tf": "ThreatFox", "mb": "MalwareBazaar", "shodan": "Shodan",
@@ -12,7 +20,7 @@ _PROV_LABEL_MAP: dict[str, str] = {
 }
 
 
-@st.dialog("Timing")
+@st.dialog("Timing", on_dismiss=dismiss_callback(POPUP_TIMING))
 def _timing_dialog() -> None:
     """Render the timing breakdown dialog body. Close X is hidden — only Back closes."""
     st.markdown(
@@ -70,7 +78,7 @@ def _timing_dialog() -> None:
         )
 
     if st.button("← Back", use_container_width=True, key="timing_back_btn"):
-        st.session_state["show_timing_popup"] = False
+        close_popup(POPUP_TIMING)
         st.rerun()
 
 
@@ -81,12 +89,9 @@ def render_timing_button() -> None:
     (see ``ui/styles.py``) and forwards its click to this hidden button
     via the JS bootstrap in ``app.py``.
     """
-    if "show_timing_popup" not in st.session_state:
-        st.session_state["show_timing_popup"] = False
-
     if st.button("Timing ⏱", key="timing_popup_btn"):
-        st.session_state["show_timing_popup"] = True
+        open_popup(POPUP_TIMING)
         st.rerun()
 
-    if st.session_state.get("show_timing_popup"):
+    if is_open(POPUP_TIMING):
         _timing_dialog()
