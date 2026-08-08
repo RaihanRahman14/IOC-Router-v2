@@ -187,9 +187,15 @@ def render_results_output(output_format: str, run_results: dict) -> None:
     whoxy_results = run_results.get("whoxy", {})
     ransomware_live_results = run_results.get("ransomware_live", {})
 
+    # Process/filepath analysis contributes one row per submitted field, using
+    # the same column schema so the table needs no special-casing. Kept separate
+    # from `rows` upstream because that list is one-entry-per-atomic-IOC.
+    process_rows = run_results.get("process_rows") or []
+    table_rows = rows + process_rows
+
     if output_format == "Table":
         if pd:
-            df = pd.DataFrame(rows)
+            df = pd.DataFrame(table_rows)
 
             if "ActiveProviders" in df.columns:
                 df["ActiveProviders"] = df["ActiveProviders"].apply(
@@ -248,10 +254,13 @@ def render_results_output(output_format: str, run_results: dict) -> None:
             )
             st.dataframe(styled, use_container_width=True)
         else:
-            st.dataframe(rows, use_container_width=True)
+            st.dataframe(table_rows, use_container_width=True)
 
     elif output_format == "JSON":
-        st.json({"summary": summary, "rows": rows})
+        payload = {"summary": summary, "rows": rows}
+        if run_results.get("process_analysis"):
+            payload["process_analysis"] = run_results["process_analysis"]
+        st.json(payload)
 
     elif output_format == "Shareable Text":
         _st_text = st.session_state.get("share_text", "")

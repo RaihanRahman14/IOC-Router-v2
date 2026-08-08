@@ -285,6 +285,28 @@ def render_ai_panel(run_results: dict, settings) -> None:
             if _ctx_child:
                 lines.append(f"  Child Process: {_ctx_child} — the process spawned as a result of the activity.")
 
+        # Structured findings from the process/filepath analyzer. Without the
+        # skipped-checks list the model implies certainty about fields the
+        # analyst never filled.
+        _proc = run_results.get("process_analysis") or {}
+        _proc_flags = run_results.get("process_flags") or []
+        if _proc.get("fields_submitted"):
+            lines.append("Process / filepath analysis (local datasets, no provider lookup):")
+            lines.append(f"  Verdict: {_proc.get('aggregated_verdict', 'Unknown')}")
+            if _proc_flags:
+                lines.append(f"  Findings:\n{flags_to_ai_context(_proc_flags)}")
+            else:
+                lines.append("  Findings: none — no masquerading, pairing, or dual-use match.")
+            if _proc.get("checks_skipped"):
+                lines.append(
+                    "  Checks NOT performed (field not provided — do not imply these were "
+                    "cleared): " + "; ".join(_proc["checks_skipped"])
+                )
+            lines.append(
+                "  Treat 'Unknown' as unverified, never as benign. Do not claim a field was "
+                "checked unless it appears above."
+            )
+
         if section == "DESCRIPTION":
             host_ip_value = st.session_state.get("result_host_ip") or st.session_state.get("source_ip") or "N/A"
             raw_log_value = (st.session_state.get("result_raw_log") or "").strip()
@@ -453,6 +475,20 @@ def render_ai_panel(run_results: dict, settings) -> None:
             for technique in ha_mitre:
                 if isinstance(technique, str) and technique.strip():
                     tactics.add(technique.strip())
+
+        # Process/filepath findings are event-level, not per-IOC, so they are
+        # folded in once here rather than inside the per-IOC loop above. They go
+        # through the same evidence mapper as provider flags.
+        _proc_flags = run_results.get("process_flags") or []
+        if _proc_flags:
+            _proc_summary = flags_summary_for_evidence(_proc_flags)
+            for k, v in _proc_summary["evidence"].items():
+                if v:
+                    evidence[k] = True
+            for t in _proc_summary["mitre_tactics"]:
+                tactics.add(t)
+            for n in _proc_summary["notes"]:
+                _add_note(n)
 
         if evidence["phishing_or_social_eng"] or evidence["exploit_attempt"] or evidence["scanning_or_recon"]:
             evidence["attack_prevented"] = evidence["attack_prevented"] or not (evidence["malware_executed"] or evidence["c2_connection"])
@@ -974,6 +1010,12 @@ def render_ai_panel(run_results: dict, settings) -> None:
                 _f["ioc_value"] = _ioc.value
                 _f["ioc_type"] = _ioc.type
             _all_flags.extend(_ioc_flags)
+
+        # Process findings attach to the event, not to any one IOC, so they are
+        # appended with the source field as their artifact label.
+        for _pf in (run_results.get("process_flags") or []):
+            _all_flags.append({**_pf, "ioc_value": _pf.get("label", ""), "ioc_type": "process"})
+
         _seen_fids: set[str] = set()
         _deduped_flags: list[dict] = []
         for _f in _all_flags:

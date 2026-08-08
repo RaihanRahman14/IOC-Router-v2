@@ -146,6 +146,20 @@ def flags_summary_for_evidence(flags: list[dict]) -> dict:
         if any(k in fid for k in ("RANSOMWARE", "RL_VICTIM", "RL_RECENT")):
             ev["service_disruption_or_encryption"] = True
 
+        # Process-analysis flags (core.process_analyzer). Without these the
+        # module's findings would reach the Threat Analysis narrative with an
+        # empty evidence dict and silently score as "Exposure".
+        #
+        # All three map to `malware_executed` ("Compromise"), not
+        # `persistence_mechanism` ("Persistence"): impersonating a system binary
+        # or spawning a shell from Office says something ran that should not
+        # have, but says nothing about a persistence mechanism being installed.
+        # A prevented Device Action still caps the state at Intrusion Attempt.
+        if any(k in fid for k in (
+            "MASQUERADING", "PARENT_CHAIN_CONTAMINATION", "SUSPICIOUS_PARENT_CHILD_PAIR",
+        )):
+            ev["malware_executed"] = True
+
     return {
         "evidence": ev,
         "mitre_tactics": sorted(tactics),

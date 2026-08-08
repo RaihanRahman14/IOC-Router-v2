@@ -51,7 +51,11 @@
       "WebFetch(domain:github.com)",
       "Bash(Get-ChildItem -Recurse -Filter \"*.tsx\" -o -Filter \"*.ts\")",
       "Bash(Select-Object -First 30 FullName)",
-      "Bash(python -c \"from ui.components.ai_panel import render_ai_panel; print\\('import OK'\\)\")"
+      "Bash(python -c \"from ui.components.ai_panel import render_ai_panel; print\\('import OK'\\)\")",
+      "Bash(awk 'NR>=400 && NR<=440' ui/components/ai_panel.py)",
+      "Bash(awk 'NR>=950 && NR<=975' ui/components/ai_panel.py)",
+      "Bash(python -c \"import pytest,sys;print\\(pytest.__version__,sys.version\\)\")",
+      "Bash(python -m unittest tests.test_process_analyzer -v)"
     ]
   }
 }

@@ -1,0 +1,2808 @@
+{
+  "_meta": {
+    "schema": "lowercased binary filename -> {binary, description, categories, mitre, url}",
+    "purpose": "Layer 2 dual-use binary lookup for core.lolbas_lookup",
+    "source": "https://lolbas-project.github.io/api/lolbas.json",
+    "project": "https://github.com/LOLBAS-Project/LOLBAS",
+    "license": "CC BY 4.0",
+    "generated_by": "core/scripts/extract_lolbas.py",
+    "updated": "2026-08-08",
+    "entry_count": 240,
+    "notes": [
+      "Command strings are intentionally dropped — a LOLBAS match alone is not malicious, it only means the command line deserves review.",
+      "Categories and MITRE IDs are the distinct union across every documented abuse command for that binary."
+    ]
+  },
+  "binaries": {
+    "acccheckconsole.exe": {
+      "binary": "AccCheckConsole.exe",
+      "description": "Verifies UI accessibility requirements",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/AccCheckConsole/"
+    },
+    "addinutil.exe": {
+      "binary": "AddinUtil.exe",
+      "description": ".NET Tool used for updating cache files for Microsoft Office Add-Ins.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Addinutil/"
+    },
+    "adplus.exe": {
+      "binary": "adplus.exe",
+      "description": "Debugging tool included with Windows Debugging Tools",
+      "categories": [
+        "Dump",
+        "Execute"
+      ],
+      "mitre": [
+        "T1003.001",
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Adplus/"
+    },
+    "advpack.dll": {
+      "binary": "Advpack.dll",
+      "description": "Utility for installing software and drivers with rundll32.exe",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.011"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/Advpack/"
+    },
+    "agentexecutor.exe": {
+      "binary": "AgentExecutor.exe",
+      "description": "Intune Management Extension included on Intune Managed Devices",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Agentexecutor/"
+    },
+    "appcert.exe": {
+      "binary": "AppCert.exe",
+      "description": "Windows App Certification Kit command-line tool.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127",
+        "T1218.007"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Appcert/"
+    },
+    "appinstaller.exe": {
+      "binary": "AppInstaller.exe",
+      "description": "Tool used for installation of AppX/MSIX applications on Windows 10",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/AppInstaller/"
+    },
+    "applauncher.exe": {
+      "binary": "AppLauncher.exe",
+      "description": "User Experience Virtualization tool that launches applications under monitoring to capture and synchronize user settings.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/AppLauncher/"
+    },
+    "appvlp.exe": {
+      "binary": "Appvlp.exe",
+      "description": "Application Virtualization Utility Included with Microsoft Office 2016",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Appvlp/"
+    },
+    "aspnet_compiler.exe": {
+      "binary": "Aspnet_Compiler.exe",
+      "description": "ASP.NET Compilation Tool",
+      "categories": [
+        "AWL Bypass"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Aspnet_Compiler/"
+    },
+    "at.exe": {
+      "binary": "At.exe",
+      "description": "Schedule periodic tasks",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1053.002"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/At/"
+    },
+    "atbroker.exe": {
+      "binary": "Atbroker.exe",
+      "description": "Helper binary for Assistive Technology (AT)",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Atbroker/"
+    },
+    "bash.exe": {
+      "binary": "Bash.exe",
+      "description": "File used by Windows subsystem for Linux",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1202",
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Bash/"
+    },
+    "bcp.exe": {
+      "binary": "Bcp.exe",
+      "description": "Microsoft SQL Server Bulk Copy Program utility for importing and exporting data between SQL Server instances and data files.",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Bcp/"
+    },
+    "bginfo.exe": {
+      "binary": "Bginfo.exe",
+      "description": "Background Information Utility included with SysInternals Suite",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Bginfo/"
+    },
+    "bitsadmin.exe": {
+      "binary": "Bitsadmin.exe",
+      "description": "Used for managing background intelligent transfer",
+      "categories": [
+        "ADS",
+        "Copy",
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105",
+        "T1218",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Bitsadmin/"
+    },
+    "cdb.exe": {
+      "binary": "Cdb.exe",
+      "description": "Debugging tool included with Windows Debugging Tools.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Cdb/"
+    },
+    "certoc.exe": {
+      "binary": "CertOC.exe",
+      "description": "Used for installing certificates",
+      "categories": [
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105",
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Certoc/"
+    },
+    "certreq.exe": {
+      "binary": "CertReq.exe",
+      "description": "Used for requesting and managing certificates",
+      "categories": [
+        "Download",
+        "Upload"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Certreq/"
+    },
+    "certutil.exe": {
+      "binary": "Certutil.exe",
+      "description": "Windows binary used for handling certificates",
+      "categories": [
+        "ADS",
+        "Decode",
+        "Download",
+        "Encode"
+      ],
+      "mitre": [
+        "T1027.013",
+        "T1105",
+        "T1140",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Certutil/"
+    },
+    "change.exe": {
+      "binary": "Change.exe",
+      "description": "Remote Desktop Services MultiUser Change Utility",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Change/"
+    },
+    "cipher.exe": {
+      "binary": "Cipher.exe",
+      "description": "File Encryption Utility",
+      "categories": [
+        "Tamper"
+      ],
+      "mitre": [
+        "T1485",
+        "T1562"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Cipher/"
+    },
+    "cl_invocation.ps1": {
+      "binary": "CL_Invocation.ps1",
+      "description": "Aero diagnostics script",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1216"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Scripts/Cl_invocation/"
+    },
+    "cl_loadassembly.ps1": {
+      "binary": "CL_LoadAssembly.ps1",
+      "description": "PowerShell Diagnostic Script",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1216"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Scripts/CL_LoadAssembly/"
+    },
+    "cl_mutexverifiers.ps1": {
+      "binary": "CL_Mutexverifiers.ps1",
+      "description": "Proxy execution with CL_Mutexverifiers.ps1",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1216"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Scripts/CL_mutexverifiers/"
+    },
+    "cmd.exe": {
+      "binary": "Cmd.exe",
+      "description": "The command-line interpreter in Windows",
+      "categories": [
+        "ADS",
+        "Download",
+        "Upload"
+      ],
+      "mitre": [
+        "T1048.003",
+        "T1059.003",
+        "T1105",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Cmd/"
+    },
+    "cmdkey.exe": {
+      "binary": "Cmdkey.exe",
+      "description": "creates, lists, and deletes stored user names and passwords or credentials.",
+      "categories": [
+        "Credentials"
+      ],
+      "mitre": [
+        "T1078"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Cmdkey/"
+    },
+    "cmdl32.exe": {
+      "binary": "cmdl32.exe",
+      "description": "Microsoft Connection Manager Auto-Download",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Cmdl32/"
+    },
+    "cmstp.exe": {
+      "binary": "Cmstp.exe",
+      "description": "Installs or removes a Connection Manager service profile.",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.003"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Cmstp/"
+    },
+    "colorcpl.exe": {
+      "binary": "Colorcpl.exe",
+      "description": "Binary that handles color management",
+      "categories": [
+        "Copy"
+      ],
+      "mitre": [
+        "T1036.005"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Colorcpl/"
+    },
+    "computerdefaults.exe": {
+      "binary": "ComputerDefaults.exe",
+      "description": "ComputerDefaults.exe is a Windows system utility for managing default applications for tasks like web browsing, emailing, and media playback.",
+      "categories": [
+        "UAC Bypass"
+      ],
+      "mitre": [
+        "T1548.002"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/ComputerDefaults/"
+    },
+    "comsvcs.dll": {
+      "binary": "Comsvcs.dll",
+      "description": "COM+ Services",
+      "categories": [
+        "Dump"
+      ],
+      "mitre": [
+        "T1003.001"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/comsvcs/"
+    },
+    "configsecuritypolicy.exe": {
+      "binary": "ConfigSecurityPolicy.exe",
+      "description": "Binary part of Windows Defender. Used to manage settings in Windows Defender. You can configure different pilot collections for each of the co-management workloads. Being able to use different pilot collections allows you to take a more granular approach when shifting workloads.",
+      "categories": [
+        "Download",
+        "Upload"
+      ],
+      "mitre": [
+        "T1105",
+        "T1567"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/ConfigSecurityPolicy/"
+    },
+    "conhost.exe": {
+      "binary": "Conhost.exe",
+      "description": "Console Window host",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Conhost/"
+    },
+    "control.exe": {
+      "binary": "Control.exe",
+      "description": "Binary used to launch controlpanel items in Windows",
+      "categories": [
+        "ADS",
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.002"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Control/"
+    },
+    "coregen.exe": {
+      "binary": "coregen.exe",
+      "description": "Binary coregen.exe (Microsoft CoreCLR Native Image Generator) loads exported function GetCLRRuntimeHost from coreclr.dll or from .DLL in arbitrary path. Coregen is located within \"C:\\Program Files (x86)\\Microsoft Silverlight\\5.1.50918.0\\\" or another version of Silverlight. Coregen is signed by Microsoft and bundled with Microsoft Silverlight.",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1055",
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Coregen/"
+    },
+    "createdump.exe": {
+      "binary": "Createdump.exe",
+      "description": "Microsoft .NET Runtime Crash Dump Generator (included in .NET Core)",
+      "categories": [
+        "Dump"
+      ],
+      "mitre": [
+        "T1003"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Createdump/"
+    },
+    "csc.exe": {
+      "binary": "Csc.exe",
+      "description": "Binary file used by .NET Framework to compile C# code",
+      "categories": [
+        "Compile"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Csc/"
+    },
+    "cscript.exe": {
+      "binary": "Cscript.exe",
+      "description": "Binary used to execute scripts in Windows",
+      "categories": [
+        "ADS"
+      ],
+      "mitre": [
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Cscript/"
+    },
+    "csi.exe": {
+      "binary": "csi.exe",
+      "description": "Command line interface included with Visual Studio.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Csi/"
+    },
+    "customshellhost.exe": {
+      "binary": "CustomShellHost.exe",
+      "description": "A host process that is used by custom shells when using Windows in Kiosk mode.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/CustomShellHost/"
+    },
+    "datasvcutil.exe": {
+      "binary": "DataSvcUtil.exe",
+      "description": "DataSvcUtil.exe is a command-line tool provided by WCF Data Services that consumes an Open Data Protocol (OData) feed and generates the client data service classes that are needed to access a data service from a .NET Framework client application.",
+      "categories": [
+        "Upload"
+      ],
+      "mitre": [
+        "T1567"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/DataSvcUtil/"
+    },
+    "defaultpack.exe": {
+      "binary": "DefaultPack.EXE",
+      "description": "This binary can be downloaded along side multiple software downloads on the Microsoft website. It gets downloaded when the user forgets to uncheck the option to set Bing as the default search provider.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/DefaultPack/"
+    },
+    "desk.cpl": {
+      "binary": "Desk.cpl",
+      "description": "Desktop Settings Control Panel",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.011"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/Desk/"
+    },
+    "desktopimgdownldr.exe": {
+      "binary": "Desktopimgdownldr.exe",
+      "description": "Windows binary used to configure lockscreen/desktop image",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Desktopimgdownldr/"
+    },
+    "devicecredentialdeployment.exe": {
+      "binary": "DeviceCredentialDeployment.exe",
+      "description": "Device Credential Deployment",
+      "categories": [
+        "Conceal"
+      ],
+      "mitre": [
+        "T1564"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/DeviceCredentialDeployment/"
+    },
+    "devinit.exe": {
+      "binary": "Devinit.exe",
+      "description": "Visual Studio 2019 tool",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.007"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Devinit/"
+    },
+    "devtoolslauncher.exe": {
+      "binary": "Devtoolslauncher.exe",
+      "description": "Binary will execute specified binary. Part of VS/VScode installation.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Devtoolslauncher/"
+    },
+    "devtunnel.exe": {
+      "binary": "devtunnel.exe",
+      "description": "Binary to enable forwarded ports on windows operating systems.",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/devtunnels/"
+    },
+    "dfshim.dll": {
+      "binary": "Dfshim.dll",
+      "description": "ClickOnce engine in Windows used by .NET",
+      "categories": [
+        "AWL Bypass"
+      ],
+      "mitre": [
+        "T1127.002"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/Dfshim/"
+    },
+    "dfsvc.exe": {
+      "binary": "Dfsvc.exe",
+      "description": "ClickOnce engine in Windows used by .NET",
+      "categories": [
+        "AWL Bypass"
+      ],
+      "mitre": [
+        "T1127.002"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Dfsvc/"
+    },
+    "diantz.exe": {
+      "binary": "Diantz.exe",
+      "description": "Binary that package existing files into a cabinet (.cab) file",
+      "categories": [
+        "ADS",
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1036",
+        "T1105",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Diantz/"
+    },
+    "diskshadow.exe": {
+      "binary": "Diskshadow.exe",
+      "description": "Diskshadow.exe is a tool that exposes the functionality offered by the volume shadow copy Service (VSS).",
+      "categories": [
+        "Dump",
+        "Execute"
+      ],
+      "mitre": [
+        "T1003.003",
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Diskshadow/"
+    },
+    "dnscmd.exe": {
+      "binary": "Dnscmd.exe",
+      "description": "A command-line interface for managing DNS servers",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1543.003"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Dnscmd/"
+    },
+    "dnx.exe": {
+      "binary": "dnx.exe",
+      "description": ".NET Execution environment file included with .NET.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Dnx/"
+    },
+    "dotnet.exe": {
+      "binary": "Dotnet.exe",
+      "description": "dotnet.exe comes with .NET Framework",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1059",
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Dotnet/"
+    },
+    "dsdbutil.exe": {
+      "binary": "dsdbutil.exe",
+      "description": "Dsdbutil is a command-line tool that is built into Windows Server. It is available if you have the AD LDS server role installed. Can be used as a command line utility to export Active Directory.",
+      "categories": [
+        "Dump"
+      ],
+      "mitre": [
+        "T1003.003"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Dsdbutil/"
+    },
+    "dtutil.exe": {
+      "binary": "dtutil.exe",
+      "description": "Microsoft command line utility used to manage SQL Server Integration Services packages.",
+      "categories": [
+        "Copy"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Dtutil/"
+    },
+    "dump64.exe": {
+      "binary": "Dump64.exe",
+      "description": "Memory dump tool that comes with Microsoft Visual Studio",
+      "categories": [
+        "Dump"
+      ],
+      "mitre": [
+        "T1003.001"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Dump64/"
+    },
+    "dumpminitool.exe": {
+      "binary": "DumpMinitool.exe",
+      "description": "Dump tool part Visual Studio 2022",
+      "categories": [
+        "Dump"
+      ],
+      "mitre": [
+        "T1003.001"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/DumpMinitool/"
+    },
+    "dxcap.exe": {
+      "binary": "Dxcap.exe",
+      "description": "DirectX diagnostics/debugger included with Visual Studio.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Dxcap/"
+    },
+    "ecmangen.exe": {
+      "binary": "ECMangen.exe",
+      "description": "Command-line tool for managing certificates in Microsoft Exchange Server.",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/ECMangen/"
+    },
+    "esentutl.exe": {
+      "binary": "Esentutl.exe",
+      "description": "Binary for working with Microsoft Joint Engine Technology (JET) database",
+      "categories": [
+        "ADS",
+        "Copy",
+        "Download"
+      ],
+      "mitre": [
+        "T1003.003",
+        "T1105",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Esentutl/"
+    },
+    "eudcedit.exe": {
+      "binary": "Eudcedit.exe",
+      "description": "Private Character Editor Windows Utility",
+      "categories": [
+        "UAC Bypass"
+      ],
+      "mitre": [
+        "T1548.002"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Eudcedit/"
+    },
+    "eventvwr.exe": {
+      "binary": "Eventvwr.exe",
+      "description": "Displays Windows Event Logs in a GUI window.",
+      "categories": [
+        "UAC Bypass"
+      ],
+      "mitre": [
+        "T1548.002"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Eventvwr/"
+    },
+    "excel.exe": {
+      "binary": "Excel.exe",
+      "description": "Microsoft Office binary",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Excel/"
+    },
+    "expand.exe": {
+      "binary": "Expand.exe",
+      "description": "Binary that expands one or more compressed files",
+      "categories": [
+        "ADS",
+        "Copy",
+        "Download"
+      ],
+      "mitre": [
+        "T1105",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Expand/"
+    },
+    "explorer.exe": {
+      "binary": "Explorer.exe",
+      "description": "Binary used for managing files and system components within Windows",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Explorer/"
+    },
+    "extexport.exe": {
+      "binary": "Extexport.exe",
+      "description": "Load a DLL located in the c:\\test folder with a specific name.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Extexport/"
+    },
+    "extrac32.exe": {
+      "binary": "Extrac32.exe",
+      "description": "Extract to ADS, copy or overwrite a file with Extrac32.exe",
+      "categories": [
+        "ADS",
+        "Copy",
+        "Download"
+      ],
+      "mitre": [
+        "T1105",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Extrac32/"
+    },
+    "findstr.exe": {
+      "binary": "Findstr.exe",
+      "description": "Write to ADS, discover, or download files with Findstr.exe",
+      "categories": [
+        "ADS",
+        "Credentials",
+        "Download"
+      ],
+      "mitre": [
+        "T1105",
+        "T1552.001",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Findstr/"
+    },
+    "finger.exe": {
+      "binary": "Finger.exe",
+      "description": "Displays information about a user or users on a specified remote computer that is running the Finger service or daemon",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Finger/"
+    },
+    "fltmc.exe": {
+      "binary": "fltMC.exe",
+      "description": "Filter Manager Control Program used by Windows",
+      "categories": [
+        "Tamper"
+      ],
+      "mitre": [
+        "T1562.001"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/FltMC/"
+    },
+    "forfiles.exe": {
+      "binary": "Forfiles.exe",
+      "description": "Selects and executes a command on a file or set of files. This command is useful for batch processing.",
+      "categories": [
+        "ADS",
+        "Execute"
+      ],
+      "mitre": [
+        "T1202",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Forfiles/"
+    },
+    "fsi.exe": {
+      "binary": "Fsi.exe",
+      "description": "64-bit FSharp (F#) Interpreter included with Visual Studio and DotNet Core SDK.",
+      "categories": [
+        "AWL Bypass"
+      ],
+      "mitre": [
+        "T1059"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Fsi/"
+    },
+    "fsianycpu.exe": {
+      "binary": "FsiAnyCpu.exe",
+      "description": "32/64-bit FSharp (F#) Interpreter included with Visual Studio.",
+      "categories": [
+        "AWL Bypass"
+      ],
+      "mitre": [
+        "T1059"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/FsiAnyCpu/"
+    },
+    "fsutil.exe": {
+      "binary": "Fsutil.exe",
+      "description": "File System Utility",
+      "categories": [
+        "Execute",
+        "Tamper"
+      ],
+      "mitre": [
+        "T1218",
+        "T1485"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Fsutil/"
+    },
+    "ftp.exe": {
+      "binary": "Ftp.exe",
+      "description": "A binary designed for connecting to FTP servers",
+      "categories": [
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105",
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Ftp/"
+    },
+    "gpscript.exe": {
+      "binary": "Gpscript.exe",
+      "description": "Used by group policy to process scripts",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Gpscript/"
+    },
+    "hh.exe": {
+      "binary": "Hh.exe",
+      "description": "Binary used for processing chm files in Windows",
+      "categories": [
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105",
+        "T1218.001"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Hh/"
+    },
+    "ie4uinit.exe": {
+      "binary": "Ie4uinit.exe",
+      "description": "Executes commands from a specially prepared ie4uinit.inf file.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Ie4uinit/"
+    },
+    "ieadvpack.dll": {
+      "binary": "Ieadvpack.dll",
+      "description": "INF installer for Internet Explorer. Has much of the same functionality as advpack.dll.",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.011"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/Ieadvpack/"
+    },
+    "iediagcmd.exe": {
+      "binary": "iediagcmd.exe",
+      "description": "Diagnostics Utility for Internet Explorer",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Iediagcmd/"
+    },
+    "ieexec.exe": {
+      "binary": "Ieexec.exe",
+      "description": "The IEExec.exe application is an undocumented Microsoft .NET Framework application that is included with the .NET Framework. You can use the IEExec.exe application as a host to run other managed applications that you start by using a URL.",
+      "categories": [
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105",
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Ieexec/"
+    },
+    "ieframe.dll": {
+      "binary": "Ieframe.dll",
+      "description": "Internet Browser DLL for translating HTML code.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.011"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/Ieframe/"
+    },
+    "ilasm.exe": {
+      "binary": "Ilasm.exe",
+      "description": "used for compile c# code into dll or exe.",
+      "categories": [
+        "Compile"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Ilasm/"
+    },
+    "imewdbld.exe": {
+      "binary": "IMEWDBLD.exe",
+      "description": "Microsoft IME Open Extended Dictionary Module",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/IMEWDBLD/"
+    },
+    "infdefaultinstall.exe": {
+      "binary": "Infdefaultinstall.exe",
+      "description": "Binary used to perform installation based on content inside inf files",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Infdefaultinstall/"
+    },
+    "installutil.exe": {
+      "binary": "Installutil.exe",
+      "description": "The Installer tool is a command-line utility that allows you to install and uninstall server resources by executing the installer components in specified assemblies",
+      "categories": [
+        "AWL Bypass",
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105",
+        "T1218.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Installutil/"
+    },
+    "intellitrace.exe": {
+      "binary": "IntelliTrace.exe",
+      "description": "Visual Studio command-line tool for collecting and managing diagnostic trace files.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/IntelliTrace/"
+    },
+    "iscsicpl.exe": {
+      "binary": "iscsicpl.exe",
+      "description": "Microsoft iSCSI Initiator Control Panel tool",
+      "categories": [
+        "UAC Bypass"
+      ],
+      "mitre": [
+        "T1548.002"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Iscsicpl/"
+    },
+    "jsc.exe": {
+      "binary": "Jsc.exe",
+      "description": "Binary file used by .NET to compile JavaScript code to .exe or .dll format",
+      "categories": [
+        "Compile"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Jsc/"
+    },
+    "launch-vsdevshell.ps1": {
+      "binary": "Launch-VsDevShell.ps1",
+      "description": "Locates and imports a Developer PowerShell module and calls the Enter-VsDevShell cmdlet",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1216"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Scripts/Launch-VsDevShell/"
+    },
+    "ldifde.exe": {
+      "binary": "Ldifde.exe",
+      "description": "Creates, modifies, and deletes LDAP directory objects.",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Ldifde/"
+    },
+    "logger.exe": {
+      "binary": "Logger.exe",
+      "description": "A logging configuration tool from the Windows Kits used to start and manage process logging.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Logger/"
+    },
+    "makecab.exe": {
+      "binary": "Makecab.exe",
+      "description": "Binary to package existing files into a cabinet (.cab) file",
+      "categories": [
+        "ADS",
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1036",
+        "T1105",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Makecab/"
+    },
+    "manage-bde.wsf": {
+      "binary": "Manage-bde.wsf",
+      "description": "Script for managing BitLocker",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1216"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Scripts/Manage-bde/"
+    },
+    "mavinject.exe": {
+      "binary": "Mavinject.exe",
+      "description": "Used by App-v in Windows",
+      "categories": [
+        "ADS",
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.013",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Mavinject/"
+    },
+    "mftrace.exe": {
+      "binary": "Mftrace.exe",
+      "description": "Trace log generation tool for Media Foundation Tools.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Mftrace/"
+    },
+    "microsoft.nodejstools.pressanykey.exe": {
+      "binary": "Microsoft.NodejsTools.PressAnyKey.exe",
+      "description": "Part of the NodeJS Visual Studio tools.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Microsoft.NodejsTools.PressAnyKey/"
+    },
+    "microsoft.workflow.compiler.exe": {
+      "binary": "Microsoft.Workflow.Compiler.exe",
+      "description": "A utility included with .NET that is capable of compiling and executing C# or VB.net code.",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Microsoft.Workflow.Compiler/"
+    },
+    "mmc.exe": {
+      "binary": "Mmc.exe",
+      "description": "Load snap-ins to locally and remotely manage Windows systems",
+      "categories": [
+        "Download",
+        "Execute",
+        "UAC Bypass"
+      ],
+      "mitre": [
+        "T1218.014"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Mmc/"
+    },
+    "mofcomp.exe": {
+      "binary": "Mofcomp.exe",
+      "description": "Compiler that parses a file containing MOF statements and adds the classes and class instances defined in the file to the WMI repository. Threat actors can leverage this binary to install malicious MOF scripts",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1047"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Mofcomp/"
+    },
+    "mpcmdrun.exe": {
+      "binary": "MpCmdRun.exe",
+      "description": "Binary part of Windows Defender. Used to manage settings in Windows Defender",
+      "categories": [
+        "ADS",
+        "Download"
+      ],
+      "mitre": [
+        "T1105",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/MpCmdRun/"
+    },
+    "mpiexec.exe": {
+      "binary": "Mpiexec.exe",
+      "description": "Command-line tool for running Message Passing Interface (MPI) applications.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Mpiexec/"
+    },
+    "msaccess.exe": {
+      "binary": "MSAccess.exe",
+      "description": "Microsoft Office component",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Msaccess/"
+    },
+    "msbuild.exe": {
+      "binary": "Msbuild.exe",
+      "description": "Used to compile and execute code",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1036",
+        "T1127.001"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Msbuild/"
+    },
+    "msconfig.exe": {
+      "binary": "Msconfig.exe",
+      "description": "MSConfig is a troubleshooting tool which is used to temporarily disable or re-enable software, device drivers or Windows services that run during startup process to help the user determine the cause of a problem with Windows",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Msconfig/"
+    },
+    "mscopilot.exe": {
+      "binary": "Mscopilot.exe",
+      "description": "Microsoft Copilot app",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.015"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Mscopilot/"
+    },
+    "mscopilot_proxy.exe": {
+      "binary": "Mscopilot_proxy.exe",
+      "description": "Microsoft Copilot proxy launcher",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.015"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Mscopilot_proxy/"
+    },
+    "msdeploy.exe": {
+      "binary": "Msdeploy.exe",
+      "description": "Microsoft tool used to deploy Web Applications.",
+      "categories": [
+        "AWL Bypass",
+        "Copy",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105",
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Msdeploy/"
+    },
+    "msdt.exe": {
+      "binary": "Msdt.exe",
+      "description": "Microsoft diagnostics tool",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1202",
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Msdt/"
+    },
+    "msedge.exe": {
+      "binary": "Msedge.exe",
+      "description": "Microsoft Edge browser",
+      "categories": [
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105",
+        "T1218.015"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Msedge/"
+    },
+    "msedge_proxy.exe": {
+      "binary": "msedge_proxy.exe",
+      "description": "Microsoft Edge Browser",
+      "categories": [
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105",
+        "T1218.015"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/msedge_proxy/"
+    },
+    "msedgewebview2.exe": {
+      "binary": "msedgewebview2.exe",
+      "description": "msedgewebview2.exe is the executable file for Microsoft Edge WebView2, which is a web browser control used by applications to display web content.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.015"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/msedgewebview2/"
+    },
+    "mshta.exe": {
+      "binary": "Mshta.exe",
+      "description": "Used by Windows to execute html applications. (.hta)",
+      "categories": [
+        "ADS",
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105",
+        "T1218.005"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Mshta/"
+    },
+    "mshtml.dll": {
+      "binary": "Mshtml.dll",
+      "description": "Microsoft HTML Viewer",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.011"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/Mshtml/"
+    },
+    "msiexec.exe": {
+      "binary": "Msiexec.exe",
+      "description": "Used by Windows to execute msi files",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.007"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Msiexec/"
+    },
+    "msohtmed.exe": {
+      "binary": "MsoHtmEd.exe",
+      "description": "Microsoft Office component",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/MsoHtmEd/"
+    },
+    "msoxmled.exe": {
+      "binary": "msoxmled.exe",
+      "description": "Microsoft Office XML Editor, used to handle XML documents in Microsoft Office.",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Msoxmled/"
+    },
+    "mspub.exe": {
+      "binary": "Mspub.exe",
+      "description": "Microsoft Publisher",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Mspub/"
+    },
+    "msxsl.exe": {
+      "binary": "msxsl.exe",
+      "description": "Command line utility used to perform XSL transformations.",
+      "categories": [
+        "ADS",
+        "AWL Bypass",
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105",
+        "T1220",
+        "T1564"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Msxsl/"
+    },
+    "netsh.exe": {
+      "binary": "Netsh.exe",
+      "description": "Netsh is a Windows tool used to manipulate network interface settings.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1546.007"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Netsh/"
+    },
+    "ngen.exe": {
+      "binary": "Ngen.exe",
+      "description": "Microsoft Native Image Generator.",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Ngen/"
+    },
+    "nmcap.exe": {
+      "binary": "Nmcap.exe",
+      "description": "Command-line packet capture utility from Microsoft Network Monitor 3.x.",
+      "categories": [
+        "Reconnaissance"
+      ],
+      "mitre": [
+        "T1040"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Nmcap/"
+    },
+    "ntdsutil.exe": {
+      "binary": "ntdsutil.exe",
+      "description": "Command line utility used to export Active Directory.",
+      "categories": [
+        "Dump"
+      ],
+      "mitre": [
+        "T1003.003"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Ntdsutil/"
+    },
+    "ntsd.exe": {
+      "binary": "Ntsd.exe",
+      "description": "Symbolic Debugger for Windows.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Ntsd/"
+    },
+    "odbcad32.exe": {
+      "binary": "odbcad32.exe",
+      "description": "ODBC Data Source Administrator to manage User/System DSNs and ODBC drivers.",
+      "categories": [
+        "UAC Bypass"
+      ],
+      "mitre": [
+        "T1548.002"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/odbcad32/"
+    },
+    "odbcconf.exe": {
+      "binary": "Odbcconf.exe",
+      "description": "Used in Windows for managing ODBC connections",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.008"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Odbcconf/"
+    },
+    "offlinescannershell.exe": {
+      "binary": "OfflineScannerShell.exe",
+      "description": "Windows Defender Offline Shell",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/OfflineScannerShell/"
+    },
+    "onedrivestandaloneupdater.exe": {
+      "binary": "OneDriveStandaloneUpdater.exe",
+      "description": "OneDrive Standalone Updater",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/OneDriveStandaloneUpdater/"
+    },
+    "openconsole.exe": {
+      "binary": "OpenConsole.exe",
+      "description": "Console Window host for Windows Terminal",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/OpenConsole/"
+    },
+    "outlook.exe": {
+      "binary": "Outlook.exe",
+      "description": "Microsoft Office component",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Outlook/"
+    },
+    "pcalua.exe": {
+      "binary": "Pcalua.exe",
+      "description": "Program Compatibility Assistant",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Pcalua/"
+    },
+    "pcwrun.exe": {
+      "binary": "Pcwrun.exe",
+      "description": "Program Compatibility Wizard",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202",
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Pcwrun/"
+    },
+    "pcwutl.dll": {
+      "binary": "Pcwutl.dll",
+      "description": "Microsoft HTML Viewer",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.011"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/Pcwutl/"
+    },
+    "pester.bat": {
+      "binary": "Pester.bat",
+      "description": "Used as part of the Powershell pester",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1216"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Scripts/pester/"
+    },
+    "photoviewer.dll": {
+      "binary": "PhotoViewer.dll",
+      "description": "Windows Photo Viewer",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/PhotoViewer/"
+    },
+    "pixtool.exe": {
+      "binary": "Pixtool.exe",
+      "description": "Command line utility for taking and analyzing PIX GPU captures.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Pixtool/"
+    },
+    "pktmon.exe": {
+      "binary": "Pktmon.exe",
+      "description": "Capture Network Packets on the windows 10 with October 2018 Update or later.",
+      "categories": [
+        "Reconnaissance"
+      ],
+      "mitre": [
+        "T1040"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Pktmon/"
+    },
+    "pnputil.exe": {
+      "binary": "Pnputil.exe",
+      "description": "Used for installing drivers",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1547"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Pnputil/"
+    },
+    "powerpnt.exe": {
+      "binary": "Powerpnt.exe",
+      "description": "Microsoft Office binary.",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Powerpnt/"
+    },
+    "presentationhost.exe": {
+      "binary": "Presentationhost.exe",
+      "description": "File is used for executing Browser applications",
+      "categories": [
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105",
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Presentationhost/"
+    },
+    "print.exe": {
+      "binary": "Print.exe",
+      "description": "Used by Windows to send files to the printer",
+      "categories": [
+        "ADS",
+        "Copy"
+      ],
+      "mitre": [
+        "T1105",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Print/"
+    },
+    "printbrm.exe": {
+      "binary": "PrintBrm.exe",
+      "description": "Printer Migration Command-Line Tool",
+      "categories": [
+        "ADS",
+        "Download"
+      ],
+      "mitre": [
+        "T1105",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/PrintBrm/"
+    },
+    "procdump.exe": {
+      "binary": "Procdump.exe",
+      "description": "SysInternals Memory Dump Tool",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Procdump/"
+    },
+    "protocolhandler.exe": {
+      "binary": "ProtocolHandler.exe",
+      "description": "Microsoft Office binary",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/ProtocolHandler/"
+    },
+    "provlaunch.exe": {
+      "binary": "Provlaunch.exe",
+      "description": "Launcher process",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Provlaunch/"
+    },
+    "psr.exe": {
+      "binary": "Psr.exe",
+      "description": "Windows Problem Steps Recorder, used to record screen and clicks.",
+      "categories": [
+        "Reconnaissance"
+      ],
+      "mitre": [
+        "T1113"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Psr/"
+    },
+    "pubprn.vbs": {
+      "binary": "Pubprn.vbs",
+      "description": "Proxy execution with Pubprn.vbs",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1216.001"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Scripts/Pubprn/"
+    },
+    "query.exe": {
+      "binary": "Query.exe",
+      "description": "Remote Desktop Services MultiUser Query Utility",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Query/"
+    },
+    "rasautou.exe": {
+      "binary": "Rasautou.exe",
+      "description": "Windows Remote Access Dialer",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Rasautou/"
+    },
+    "rcsi.exe": {
+      "binary": "rcsi.exe",
+      "description": "Non-Interactive command line inerface included with Visual Studio.",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Rcsi/"
+    },
+    "rdrleakdiag.exe": {
+      "binary": "rdrleakdiag.exe",
+      "description": "Microsoft Windows resource leak diagnostic tool",
+      "categories": [
+        "Dump"
+      ],
+      "mitre": [
+        "T1003",
+        "T1003.001"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Rdrleakdiag/"
+    },
+    "reg.exe": {
+      "binary": "Reg.exe",
+      "description": "Used to manipulate the registry",
+      "categories": [
+        "ADS",
+        "Credentials"
+      ],
+      "mitre": [
+        "T1003.002",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Reg/"
+    },
+    "regasm.exe": {
+      "binary": "Regasm.exe",
+      "description": "Part of .NET",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.009"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Regasm/"
+    },
+    "regedit.exe": {
+      "binary": "Regedit.exe",
+      "description": "Used by Windows to manipulate registry",
+      "categories": [
+        "ADS"
+      ],
+      "mitre": [
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Regedit/"
+    },
+    "regini.exe": {
+      "binary": "Regini.exe",
+      "description": "Used to manipulate the registry",
+      "categories": [
+        "ADS"
+      ],
+      "mitre": [
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Regini/"
+    },
+    "register-cimprovider.exe": {
+      "binary": "Register-cimprovider.exe",
+      "description": "Used to register new wmi providers",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Register-cimprovider/"
+    },
+    "regsvcs.exe": {
+      "binary": "Regsvcs.exe",
+      "description": "Regsvcs and Regasm are Windows command-line utilities that are used to register .NET Component Object Model (COM) assemblies",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.009"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Regsvcs/"
+    },
+    "regsvr32.exe": {
+      "binary": "Regsvr32.exe",
+      "description": "Used by Windows to register dlls",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.010"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Regsvr32/"
+    },
+    "remote.exe": {
+      "binary": "Remote.exe",
+      "description": "Debugging tool included with Windows Debugging Tools",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Remote/"
+    },
+    "replace.exe": {
+      "binary": "Replace.exe",
+      "description": "Used to replace file with another file",
+      "categories": [
+        "Copy",
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Replace/"
+    },
+    "reset.exe": {
+      "binary": "Reset.exe",
+      "description": "Remote Desktop Services Reset Utility",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Reset/"
+    },
+    "rpcping.exe": {
+      "binary": "Rpcping.exe",
+      "description": "Used to verify rpc connection",
+      "categories": [
+        "Credentials"
+      ],
+      "mitre": [
+        "T1003",
+        "T1187"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Rpcping/"
+    },
+    "rundll32.exe": {
+      "binary": "Rundll32.exe",
+      "description": "Used by Windows to execute dll files",
+      "categories": [
+        "ADS",
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.011",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Rundll32/"
+    },
+    "runexehelper.exe": {
+      "binary": "Runexehelper.exe",
+      "description": "Launcher process",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Runexehelper/"
+    },
+    "runonce.exe": {
+      "binary": "Runonce.exe",
+      "description": "Executes a Run Once Task that has been configured in the registry",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Runonce/"
+    },
+    "runscripthelper.exe": {
+      "binary": "Runscripthelper.exe",
+      "description": "Execute target PowerShell script",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Runscripthelper/"
+    },
+    "sc.exe": {
+      "binary": "Sc.exe",
+      "description": "Used by Windows to manage services",
+      "categories": [
+        "ADS"
+      ],
+      "mitre": [
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Sc/"
+    },
+    "schtasks.exe": {
+      "binary": "Schtasks.exe",
+      "description": "Schedule periodic tasks",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1053.005"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Schtasks/"
+    },
+    "scp.exe": {
+      "binary": "scp.exe",
+      "description": "Used for uploading or downloading files over SSH.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Scp/"
+    },
+    "scriptrunner.exe": {
+      "binary": "Scriptrunner.exe",
+      "description": "Execute binary through proxy binary to evade defensive counter measures",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202",
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Scriptrunner/"
+    },
+    "scrobj.dll": {
+      "binary": "Scrobj.dll",
+      "description": "Windows Script Component Runtime",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/Scrobj/"
+    },
+    "setres.exe": {
+      "binary": "Setres.exe",
+      "description": "Configures display settings",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Setres/"
+    },
+    "settingsynchost.exe": {
+      "binary": "SettingSyncHost.exe",
+      "description": "Host Process for Setting Synchronization",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/SettingSyncHost/"
+    },
+    "setupapi.dll": {
+      "binary": "Setupapi.dll",
+      "description": "Windows Setup Application Programming Interface",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.011"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/Setupapi/"
+    },
+    "setupugc.exe": {
+      "binary": "setupugc.exe",
+      "description": "Setup Unattend Generic Command Processor used during Windows deployment.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/setupugc/"
+    },
+    "sftp.exe": {
+      "binary": "Sftp.exe",
+      "description": "sftp.exe is a Windows command-line utility that uses the Secure File Transfer Protocol (SFTP) to securely transfer files between a local machine and a remote server.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Sftp/"
+    },
+    "shdocvw.dll": {
+      "binary": "Shdocvw.dll",
+      "description": "Shell Doc Object and Control Library.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.011"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/Shdocvw/"
+    },
+    "shell32.dll": {
+      "binary": "Shell32.dll",
+      "description": "Windows Shell Common Dll",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.011"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/Shell32/"
+    },
+    "shimgvw.dll": {
+      "binary": "Shimgvw.dll",
+      "description": "Photo Gallery Viewer",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/Shimgvw/"
+    },
+    "sigverif.exe": {
+      "binary": "Sigverif.exe",
+      "description": "File Signature Verification utility to verify digital signatures of files",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Sigverif/"
+    },
+    "sqldumper.exe": {
+      "binary": "Sqldumper.exe",
+      "description": "Debugging utility included with Microsoft SQL.",
+      "categories": [
+        "Dump"
+      ],
+      "mitre": [
+        "T1003",
+        "T1003.001"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Sqldumper/"
+    },
+    "sqlps.exe": {
+      "binary": "Sqlps.exe",
+      "description": "Tool included with Microsoft SQL Server that loads SQL Server cmdlets. Microsoft SQL Server\\100 and 110 are Powershell v2. Microsoft SQL Server\\120 and 130 are Powershell version 4. Replaced by SQLToolsPS.exe in SQL Server 2016, but will be included with installation for compatability reasons.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Sqlps/"
+    },
+    "sqltoolsps.exe": {
+      "binary": "SQLToolsPS.exe",
+      "description": "Tool included with Microsoft SQL that loads SQL Server cmdlts. A replacement for sqlps.exe. Successor to sqlps.exe in SQL Server 2016+.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Sqltoolsps/"
+    },
+    "squirrel.exe": {
+      "binary": "Squirrel.exe",
+      "description": "Binary to update the existing installed Nuget/squirrel package. Part of Microsoft Teams installation.",
+      "categories": [
+        "AWL Bypass",
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Squirrel/"
+    },
+    "ssh.exe": {
+      "binary": "ssh.exe",
+      "description": "Ssh.exe is the OpenSSH compatible client can be used to connect to Windows 10 (build 1809 and later) and Windows Server 2019 devices.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Ssh/"
+    },
+    "stordiag.exe": {
+      "binary": "Stordiag.exe",
+      "description": "Storage diagnostic tool",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Stordiag/"
+    },
+    "syncappvpublishingserver.exe": {
+      "binary": "SyncAppvPublishingServer.exe",
+      "description": "Used by App-v to get App-v server lists",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Syncappvpublishingserver/"
+    },
+    "syncappvpublishingserver.vbs": {
+      "binary": "Syncappvpublishingserver.vbs",
+      "description": "Script used related to app-v and publishing server",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1216.002"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Scripts/Syncappvpublishingserver/"
+    },
+    "syssetup.dll": {
+      "binary": "Syssetup.dll",
+      "description": "Windows NT System Setup",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.011"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/Syssetup/"
+    },
+    "tar.exe": {
+      "binary": "Tar.exe",
+      "description": "Used by Windows to extract and create archives.",
+      "categories": [
+        "ADS",
+        "Copy"
+      ],
+      "mitre": [
+        "T1105",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Tar/"
+    },
+    "te.exe": {
+      "binary": "te.exe",
+      "description": "Testing tool included with Microsoft Test Authoring and Execution Framework (TAEF).",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Te/"
+    },
+    "teams.exe": {
+      "binary": "Teams.exe",
+      "description": "Electron runtime binary which runs the Teams application",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.015"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Teams/"
+    },
+    "testwindowremoteagent.exe": {
+      "binary": "TestWindowRemoteAgent.exe",
+      "description": "TestWindowRemoteAgent.exe is the command-line tool to establish RPC",
+      "categories": [
+        "Upload"
+      ],
+      "mitre": [
+        "T1048"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Testwindowremoteagent/"
+    },
+    "tracker.exe": {
+      "binary": "Tracker.exe",
+      "description": "Tool included with Microsoft .Net Framework.",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Tracker/"
+    },
+    "ttdinject.exe": {
+      "binary": "Ttdinject.exe",
+      "description": "Used by Windows 1809 and newer to Debug Time Travel (Underlying call of tttracer.exe)",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Ttdinject/"
+    },
+    "tttracer.exe": {
+      "binary": "Tttracer.exe",
+      "description": "Used by Windows 1809 and newer to Debug Time Travel",
+      "categories": [
+        "Dump",
+        "Execute"
+      ],
+      "mitre": [
+        "T1003",
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Tttracer/"
+    },
+    "unregmp2.exe": {
+      "binary": "Unregmp2.exe",
+      "description": "Microsoft Windows Media Player Setup Utility",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Unregmp2/"
+    },
+    "update.exe": {
+      "binary": "Update.exe",
+      "description": "Binary to update the existing installed Nuget/squirrel package. Part of Microsoft Teams installation.",
+      "categories": [
+        "AWL Bypass",
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1070",
+        "T1218",
+        "T1547"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Update/"
+    },
+    "url.dll": {
+      "binary": "Url.dll",
+      "description": "Internet Shortcut Shell Extension DLL.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.011"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/Url/"
+    },
+    "utilityfunctions.ps1": {
+      "binary": "UtilityFunctions.ps1",
+      "description": "PowerShell Diagnostic Script",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1216"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Scripts/UtilityFunctions/"
+    },
+    "vbc.exe": {
+      "binary": "vbc.exe",
+      "description": "Binary file used for compile vbs code",
+      "categories": [
+        "Compile"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Vbc/"
+    },
+    "verclsid.exe": {
+      "binary": "Verclsid.exe",
+      "description": "Used to verify a COM object before it is instantiated by Windows Explorer",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.012"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Verclsid/"
+    },
+    "visio.exe": {
+      "binary": "Visio.exe",
+      "description": "Microsoft Visio Executable",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Visio/"
+    },
+    "visualuiaverifynative.exe": {
+      "binary": "VisualUiaVerifyNative.exe",
+      "description": "A Windows SDK binary for manual and automated testing of Microsoft UI Automation implementation and controls.",
+      "categories": [
+        "AWL Bypass"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/VisualUiaVerifyNative/"
+    },
+    "vsdiagnostics.exe": {
+      "binary": "VSDiagnostics.exe",
+      "description": "Command-line tool used for performing diagnostics.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/VSDiagnostics/"
+    },
+    "vshadow.exe": {
+      "binary": "Vshadow.exe",
+      "description": "VShadow is a command-line tool that can be used to create and manage volume shadow copies.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Vshadow/"
+    },
+    "vsiisexelauncher.exe": {
+      "binary": "VSIISExeLauncher.exe",
+      "description": "Binary will execute specified binary. Part of VS/VScode installation.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/VSIISExeLauncher/"
+    },
+    "vsjitdebugger.exe": {
+      "binary": "vsjitdebugger.exe",
+      "description": "Just-In-Time (JIT) debugger included with Visual Studio",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Vsjitdebugger/"
+    },
+    "vslaunchbrowser.exe": {
+      "binary": "VSLaunchBrowser.exe",
+      "description": "Microsoft Visual Studio browser launcher tool for web applications debugging",
+      "categories": [
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105",
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/VsLaunchBrowser/"
+    },
+    "vsls-agent.exe": {
+      "binary": "vsls-agent.exe",
+      "description": "Agent for Visual Studio Live Share (Code Collaboration)",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/vsls-agent/"
+    },
+    "vstest.console.exe": {
+      "binary": "vstest.console.exe",
+      "description": "VSTest.Console.exe is the command-line tool to run tests",
+      "categories": [
+        "AWL Bypass"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/vstest.console/"
+    },
+    "wab.exe": {
+      "binary": "Wab.exe",
+      "description": "Windows address book manager",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Wab/"
+    },
+    "wbadmin.exe": {
+      "binary": "wbadmin.exe",
+      "description": "Windows Backup Administration utility",
+      "categories": [
+        "Dump"
+      ],
+      "mitre": [
+        "T1003.003"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Wbadmin/"
+    },
+    "wbemtest.exe": {
+      "binary": "wbemtest.exe",
+      "description": "WMI/WBEM Test Binary",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1047"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Wbemtest/"
+    },
+    "wfc.exe": {
+      "binary": "Wfc.exe",
+      "description": "The Workflow Command-line Compiler tool is included with the Windows Software Development Kit (SDK).",
+      "categories": [
+        "AWL Bypass"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Wfc/"
+    },
+    "wfmformat.exe": {
+      "binary": "WFMFormat.exe",
+      "description": "Command-line tool used for pretty-print a dump file generated by Message Farm Analyzer tool.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/WFMFormat/"
+    },
+    "windbg.exe": {
+      "binary": "WinDbg.exe",
+      "description": "Windows Debugger for advanced user-mode and kernel-mode debugging.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1127"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/WinDbg/"
+    },
+    "winfile.exe": {
+      "binary": "winfile.exe",
+      "description": "Windows File Manager executable",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/winfile/"
+    },
+    "winget.exe": {
+      "binary": "winget.exe",
+      "description": "Windows Package Manager tool",
+      "categories": [
+        "AWL Bypass",
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Winget/"
+    },
+    "winproj.exe": {
+      "binary": "WinProj.exe",
+      "description": "Microsoft Project Executable",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Winproj/"
+    },
+    "winrm.vbs": {
+      "binary": "winrm.vbs",
+      "description": "Script used for manage Windows RM settings",
+      "categories": [
+        "AWL Bypass",
+        "Execute"
+      ],
+      "mitre": [
+        "T1216",
+        "T1220"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Scripts/Winrm/"
+    },
+    "winword.exe": {
+      "binary": "Winword.exe",
+      "description": "Microsoft Office binary",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Winword/"
+    },
+    "wlrmdr.exe": {
+      "binary": "Wlrmdr.exe",
+      "description": "Windows Logon Reminder executable",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Wlrmdr/"
+    },
+    "wmic.exe": {
+      "binary": "Wmic.exe",
+      "description": "The WMI command-line (WMIC) utility provides a command-line interface for WMI",
+      "categories": [
+        "ADS",
+        "Copy",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105",
+        "T1218",
+        "T1518.001",
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Wmic/"
+    },
+    "workfolders.exe": {
+      "binary": "WorkFolders.exe",
+      "description": "Work Folders",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/WorkFolders/"
+    },
+    "write.exe": {
+      "binary": "write.exe",
+      "description": "Windows Write",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/write/"
+    },
+    "wsb.exe": {
+      "binary": "wsb.exe",
+      "description": "Windows Sandbox command-line interface. Creates, lists, controls, and executes commands inside Windows Sandbox sessions from the host CLI.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1564.006"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Wsb/"
+    },
+    "wscript.exe": {
+      "binary": "Wscript.exe",
+      "description": "Used by Windows to execute scripts",
+      "categories": [
+        "ADS"
+      ],
+      "mitre": [
+        "T1564.004"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Wscript/"
+    },
+    "wsl.exe": {
+      "binary": "Wsl.exe",
+      "description": "Windows subsystem for Linux executable",
+      "categories": [
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105",
+        "T1202",
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Wsl/"
+    },
+    "wsreset.exe": {
+      "binary": "Wsreset.exe",
+      "description": "Used to reset Windows Store settings according to its manifest file",
+      "categories": [
+        "UAC Bypass"
+      ],
+      "mitre": [
+        "T1548.002"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Wsreset/"
+    },
+    "wt.exe": {
+      "binary": "wt.exe",
+      "description": "Windows Terminal",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/wt/"
+    },
+    "wuauclt.exe": {
+      "binary": "wuauclt.exe",
+      "description": "Windows Update Client",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Wuauclt/"
+    },
+    "xbootmgr.exe": {
+      "binary": "XBootMgr.exe",
+      "description": "Windows Performance Toolkit binary used to start performance traces.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/XBootMgr/"
+    },
+    "xbootmgrsleep.exe": {
+      "binary": "XBootMgrSleep.exe",
+      "description": "Windows Performance Toolkit binary used for tracing and analyzing system performance during sleep and resume transitions.",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1202"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/XBootMgrSleep/"
+    },
+    "xsd.exe": {
+      "binary": "xsd.exe",
+      "description": "XML Schema Definition Tool included with the Windows Software Development Kit (SDK).",
+      "categories": [
+        "Download"
+      ],
+      "mitre": [
+        "T1105"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/xsd/"
+    },
+    "xwizard.exe": {
+      "binary": "Xwizard.exe",
+      "description": "Execute custom class that has been added to the registry or download a file with Xwizard.exe",
+      "categories": [
+        "Download",
+        "Execute"
+      ],
+      "mitre": [
+        "T1105",
+        "T1218"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Binaries/Xwizard/"
+    },
+    "zipfldr.dll": {
+      "binary": "Zipfldr.dll",
+      "description": "Compressed Folder library",
+      "categories": [
+        "Execute"
+      ],
+      "mitre": [
+        "T1218.011"
+      ],
+      "url": "https://lolbas-project.github.io/lolbas/Libraries/Zipfldr/"
+    }
+  }
+}

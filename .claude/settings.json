@@ -9,7 +9,8 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('app.py', encoding='utf-8'\\).read\\(\\)\\); print\\('ok'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('app.py', encoding='utf-8'\\).read\\(\\)\\); print\\('app.py: syntax OK'\\); ast.parse\\(open\\('ui/components/output_renderer.py', encoding='utf-8'\\).read\\(\\)\\); print\\('output_renderer.py: syntax OK'\\)\")",
       "Bash(python test_auto_allowed.py)",
-      "Bash(del test_auto_allowed.py)"
+      "Bash(del test_auto_allowed.py)",
+      "Bash(python -c \"import sys; print\\(sys.executable\\)\")"
     ]
   }
 }

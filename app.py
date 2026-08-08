@@ -1,6 +1,7 @@
 """IOC Router - Streamlit app entrypoint (3-tab layout)."""
 from __future__ import annotations
 
+import dataclasses
 import time
 
 import streamlit as st
@@ -9,6 +10,12 @@ import streamlit.components.v1 as components
 from config import Settings
 from ioc.parser import IOC, parse_iocs
 from ioc.verdict import summarize_results
+from core.process_analyzer import (
+    ProcessFilepathInput,
+    aggregate_verdict as aggregate_process_verdict,
+    analyze_process_event,
+    to_rows as process_analysis_rows,
+)
 from core.cache import (
     vt_cached, urlscan_cached, abuse_cached, tf_cached,
     mb_cached, shodan_cached, dnsd_cached, ha_cached, mxtoolbox_cached,
@@ -1052,12 +1059,40 @@ def _manual_allowed_by_type(items: list[IOC]) -> dict[str, set[str]]:
     return out
 
 
+def _has_process_input() -> bool:
+    """Return True if any process/filepath context field was filled.
+
+    Lets a Run proceed on process context alone. With an empty IOC box the
+    provider lookups simply have nothing to query — every provider flag comes
+    out False and no worker threads start — so this costs no API calls.
+    """
+    return bool(
+        (file_path or "").strip()
+        or (parent_process or "").strip()
+        or (child_process or "").strip()
+    )
+
+
 # ── Enrichment execution (triggered from Input tab Run button) ───────────────
-if run_requested and raw.strip():
+if run_requested and (raw.strip() or _has_process_input()):
     items = parsed_input_items
-    if not items:
+    if not items and not _has_process_input():
         st.info("Tidak ada IOC valid setelah parsing.")
     else:
+        # ── Process / filepath analysis (local, no network) ───────────────────
+        # Runs before provider selection so any hash found in Context joins the
+        # normal IOC list and gets enriched by the existing pipeline, rather
+        # than needing a second lookup path.
+        _proc_result = analyze_process_event(ProcessFilepathInput(
+            file_path=file_path or None,
+            parent_process=parent_process or None,
+            child_process=child_process or None,
+            context=raw_log or None,
+        ))
+        _known_values = {i.value for i in items}
+        _context_hashes = [h for h in _proc_result.hash_candidates if h not in _known_values]
+        items = items + [IOC(value=h, type="hash") for h in _context_hashes]
+
         if auto_choose_provider:
             _current_mode = st.session_state.get("analysis_mode", "Triage")
             _is_triage_fast = (
@@ -1125,6 +1160,25 @@ if run_requested and raw.strip():
             shodan_results=shodan_results,
             hybrid_results=ha_results,
         )
+
+        # Layer 3 close-out: a hash lifted from Context has now been through the
+        # normal providers, so feed its verdict back. It is the strongest signal
+        # available and overrides the name-based layers in aggregation.
+        if _context_hashes:
+            _hash_rows = [r for r in rows if r.get("Artifact") in set(_context_hashes)]
+            _decisive = next(
+                (r for r in _hash_rows if r.get("Verdict") in ("Malicious", "Suspicious")),
+                None,
+            )
+            if _decisive is not None:
+                _proc_result.hash_verdict = {
+                    "verdict": _decisive.get("Verdict"),
+                    "artifact": _decisive.get("Artifact"),
+                    "evidence": _decisive.get("Primary Evidence"),
+                    "sources": _decisive.get("Sources"),
+                }
+                _proc_result.aggregated_verdict = aggregate_process_verdict(_proc_result)
+
         st.session_state["run_results"] = {
             "items": items,
             "summary": summary,
@@ -1141,6 +1195,12 @@ if run_requested and raw.strip():
             "whoxy": whoxy_results,
             "ransomware_live": ransomware_live_results,
             "provider_flags": provider_flags,
+            # Kept out of "rows": that list is indexed per-artifact by the IOC
+            # cards and counted by the session summary, both of which assume one
+            # entry per atomic IOC.
+            "process_analysis": dataclasses.asdict(_proc_result),
+            "process_flags": _proc_result.flags,
+            "process_rows": process_analysis_rows(_proc_result),
             "allowed_by_type": {t: sorted(ps) for t, ps in allowed_by_type.items()},
             "timings": {
                 "providers": _provider_timings,
