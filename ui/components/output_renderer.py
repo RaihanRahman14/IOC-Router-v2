@@ -171,6 +171,74 @@ def render_session_hero(summary: dict) -> None:
     st.markdown(html, unsafe_allow_html=True)
 
 
+def render_cmdline_breakdown(analysis: dict) -> None:
+    """Render the command-line structural breakdown above the results table.
+
+    This is the "explainshell" half of the command-line module and, per its
+    briefing §7, the part analysts read first — before any flag or verdict. It
+    is rendered as its own block rather than squeezed into a table row, because
+    a token list does not survive being flattened into one cell.
+
+    Args:
+        analysis: The ``cmdline_analysis`` dict from ``run_results``. Anything
+            falsy or command-less renders nothing at all.
+    """
+    commands = analysis.get("commands") or []
+    if not commands:
+        return
+
+    with st.expander("⌨️ Command line breakdown", expanded=True):
+        # The submitted line comes first: everything below is a claim about it,
+        # and the analyst needs to see what was actually analysed before reading
+        # any of them — especially when decoding rewrote it.
+        submitted = analysis.get("original_command")
+        if submitted:
+            st.caption("Command line submitted")
+            st.code(submitted, language="powershell")
+
+        interpreter = analysis.get("interpreter_detected", "unknown")
+        st.caption(f"Interpreter detected: **{interpreter}**")
+
+        if analysis.get("was_obfuscated"):
+            chain = " → ".join(analysis.get("decode_chain") or []) or "unspecified"
+            st.warning(f"Obfuscated — decoded via {chain}")
+            st.caption("Decoded form")
+            st.code(analysis.get("decoded_command") or "", language="powershell")
+            revealed = analysis.get("revealed_keywords") or []
+            if revealed:
+                st.caption("Only visible after decoding: " + ", ".join(revealed))
+
+        for index, command in enumerate(commands, 1):
+            prefix = f"{index}. " if len(commands) > 1 else ""
+            st.markdown(f"**{prefix}{command.get('base_command', '')}**")
+            flags = command.get("flags") or []
+            arguments = command.get("arguments") or []
+            if flags:
+                st.markdown("Flags: " + ", ".join(f"`{f}`" for f in flags))
+            if arguments:
+                st.markdown("Arguments: " + ", ".join(f"`{a}`" for a in arguments))
+            if not flags and not arguments:
+                st.caption("No flags or arguments.")
+
+        cross = analysis.get("lolbas_cross_check") or {}
+        if cross.get("match_strength") == "CONFIRMED_ABUSE_PATTERN":
+            st.warning(
+                f"LOLBAS: `{cross.get('binary')}` arguments match its documented "
+                f"{cross.get('category') or 'abuse'} pattern — `{cross.get('matched')}`"
+            )
+        elif cross.get("match_strength") == "DUAL_USE_PRESENT":
+            st.caption(
+                f"LOLBAS: {cross.get('binary')} is a dual-use binary, but its arguments "
+                "match no documented abuse pattern."
+            )
+
+        if not analysis.get("parse_ok"):
+            st.caption(
+                "Parsed on a best-effort basis — the line was malformed, so treat the "
+                "breakdown above as incomplete."
+            )
+
+
 def render_results_output(output_format: str, run_results: dict) -> None:
     """Render the results section: summary metrics + selected output format."""
     summary = run_results["summary"]
@@ -192,6 +260,7 @@ def render_results_output(output_format: str, run_results: dict) -> None:
     # from `rows` upstream because that list is one-entry-per-atomic-IOC.
     process_rows = run_results.get("process_rows") or []
     table_rows = rows + process_rows
+
 
     if output_format == "Table":
         if pd:
@@ -260,6 +329,8 @@ def render_results_output(output_format: str, run_results: dict) -> None:
         payload = {"summary": summary, "rows": rows}
         if run_results.get("process_analysis"):
             payload["process_analysis"] = run_results["process_analysis"]
+        if run_results.get("cmdline_analysis"):
+            payload["cmdline_analysis"] = run_results["cmdline_analysis"]
         st.json(payload)
 
     elif output_format == "Shareable Text":

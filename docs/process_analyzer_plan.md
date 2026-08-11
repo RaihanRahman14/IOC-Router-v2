@@ -436,5 +436,75 @@ shell, script engines → PowerShell, `mshta.exe` → any, `wmiprvse.exe`/`java.
 - **§9.3** Chain depth capped at 1 by the form. Deeper ancestry needs a UI change.
 - **§9.7** No dedicated hash field, so Layer 3 stays opportunistic. Revisit if
   hash-bearing process events turn out to be common.
-- Option A's false-positive rate is unmeasured until the Sigma table exists.
-  Re-evaluate Option B only after seeing step 4's output volume.
+- ~~Option A's false-positive rate is unmeasured~~ — **measured, 2026-08-10.**
+  See below.
+
+---
+
+## 8. Calibration results (2026-08-10)
+
+Prompted by a finding in the sibling command-line module
+([`cmdline_analyzer_plan.md`](cmdline_analyzer_plan.md) §6, Milestone B): its
+Option A extraction produced *fragments* of rules that matched benign input at a
+100% false-positive rate. That raised the obvious question of whether this
+module, built the same way, had the same defect. It partly did.
+
+`tests/fixtures/process_corpus.json` (14 known-bad pairings, 28 known-good) and
+`tests/test_process_calibration.py` now measure and lock the answer.
+
+**Detection: 14/14 as recorded. Benign escalation: initially 3/28, now 2/28.**
+
+### Defect found and fixed — information-free globs
+
+One rule ("Suspicious Binary In User Directory Spawned From Office Application")
+constrained its child by *path* — a binary under a user directory. Option A
+reduced that to a basename, leaving the child glob **`*.exe`**, which matches
+every executable in existence. Seven records, all HIGH severity, all from that
+one rule.
+
+The damage was worse than a false positive. Being HIGH, it also *outranked* the
+rules that genuinely describe Office spawning a shell, so `winword.exe → cmd.exe`
+was reported under the wrong title. Fixing it corrected the label as well as the
+noise: that pair now matches "Suspicious Microsoft Office Child Process".
+
+Filtered in `load_parent_child_pairs()` so the shipped dataset needs no
+regeneration, and refused by `extract_sigma_pairs.py` so a future regeneration
+cannot reintroduce them.
+
+### Defect found and NOT fixed — `java.exe` / `javaw.exe` → `cmd.exe`
+
+Both escalate to `Suspicious` under "Webshell Detection With Command Line
+Keywords". `java.exe` sits in that rule's parent list beside `w3wp.exe`,
+`nginx.exe` and `php-cgi.exe` because Java web servers exist — but it is also
+every desktop Java application and every Gradle or Maven build step. The rule
+used a CommandLine keyword to tell a webshell from a build, and Option A dropped
+exactly that condition.
+
+**Why it is not fixed:** the obvious remedy — refusing to escalate on
+`commandline_constrained` rules — would also silence `w3wp.exe`, `nginx.exe` and
+`php-cgi.exe`, whose escalating pairings are **100% commandline-constrained**
+and are true positives. `commandline_constrained` is therefore not a usable
+proxy for "untrustworthy". Suppressing by parent name instead would be a guess
+fitted to 28 samples, and `java.exe` still has 23 escalating pairings from fully
+faithful rules that might simply take over.
+
+Recorded as `known_defect` in the corpus and locked by a test asserting the set
+is exactly `{java_cmd, javaw_cmd}` — so it cannot spread silently, and removing
+an entry is the fix. The honest options, in preference order:
+
+1. When the analyst *did* supply a command line and the command-line module
+   found nothing in it, do not escalate a `commandline_constrained` pairing —
+   the symmetric form of the D6 join, evidence-based rather than a name list.
+   Costs nothing when no command line is supplied, which is when this fires.
+2. Re-extract with the CommandLine keyword retained per pair, so the pairing can
+   be scored against it. That is Option B for this rule family only.
+
+### Consequence for §9's "keep both modules consistent"
+
+That recommendation no longer holds, and should not be restored. The two fields
+are not symmetric: a parent→child pair is inherently specific
+(`winword.exe → cmd.exe` means something on its own), while a CommandLine
+fragment frequently is not (`copy`, `.exe`). The command-line module therefore
+requires a rule's **whole** condition before matching standalone; this module
+does not, because requiring it would discard 8 of 12 real detections. The
+divergence is deliberate and measured.

@@ -95,6 +95,64 @@ def flags_to_ai_context(flags: list[dict]) -> str:
     return "\n".join(lines)
 
 
+# Evidence keys claimed by command-line findings, keyed on exact flag id.
+#
+# What is deliberately left unmapped matters as much as what is here: encoding,
+# entropy, hidden windows, skipped profiles and execution-policy bypasses are
+# defense-evasion signals with no evidence key of their own, and forcing them
+# into one would overstate what a switch proves. They still reach the narrative
+# through their MITRE tactics and severity notes.
+#
+# Active tampering with host defenses *is* mapped to malware_executed. Disabling
+# AMSI or clearing the event log is not a configuration choice — something ran
+# that had a reason to hide. A prevented Device Action still caps the resulting
+# Threat State at "Intrusion Attempt", which is the safety valve that makes this
+# defensible, exactly as for the process module's flags above.
+_CMDLINE_EVIDENCE: dict[str, frozenset[str]] = {
+    "malware_executed": frozenset({
+        "CMDLINE_DETECTION_RULE_MATCH",
+        "CMDLINE_LOLBAS_ABUSE_PATTERN",
+        "CMDLINE_DECODED_SUSPICIOUS",
+        "CMDLINE_INVOKE_EXPRESSION",
+        "CMDLINE_DOWNLOAD_CRADLE",
+        "CMDLINE_CERTUTIL_DOWNLOAD",
+        "CMDLINE_BITSADMIN_TRANSFER",
+        "CMDLINE_WMIC_PROCESS_CREATE",
+        "CMDLINE_RUNDLL32_SCRIPT",
+        "CMDLINE_MSHTA_REMOTE",
+        "CMDLINE_REGSVR_REMOTE",
+        "CMDLINE_PSEXEC_EXEC",
+        "CMDLINE_DEFENDER_TAMPER",
+        "CMDLINE_AMSI_BYPASS",
+        "CMDLINE_ETW_BYPASS",
+        "CMDLINE_EVENT_LOG_CLEAR",
+    }),
+    "persistence_mechanism": frozenset({
+        "CMDLINE_RUN_KEY_WRITE",
+        "CMDLINE_SCHTASKS_CREATE",
+        "CMDLINE_SERVICE_CREATE",
+    }),
+    "privilege_escalation": frozenset({
+        "CMDLINE_UAC_BYPASS_HELPER",
+        "CMDLINE_LSASS_DUMP",
+        "CMDLINE_ADMIN_GROUP_ADD",
+        "CMDLINE_NET_USER_ADD",
+    }),
+    "lateral_movement": frozenset({
+        "CMDLINE_REMOTE_WMI",
+        "CMDLINE_REMOTE_SHARE_COPY",
+        "CMDLINE_PSEXEC_EXEC",
+    }),
+    "service_disruption_or_encryption": frozenset({
+        "CMDLINE_SHADOW_COPY_DELETE",
+        "CMDLINE_RECOVERY_DISABLE",
+    }),
+    "data_exfiltration": frozenset({
+        "CMDLINE_ARCHIVE_STAGING",
+    }),
+}
+
+
 def flags_summary_for_evidence(flags: list[dict]) -> dict:
     """
     Map flags back into the evidence dict structure used by _build_analysis_summary.
@@ -159,6 +217,14 @@ def flags_summary_for_evidence(flags: list[dict]) -> dict:
             "MASQUERADING", "PARENT_CHAIN_CONTAMINATION", "SUSPICIOUS_PARENT_CHILD_PAIR",
         )):
             ev["malware_executed"] = True
+
+        # Command-line analysis flags (core.cmdline_analyzer). Matched on the
+        # exact id rather than a substring: every mapping below is a deliberate
+        # claim about what the finding proves, and substring matching would let
+        # a future keyword inherit one silently.
+        for key, ids in _CMDLINE_EVIDENCE.items():
+            if fid in ids:
+                ev[key] = True
 
     return {
         "evidence": ev,

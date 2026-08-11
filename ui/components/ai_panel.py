@@ -54,6 +54,54 @@ _VERDICT_HELP = (
 )
 
 
+def defang_for_display(value: str) -> str:
+    """Neutralise an indicator so it is safe to show and cannot be clicked.
+
+    Serves two purposes at once, which is why it is applied to the badge text:
+
+    * **Safety.** A live link to attacker infrastructure sitting in a triage UI
+      is one stray click away from a request nobody authorised. Defanged text is
+      the SOC convention for exactly this reason.
+    * **Correctness.** Streamlit's markdown renderer auto-links any bare URL,
+      even inside ``unsafe_allow_html`` markup. Inside the badge's own ``<a>``
+      that produced a nested anchor — invalid HTML, which browsers repair by
+      closing the outer tag early, leaving an empty coloured box with the URL
+      spilled outside it. Defanging removes the pattern the linkifier matches,
+      so the badge keeps its contents.
+
+    Only the host is altered; the path is left readable.
+
+    Args:
+        value: An IOC — URL, domain, IP or hash.
+
+    Returns:
+        The display-safe form, e.g. ``hxxp://198.51.100[.]7/a.ps1``. Hashes and
+        anything without a host come back unchanged.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return ""
+
+    if re.match(r"^https?://", text, re.IGNORECASE):
+        try:
+            parsed = urlsplit(text)
+        except ValueError:
+            return text
+        if parsed.netloc:
+            scheme = parsed.scheme.lower().replace("http", "hxxp", 1)
+            rebuilt = urlunsplit((
+                scheme, parsed.netloc.replace(".", "[.]"),
+                parsed.path, parsed.query, parsed.fragment,
+            ))
+            return rebuilt
+        return text
+
+    # A bare IP or domain: no scheme to neutralise, so the dots do the work.
+    if re.match(r"^[A-Za-z0-9.\-_]+$", text) and "." in text:
+        return text.replace(".", "[.]")
+    return text
+
+
 def _get_effective_device_action() -> str:
     """Return the effective device action value, resolving 'Others' to the custom text input.
 
@@ -122,6 +170,33 @@ def render_ai_panel(run_results: dict, settings) -> None:
     def _vt_url_id(url: str) -> str:
         raw_bytes = str(url or "").encode("utf-8")
         return base64.urlsafe_b64encode(raw_bytes).decode("utf-8").rstrip("=")
+
+    def _vt_gui_url(ioc_value: str, ioc_type: str) -> str:
+        """Return the VirusTotal GUI URL that actually holds this IOC's report.
+
+        VirusTotal keys URL reports by the exact string, so http:// and https://
+        are separate entries. When the parser inferred the scheme, the report may
+        sit under the other form than the canonical ``ioc_value``; the provider
+        records whichever it matched as ``matched_url``. Preferring it keeps the
+        link pointing at the same report the displayed stats came from.
+
+        Args:
+            ioc_value: The IOC value as shown in the UI.
+            ioc_type: One of ip, domain, url, hash.
+
+        Returns:
+            The VirusTotal GUI URL, or an empty string for unsupported types.
+        """
+        if ioc_type == "url":
+            matched = (vt_results.get(ioc_value, {}) or {}).get("matched_url")
+            return f"https://www.virustotal.com/gui/url/{_vt_url_id(matched or ioc_value)}"
+        if ioc_type == "ip":
+            return f"https://www.virustotal.com/gui/ip-address/{ioc_value}"
+        if ioc_type == "domain":
+            return f"https://www.virustotal.com/gui/domain/{ioc_value}"
+        if ioc_type == "hash":
+            return f"https://www.virustotal.com/gui/file/{ioc_value}"
+        return ""
 
     def _ha_text_payload(val: str) -> object:
         ha = ha_results.get(val, {})
@@ -194,14 +269,9 @@ def render_ai_panel(run_results: dict, settings) -> None:
             ioc_type = ioc.type
 
             if ioc_type in {"ip", "domain", "url", "hash"} and _provider_has_data("virustotal", ioc):
-                if ioc_type == "url":
-                    links.append(f"VirusTotal: https://www.virustotal.com/gui/url/{_vt_url_id(value)}")
-                elif ioc_type == "ip":
-                    links.append(f"VirusTotal: https://www.virustotal.com/gui/ip-address/{value}")
-                elif ioc_type == "domain":
-                    links.append(f"VirusTotal: https://www.virustotal.com/gui/domain/{value}")
-                elif ioc_type == "hash":
-                    links.append(f"VirusTotal: https://www.virustotal.com/gui/file/{value}")
+                _vt_link = _vt_gui_url(value, ioc_type)
+                if _vt_link:
+                    links.append(f"VirusTotal: {_vt_link}")
 
             if ioc_type in {"ip", "domain", "url", "hash"} and _provider_has_data("urlscan", ioc):
                 if ioc_type == "ip":
@@ -273,11 +343,19 @@ def render_ai_panel(run_results: dict, settings) -> None:
         _ctx_parent = st.session_state.get("result_parent_process") or ""
         _ctx_child = st.session_state.get("result_child_process") or ""
         _ctx_file_path = st.session_state.get("result_file_path") or ""
-        _has_process_ctx = bool(_ctx_device_action or _ctx_parent or _ctx_child or _ctx_file_path)
+        _ctx_cmdline = st.session_state.get("result_command_line") or ""
+        _has_process_ctx = bool(
+            _ctx_device_action or _ctx_parent or _ctx_child or _ctx_file_path or _ctx_cmdline
+        )
         if _has_process_ctx:
             lines.append("Additional endpoint context (use if present, do not invent):")
             if _ctx_device_action:
                 lines.append(f"  Device Action: {_ctx_device_action} — incorporate this to indicate whether the activity was blocked/prevented or allowed.")
+            if _ctx_cmdline:
+                lines.append(
+                    f"  Command Line: {_ctx_cmdline} — the command line the process "
+                    "was executed with."
+                )
             if _ctx_file_path:
                 lines.append(f"  File Path: {_ctx_file_path} — the file path involved in the activity.")
             if _ctx_parent:
@@ -305,6 +383,64 @@ def render_ai_panel(run_results: dict, settings) -> None:
             lines.append(
                 "  Treat 'Unknown' as unverified, never as benign. Do not claim a field was "
                 "checked unless it appears above."
+            )
+
+        # Structured findings from the command-line analyzer. The decoded form
+        # and its decode chain go in verbatim: a decoded command the model
+        # cannot trace back to its source is worse than no decode at all.
+        _cmd = run_results.get("cmdline_analysis") or {}
+        _cmd_flags = run_results.get("cmdline_flags") or []
+        if _cmd.get("commands"):
+            lines.append("Command line analysis (local datasets, no provider lookup):")
+            lines.append(f"  Verdict: {_cmd.get('aggregated_verdict', 'Unknown')}")
+            lines.append(f"  Interpreter: {_cmd.get('interpreter_detected', 'unknown')}")
+            if _cmd.get("was_obfuscated"):
+                lines.append(
+                    f"  Obfuscated — decoded via {' -> '.join(_cmd.get('decode_chain') or [])}."
+                )
+                lines.append(f"  Decoded form: {_cmd.get('decoded_command') or ''}")
+                if _cmd.get("revealed_keywords"):
+                    lines.append(
+                        "  Only visible after decoding: "
+                        + ", ".join(_cmd["revealed_keywords"])
+                    )
+            if _cmd_flags:
+                lines.append(f"  Findings:\n{flags_to_ai_context(_cmd_flags)}")
+            else:
+                lines.append("  Findings: none — no suspicious switch or keyword matched.")
+            if _cmd.get("checks_skipped"):
+                lines.append(
+                    "  Checks NOT performed (do not imply these were cleared): "
+                    + "; ".join(_cmd["checks_skipped"])
+                )
+            _lolbas = _cmd.get("lolbas_cross_check") or {}
+            if _lolbas.get("match_strength") == "CONFIRMED_ABUSE_PATTERN":
+                lines.append(
+                    f"  LOLBAS: {_lolbas.get('binary')} arguments match its documented "
+                    f"{_lolbas.get('category') or 'abuse'} pattern "
+                    f"({_lolbas.get('matched')!r}) — not merely a dual-use binary."
+                )
+            elif _lolbas.get("match_strength") == "DUAL_USE_PRESENT":
+                lines.append(
+                    f"  LOLBAS: {_lolbas.get('binary')} is dual-use, but its arguments match "
+                    "no documented abuse pattern. Do not treat this as incriminating."
+                )
+            if _cmd.get("rule_matches"):
+                lines.append("  Detection rules matched:")
+                for _rm in _cmd["rule_matches"][:5]:
+                    _exact = "exact" if _rm.get("faithful_multifield") else "approximate"
+                    lines.append(
+                        f"    - [{_rm.get('sigma_level')}] {_rm.get('title')} "
+                        f"(matched {_rm.get('matched')!r}, {_exact})"
+                    )
+                if _cmd.get("joined_rule_count"):
+                    lines.append(
+                        f"  {_cmd['joined_rule_count']} rule(s) were confirmed against the "
+                        "process/filepath analysis, satisfying their full original condition."
+                    )
+            lines.append(
+                "  A 'Suspicious' verdict here means no second independent source agreed — "
+                "treat it as unresolved, never as reassurance."
             )
 
         if section == "DESCRIPTION":
@@ -479,9 +615,11 @@ def render_ai_panel(run_results: dict, settings) -> None:
         # Process/filepath findings are event-level, not per-IOC, so they are
         # folded in once here rather than inside the per-IOC loop above. They go
         # through the same evidence mapper as provider flags.
-        _proc_flags = run_results.get("process_flags") or []
-        if _proc_flags:
-            _proc_summary = flags_summary_for_evidence(_proc_flags)
+        _event_flags = (
+            (run_results.get("process_flags") or []) + (run_results.get("cmdline_flags") or [])
+        )
+        if _event_flags:
+            _proc_summary = flags_summary_for_evidence(_event_flags)
             for k, v in _proc_summary["evidence"].items():
                 if v:
                     evidence[k] = True
@@ -953,14 +1091,9 @@ def render_ai_panel(run_results: dict, settings) -> None:
             """Return the direct Threat Intel URL for a given flag source + IOC."""
             s = source.lower()
             if "virustotal" in s or s == "vt":
-                if ioc_type == "url":
-                    return f"https://www.virustotal.com/gui/url/{_vt_url_id(ioc_value)}"
-                if ioc_type == "ip":
-                    return f"https://www.virustotal.com/gui/ip-address/{ioc_value}"
-                if ioc_type == "domain":
-                    return f"https://www.virustotal.com/gui/domain/{ioc_value}"
-                if ioc_type == "hash":
-                    return f"https://www.virustotal.com/gui/file/{ioc_value}"
+                _vt_link = _vt_gui_url(ioc_value, ioc_type)
+                if _vt_link:
+                    return _vt_link
             if "urlscan" in s:
                 if ioc_type == "ip":
                     return f"https://urlscan.io/ip/{ioc_value}"
@@ -1015,6 +1148,8 @@ def render_ai_panel(run_results: dict, settings) -> None:
         # appended with the source field as their artifact label.
         for _pf in (run_results.get("process_flags") or []):
             _all_flags.append({**_pf, "ioc_value": _pf.get("label", ""), "ioc_type": "process"})
+        for _cf in (run_results.get("cmdline_flags") or []):
+            _all_flags.append({**_cf, "ioc_value": _cf.get("label", ""), "ioc_type": "command_line"})
 
         _seen_fids: set[str] = set()
         _deduped_flags: list[dict] = []
@@ -1405,9 +1540,25 @@ def render_ai_panel(run_results: dict, settings) -> None:
                     _sc, _se, _sev_label = _sev_cfg[_sev]
                     with st.expander(f"{_se} {_sev_label} — {len(_grp)} indicator(s)"):
                         for _f in _grp:
-                            _mitre_str = " · ".join(_f["mitre"]) if _f["mitre"] else "—"
+                            # Each technique id links to its ATT&CK page, the same
+                            # way the source badge and label do. Printing bare
+                            # ids forced the reader to copy them somewhere else,
+                            # and printing the URLs inline made the detail text
+                            # unreadable.
+                            _mitre_str = " · ".join(
+                                f'<a href="https://attack.mitre.org/techniques/'
+                                f'{str(_t).strip().upper().replace(".", "/")}/" target="_blank" '
+                                f'style="color:#79c0ff;text-decoration:none">{_t}</a>'
+                                for _t in _f["mitre"]
+                            ) if _f["mitre"] else "—"
                             _f_ioc_val  = _f.get("ioc_value", "")
                             _f_ioc_type = _f.get("ioc_type", "")
+                            # Shown defanged: it keeps attacker infrastructure
+                            # unclickable, and stops the markdown linkifier from
+                            # nesting an anchor inside the badge's own anchor,
+                            # which was emptying the badge. The href below still
+                            # points at the provider's report page, not here.
+                            _f_ioc_disp = defang_for_display(_f_ioc_val)
                             # A flag may carry its own source link (LOLBAS page,
                             # SigmaHQ rule, ATT&CK technique); otherwise derive
                             # one from the provider + IOC.
@@ -1427,11 +1578,11 @@ def render_ai_panel(run_results: dict, settings) -> None:
                                 f'<a href="{_f_src_url}" target="_blank" style="text-decoration:none">'
                                 f'<span style="background:#1a3050;color:#79c0ff;padding:1px 7px;'
                                 f'border-radius:8px;font-size:0.73rem;font-family:monospace;cursor:pointer">'
-                                f'{_f_ioc_val}</span></a>'
+                                f'{_f_ioc_disp}</span></a>'
                                 if _f_ioc_val and _f_src_url else
                                 f'<span style="background:#1a3050;color:#79c0ff;padding:1px 7px;'
                                 f'border-radius:8px;font-size:0.73rem;font-family:monospace">'
-                                f'{_f_ioc_val}</span>'
+                                f'{_f_ioc_disp}</span>'
                                 if _f_ioc_val else ""
                             )
                             _label_html = (

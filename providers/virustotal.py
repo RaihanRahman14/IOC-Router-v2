@@ -6,7 +6,7 @@ import requests
 
 from config import Settings
 from core.infra_classifier import classify as classify_infra
-from ioc.parser import IOC
+from ioc.parser import IOC, scheme_variants
 
 
 VT_BASE = "https://www.virustotal.com/api/v3"
@@ -33,10 +33,29 @@ def _url_id(url: str) -> str:
     return b64.rstrip("=")
 
 
-def _lookup_url(url: str, key: str) -> dict:
-    url_id = _url_id(url)
-    data = _vt_get(f"/urls/{url_id}", key)
-    return _pack_vt(data, key, "urls", url_id)
+def _lookup_url(url: str, key: str, candidates: list[str] | None = None) -> dict:
+    """Look up a URL report, optionally falling back to alternate scheme forms.
+
+    ``candidates`` carries the http:// and https:// variants of a URL whose scheme
+    the parser inferred. The first candidate holding an actual report wins; if none
+    do, the packed result is keyed to ``url`` so the caller sees the canonical form.
+
+    Args:
+        url: Canonical URL value of the IOC.
+        key: VirusTotal API key.
+        candidates: Ordered URL forms to try. Defaults to ``[url]``.
+
+    Returns:
+        The packed VirusTotal result dict, empty of stats when no report exists.
+    """
+    for candidate in (candidates or [url]):
+        url_id = _url_id(candidate)
+        data = _vt_get(f"/urls/{url_id}", key)
+        if data.get("data"):
+            packed = _pack_vt(data, key, "urls", url_id)
+            packed["matched_url"] = candidate
+            return packed
+    return _pack_vt({}, key, "urls", _url_id(url))
 
 
 def _lookup_ip(ip: str, key: str) -> dict:
@@ -119,7 +138,9 @@ def vt_lookup_batch(items: list[IOC], settings: Settings) -> dict[str, dict]:
         elif ioc.type == "hash":
             out[ioc.value] = _lookup_hash(ioc.value, settings.vt_key)
         elif ioc.type == "url":
-            out[ioc.value] = _lookup_url(ioc.value, settings.vt_key)
+            out[ioc.value] = _lookup_url(
+                ioc.value, settings.vt_key, scheme_variants(ioc)
+            )
         else:
             out[ioc.value] = {}
     return out

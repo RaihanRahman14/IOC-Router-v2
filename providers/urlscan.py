@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import requests
 
 from config import Settings
-from ioc.parser import IOC
+from ioc.parser import IOC, scheme_variants
 
 
 URLSCAN_BASE = "https://urlscan.io/api/v1"
@@ -180,7 +180,12 @@ def urlscan_lookup_batch(
             out[ioc.value] = {}
             continue
 
-        submitted = _submit(ioc.value, settings.urlscan_key)
+        # Live submission — https:// first, that is what a browser would reach.
+        submitted = {}
+        for target in scheme_variants(ioc, https_first=True):
+            submitted = _submit(target, settings.urlscan_key)
+            if submitted.get("uuid"):
+                break
         uuid = submitted.get("uuid")
         if not uuid:
             out[ioc.value] = {}

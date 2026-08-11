@@ -6,7 +6,7 @@
     "project": "https://github.com/LOLBAS-Project/LOLBAS",
     "license": "CC BY 4.0",
     "generated_by": "core/scripts/extract_lolbas.py",
-    "updated": "2026-08-08",
+    "updated": "2026-08-11",
     "entry_count": 240,
     "notes": [
       "Command strings are intentionally dropped — a LOLBAS match alone is not malicious, it only means the command line deserves review.",

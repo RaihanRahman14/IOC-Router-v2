@@ -460,6 +460,35 @@ def extract_hash_candidates(context: str | None) -> list[str]:
 
 # ── Layer 4 — Sigma-derived parent/child pairing ─────────────────────────────
 
+# Globs that match essentially every process of their kind. These arise when a
+# source rule constrained a *path* ("a binary under \Users\...\*.exe") and Option
+# A reduced it to a basename — the discriminating part was the directory, which
+# this layer cannot evaluate, leaving a pattern that matches everything.
+#
+# Found by the calibration corpus: one such rule matched winword.exe -> winword.exe
+# at HIGH severity (ordinary Office re-entry) and also outranked the real
+# Office-spawns-a-shell rules for winword.exe -> cmd.exe, so it was both a false
+# positive and a mislabel. Filtered at load so the shipped dataset needs no
+# regeneration; the extractor now refuses to emit them either.
+_INFORMATIONLESS_GLOB_CORES = frozenset({
+    "", ".exe", ".dll", ".com", ".bat", ".cmd", ".ps1", ".scr", ".msi",
+})
+
+
+def _is_informationless_glob(glob: Any) -> bool:
+    """Report whether a pairing glob matches essentially any process name.
+
+    Args:
+        glob: A ``parent_pattern`` or ``child_pattern`` value.
+
+    Returns:
+        True when the pattern carries no discriminating information.
+    """
+    if not isinstance(glob, str):
+        return True
+    core = glob.strip().lower().strip("*").lstrip("\\").strip("*")
+    return core in _INFORMATIONLESS_GLOB_CORES
+
 @lru_cache(maxsize=1)
 def load_parent_child_pairs() -> list[dict]:
     """Load the extracted Sigma parent→child blocklist.
@@ -481,7 +510,16 @@ def load_parent_child_pairs() -> list[dict]:
         logger.error("sigma_parent_child_pairs.json has no 'pairs' list — Layer 4 disabled")
         return []
 
-    return [p for p in pairs if isinstance(p, dict)]
+    kept = [
+        p for p in pairs
+        if isinstance(p, dict)
+        and not _is_informationless_glob(p.get("parent_pattern"))
+        and not _is_informationless_glob(p.get("child_pattern"))
+    ]
+    dropped = len([p for p in pairs if isinstance(p, dict)]) - len(kept)
+    if dropped:
+        logger.info("dropped %d pairing record(s) with an information-free glob", dropped)
+    return kept
 
 
 def _dropped_conditions(record: dict) -> list[str]:
@@ -854,6 +892,14 @@ def _row(artifact: str, row_type: str, verdict: str, confidence: str,
     numeric scorer is deferred. Setting them keeps ``pd.DataFrame`` from
     producing ragged NaN columns when these rows are concatenated with real ones.
 
+    ``ConfidenceScore`` is ``None`` rather than ``""`` deliberately. Real IOC
+    rows put a **number** there (``ioc/verdict.py:160``); an empty string
+    alongside it makes an object column that pyarrow refuses to convert
+    ("Could not convert '' with type str: tried to convert to double"), which
+    breaks the whole Table render whenever a run has both real and synthetic
+    rows. ``None`` becomes a null in a double column instead. Setting every key
+    prevents *missing* columns; it does not prevent mixed *types*.
+
     Args:
         artifact: Value shown in the Artifact column.
         row_type: Artifact type label.
@@ -873,7 +919,7 @@ def _row(artifact: str, row_type: str, verdict: str, confidence: str,
         "Primary Evidence": evidence,
         "Next Action": "Review",
         "Sources": sources,
-        "ConfidenceScore": "",
+        "ConfidenceScore": None,
         "ConfidenceLabel": "",
         "ProviderScores": {},
         "ActiveProviders": [],

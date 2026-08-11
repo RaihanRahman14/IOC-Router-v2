@@ -69,7 +69,7 @@ def run_provider_lookups(
         A run_results dict with per-provider result maps, the aggregated summary
         and rows, and the provider_flags used.
     """
-    ioc_payload = [(i.value, i.type) for i in items]
+    ioc_payload = [(i.value, i.type, i.scheme_inferred) for i in items]
 
     # name -> (enabled, zero-arg callable that performs the cached lookup)
     jobs: dict[str, tuple[bool, Callable[[], dict]]] = {

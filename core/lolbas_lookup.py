@@ -22,6 +22,9 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _DATA_FILE = Path(__file__).parent / "data" / "lolbas_binaries.json"
+# Layer 4's dataset, deliberately separate from the Layer 2 table above so this
+# module's existing consumers are untouched by the argument-matching addition.
+_COMMANDS_FILE = Path(__file__).parent / "data" / "lolbas_commands.json"
 
 DUAL_USE_BINARY = "DUAL_USE_BINARY"
 
@@ -73,6 +76,55 @@ def lookup(process_name: str) -> dict[str, Any] | None:
         return None
 
     return load_lolbas_table().get(filename)
+
+
+@lru_cache(maxsize=1)
+def load_lolbas_commands() -> dict[str, list[dict[str, Any]]]:
+    """Load the Layer 4 documented-abuse-command table.
+
+    Cached for the process lifetime.
+
+    Returns:
+        Mapping of lowercased binary name to its abuse command records, or an
+        empty mapping if the data file is missing or malformed — which degrades
+        Layer 4 to "no confirmations" rather than raising.
+    """
+    try:
+        raw = json.loads(_COMMANDS_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.error("lolbas_commands.json unreadable (%s) — Layer 4 disabled", exc)
+        return {}
+
+    commands = raw.get("commands")
+    if not isinstance(commands, dict):
+        logger.error("lolbas_commands.json has no 'commands' mapping — Layer 4 disabled")
+        return {}
+
+    return {
+        str(k).lower(): [r for r in v if isinstance(r, dict) and r.get("skeleton")]
+        for k, v in commands.items()
+        if isinstance(v, list)
+    }
+
+
+def lookup_commands(process_name: str) -> list[dict[str, Any]]:
+    """Return the documented abuse commands for a binary.
+
+    The name-only sibling of :func:`lookup`. Where that answers "is this binary
+    dual-use", this supplies what an actual abuse invocation looks like, so the
+    command line can be checked against it.
+
+    Args:
+        process_name: A binary name or full path.
+
+    Returns:
+        Abuse command records, or an empty list when the binary is absent from
+        the dataset or documents no discriminating argument pattern.
+    """
+    if not process_name:
+        return []
+    name = PureWindowsPath(str(process_name).strip().strip('"')).name.lower()
+    return load_lolbas_commands().get(name, [])
 
 
 def abuse_summary(record: dict[str, Any] | None) -> str:

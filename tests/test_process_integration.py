@@ -138,10 +138,18 @@ class TestTableRowSchema(unittest.TestCase):
             self.assertIn(row["Confidence"], ("High", "Med", "Low"))
 
     def test_confidence_score_columns_blank_not_missing(self) -> None:
-        """Blank, not absent — a missing key yields ragged NaN columns in pandas."""
+        """Blank, not absent — a missing key yields ragged NaN columns in pandas.
+
+        ``ConfidenceScore`` is None rather than "": real IOC rows put a number
+        in that column, and an empty string beside it makes an object column
+        pyarrow cannot convert, which broke ``st.dataframe`` for the entire run.
+        None becomes a null in a double column. The key is still present, which
+        is what this test was written to guarantee.
+        """
         rows = pa.to_rows(pa.analyze_process_event(
             pa.ProcessFilepathInput(file_path="C:\\Temp\\scvhost.exe")))
-        self.assertEqual(rows[0]["ConfidenceScore"], "")
+        self.assertIn("ConfidenceScore", rows[0])
+        self.assertIsNone(rows[0]["ConfidenceScore"])
         self.assertEqual(rows[0]["ActiveProviders"], [])
 
     def test_no_rows_without_process_fields(self) -> None:

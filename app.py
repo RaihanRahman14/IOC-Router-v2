@@ -16,6 +16,11 @@ from core.process_analyzer import (
     analyze_process_event,
     to_rows as process_analysis_rows,
 )
+from core.cmdline_analyzer import (
+    CommandLineInput,
+    analyze_command_line,
+    to_rows as cmdline_analysis_rows,
+)
 from core.cache import (
     vt_cached, urlscan_cached, abuse_cached, tf_cached,
     mb_cached, shodan_cached, dnsd_cached, ha_cached, mxtoolbox_cached,
@@ -24,7 +29,11 @@ from core.cache import (
 )
 from ui.styles import build_global_css_and_header, LANDING_CSS
 from ui.components.drawer import render_api_drawer
-from ui.components.output_renderer import render_results_output, render_session_hero
+from ui.components.output_renderer import (
+    render_cmdline_breakdown,
+    render_results_output,
+    render_session_hero,
+)
 from ui.components.ioc_card import render_ioc_cards
 from ui.components.ai_panel import render_ai_panel
 from ui.components.cve_panel import render_cve_panel
@@ -311,7 +320,7 @@ def _clear_all_outputs() -> None:
 _INPUT_CONTEXT_KEYS: tuple[str, ...] = (
     "output_format", "alert_name", "host", "host_ip", "time_detected",
     "device_action", "device_action_others", "critical_asset_sel",
-    "file_path", "parent_process", "child_process", "raw_log",
+    "file_path", "command_line", "parent_process", "child_process", "raw_log",
 )
 
 
@@ -352,6 +361,7 @@ device_action_others: str = st.session_state.get("device_action_others", "")
 parent_process: str = st.session_state.get("parent_process", "")
 child_process: str = st.session_state.get("child_process", "")
 file_path: str = st.session_state.get("file_path", "")
+command_line: str = st.session_state.get("command_line", "")
 
 # ── Handle pending resets before rendering ────────────────────────────────────
 if st.session_state.get("reset_input"):
@@ -362,6 +372,7 @@ if st.session_state.get("reset_input"):
     st.session_state["parent_process"] = ""
     st.session_state["child_process"] = ""
     st.session_state["file_path"] = ""
+    st.session_state["command_line"] = ""
     st.session_state["reset_input"] = False
     raw = ""
     raw_log = ""
@@ -370,6 +381,7 @@ if st.session_state.get("reset_input"):
     parent_process = ""
     child_process = ""
     file_path = ""
+    command_line = ""
 
 if st.session_state.get("load_sample"):
     st.session_state["ioc_input"] = "8.8.8.8\nexample.com\nhttps://example.com/login\n44d88612fea8a8f36de82e1278abb02f"
@@ -566,7 +578,7 @@ def _render_context_expander(
     """
     global output_format, alert_name, host, host_ip, time_detected
     global device_action, device_action_others, critical_asset
-    global file_path, parent_process, child_process, raw_log
+    global file_path, command_line, parent_process, child_process, raw_log
     _title = "🗂️ AI context" if include_ai_settings else "🗂️ Context"
     _kp = key_prefix
     with st.expander(_title):
@@ -607,6 +619,14 @@ def _render_context_expander(
                 key=f"{_kp}device_action_others",
             )
 
+        # text_area, not text_input: a base64 -enc payload routinely runs past
+        # 500 characters, which a single-line input clips into uselessness.
+        command_line = st.text_area(
+            "Command Line",
+            placeholder="e.g. powershell.exe -nop -w hidden -enc SQBFAFgA...",
+            height=68,
+            key=f"{_kp}command_line",
+        )
         file_path = st.text_input(
             "File Path", placeholder="e.g. C:\\Users\\user\\Downloads\\malware.exe", key=f"{_kp}file_path"
         )
@@ -709,6 +729,12 @@ if active_tab == "Input":
 
     _input_mode = st.session_state.get("analysis_mode", "Triage")
 
+    # Path Probe (WAF testing) mode is temporarily disabled — coerce any stale
+    # saved state back to Triage so the option can no longer be entered.
+    if _input_mode == "Path Probe":
+        _input_mode = "Triage"
+        st.session_state["analysis_mode"] = "Triage"
+
     if _input_mode == "Path Probe":
         with _center_col:
             # Mirror Mode popover — the in-card popover (where mode lives in
@@ -783,7 +809,7 @@ if active_tab == "Input":
                     "for each. Uncheck to pick IOC types and providers manually "
                     "below."
                 )
-                _mode_opts_inline = ("Triage", "Lookup", "Path Probe")
+                _mode_opts_inline = ("Triage", "Lookup")
                 _mode_idx_inline = (
                     _mode_opts_inline.index(_current_mode)
                     if _current_mode in _mode_opts_inline
@@ -978,10 +1004,10 @@ _FAST_PROVIDERS_BY_TYPE: dict[str, set[str]] = {
 
 def _manual_payload_for_provider(
     provider: str, items: list[IOC]
-) -> list[tuple[str, str]]:
+) -> list[tuple[str, str, bool]]:
     """Return only the IOC tuples whose IOC group has this provider enabled."""
     return [
-        (ioc.value, ioc.type)
+        (ioc.value, ioc.type, ioc.scheme_inferred)
         for ioc in items
         if st.session_state.get(
             f"prov_{provider}_{_IOC_TYPE_TO_GROUP.get(ioc.type, '')}",
@@ -1068,6 +1094,7 @@ def _has_process_input() -> bool:
     """
     return bool(
         (file_path or "").strip()
+        or (command_line or "").strip()
         or (parent_process or "").strip()
         or (child_process or "").strip()
     )
@@ -1093,6 +1120,26 @@ if run_requested and (raw.strip() or _has_process_input()):
         _context_hashes = [h for h in _proc_result.hash_candidates if h not in _known_values]
         items = items + [IOC(value=h, type="hash") for h in _context_hashes]
 
+        # ── Command line analysis (local, no network) ─────────────────────────
+        # Runs after the process analysis so it can cross-reference that
+        # module's findings, and before provider selection so indicators
+        # recovered from a decoded payload join the normal enrichment path.
+        _cmd_result = analyze_command_line(CommandLineInput(
+            command_line=command_line or None,
+            context=raw_log or None,
+            linked_process=_proc_result,
+        ))
+        _known_values = {i.value for i in items}
+        _derived_iocs = [
+            i for i in parse_iocs("\n".join(_cmd_result.ioc_candidates))
+            if i.value not in _known_values
+        ]
+        # URLs recovered from a decoded payload are looked up, never submitted.
+        # Submitting an attacker's URL to URLScan's public queue is an outbound
+        # disclosure the analyst did not ask for and cannot take back.
+        _derived_submit_blocked = {i.value for i in _derived_iocs if i.type == "url"}
+        items = items + _derived_iocs
+
         if auto_choose_provider:
             _current_mode = st.session_state.get("analysis_mode", "Triage")
             _is_triage_fast = (
@@ -1105,11 +1152,16 @@ if run_requested and (raw.strip() or _has_process_input()):
         else:
             allowed_by_type = _manual_allowed_by_type(items)
 
-        def _payload(p: str) -> list[tuple[str, str]]:
+        def _payload(p: str) -> list[tuple[str, str, bool]]:
             return [
-                (ioc.value, ioc.type)
+                (ioc.value, ioc.type, ioc.scheme_inferred)
                 for ioc in items
                 if p in allowed_by_type.get(ioc.type, set())
+                # URLScan takes one submit/lookup-only flag for the whole call,
+                # so a URL recovered from a decoded payload is held back from
+                # that provider entirely rather than risking a public
+                # submission. Every other provider still enriches it.
+                and not (p == "urlscan" and ioc.value in _derived_submit_blocked)
             ]
 
         provider_flags = {p: bool(_payload(p)) for p in _PROVIDER_KEYS}
@@ -1200,7 +1252,12 @@ if run_requested and (raw.strip() or _has_process_input()):
             # entry per atomic IOC.
             "process_analysis": dataclasses.asdict(_proc_result),
             "process_flags": _proc_result.flags,
-            "process_rows": process_analysis_rows(_proc_result),
+            # Command-line rows share the process rows' column schema exactly
+            # (asserted by a test), so the renderer concatenates the two
+            # without caring which module produced a row.
+            "process_rows": process_analysis_rows(_proc_result) + cmdline_analysis_rows(_cmd_result),
+            "cmdline_analysis": dataclasses.asdict(_cmd_result),
+            "cmdline_flags": _cmd_result.flags,
             "allowed_by_type": {t: sorted(ps) for t, ps in allowed_by_type.items()},
             "timings": {
                 "providers": _provider_timings,
@@ -1243,6 +1300,12 @@ if active_tab == "Result":
     with split_right:
         if _has_run_results:
             render_results_output(output_format, st.session_state["run_results"])
+            # Between the formatted output and the per-IOC cards: the
+            # breakdown explains the command line the ticket notes describe,
+            # and the IOC cards below it cover the indicators it yielded.
+            render_cmdline_breakdown(
+                st.session_state["run_results"].get("cmdline_analysis") or {}
+            )
             render_ioc_cards(st.session_state["run_results"])
         else:
             st.info("Tabel verdict dan kartu per-IOC akan muncul di sini.")

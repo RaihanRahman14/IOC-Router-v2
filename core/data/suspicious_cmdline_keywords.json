@@ -1,0 +1,330 @@
+{
+  "_meta": {
+    "schema": "list of {id, label, patterns, match_mode, severity, mitre, why}",
+    "purpose": "Layer 3 curated keyword table for core.cmdline_analyzer",
+    "match_modes": {
+      "flag": "exact, case-insensitive match against a parsed switch token",
+      "flag_value": "two adjacent tokens — a switch and its value, e.g. '-w hidden'",
+      "token": "exact, case-insensitive match against any parsed token",
+      "substring": "case-insensitive substring of the whole command text; a pattern may also be a LIST of substrings, all of which must appear (in any order or spacing)"
+    },
+    "source": "briefing §3 Layer 3 seed table, extended against MITRE ATT&CK technique descriptions",
+    "generated_by": "hand-curated",
+    "updated": "2026-08-08",
+    "notes": [
+      "Deliberately narrower and more direct than Sigma — this is the fast first pass, not a rule engine.",
+      "ids must avoid substrings reserved by ioc.flags.flags_summary_for_evidence (SIGMA, MALWARE, C2, RECON, PERSISTENCE, PRIVESC, LATERAL, SMB, RDP, EXPLOIT, CVE, PHISHING, RANSOMWARE, REGISTRY_MOD, MUTEX, PROCESS_INJECTION, MALWARE_DOWNLOAD, DOWNLOAD_SERVED). Emitted flag ids are CMDLINE_<id>.",
+      "'-e' is deliberately absent as an encoded-command alias: too many unrelated tools use it. The deobfuscator still decodes it; only the flag is withheld.",
+      "Severities are starting values, not validated against real alert volume — see plan §7.",
+      "Prefer the list form over a bare binary name. A binary is not a technique: matching 'schtasks' alone labelled a read-only /query as 'Scheduled task created', and 'lsass' alone fired on monitoring tooling that merely names the process. Both were caught by the calibration corpus, not by review."
+    ]
+  },
+  "keywords": [
+    {
+      "id": "ENCODED_COMMAND",
+      "label": "Base64-encoded command payload",
+      "patterns": ["-enc", "-encodedcommand", "-ec", "-encoded", "-encodedarguments"],
+      "match_mode": "flag",
+      "severity": "MEDIUM",
+      "mitre": ["T1027", "T1140"],
+      "why": "The command body was supplied base64-encoded, a routine way to keep payload content out of logs and out of simple string matching."
+    },
+    {
+      "id": "HIDDEN_WINDOW",
+      "label": "Console window hidden from the user",
+      "patterns": ["-w hidden", "-windowstyle hidden", "-wind hidden", "-wi hidden"],
+      "match_mode": "flag_value",
+      "severity": "MEDIUM",
+      "mitre": ["T1564.003"],
+      "why": "Suppresses the console window so the user sees nothing execute."
+    },
+    {
+      "id": "NO_PROFILE",
+      "label": "PowerShell profile skipped",
+      "patterns": ["-nop", "-noprofile", "-nopro"],
+      "match_mode": "flag",
+      "severity": "LOW",
+      "mitre": ["T1059.001"],
+      "why": "Skips profile load for a predictable environment. Common in automation too — weak on its own, meaningful alongside other switches."
+    },
+    {
+      "id": "NON_INTERACTIVE",
+      "label": "Non-interactive execution",
+      "patterns": ["-noni", "-noninteractive"],
+      "match_mode": "flag",
+      "severity": "LOW",
+      "mitre": ["T1059.001"],
+      "why": "Suppresses interactive prompts. Benign in scheduled work, notable when paired with hidden windows or encoding."
+    },
+    {
+      "id": "EXEC_POLICY_BYPASS",
+      "label": "Execution policy bypassed",
+      "patterns": ["-executionpolicy bypass", "-ep bypass", "-exec bypass", "-executionpolicy unrestricted", "-ep unrestricted"],
+      "match_mode": "flag_value",
+      "severity": "MEDIUM",
+      "mitre": ["T1059.001"],
+      "why": "Disables the script execution restriction for this invocation."
+    },
+    {
+      "id": "INVOKE_EXPRESSION",
+      "label": "Arbitrary string executed as code",
+      "patterns": ["iex", "invoke-expression", "invoke-command"],
+      "match_mode": "token",
+      "severity": "HIGH",
+      "mitre": ["T1059.001"],
+      "why": "Executes a string as code — the standard final stage of a fileless dropper."
+    },
+    {
+      "id": "DOWNLOAD_CRADLE",
+      "label": "Fileless download-and-execute cradle",
+      "patterns": ["downloadstring", "downloadfile", "downloaddata", "net.webclient", "invoke-webrequest", "invoke-restmethod", "start-bitstransfer"],
+      "match_mode": "substring",
+      "severity": "HIGH",
+      "mitre": ["T1105"],
+      "why": "Retrieves remote content directly into memory or disk without a browser."
+    },
+    {
+      "id": "BASE64_CONVERT",
+      "label": "Inline base64 decoding",
+      "patterns": ["frombase64string", "tobase64string"],
+      "match_mode": "substring",
+      "severity": "MEDIUM",
+      "mitre": ["T1140"],
+      "why": "Decodes an embedded payload at runtime."
+    },
+    {
+      "id": "CERTUTIL_DOWNLOAD",
+      "label": "certutil used as a downloader",
+      "patterns": ["-urlcache", "-verifyctl"],
+      "match_mode": "flag",
+      "severity": "HIGH",
+      "mitre": ["T1105", "T1218"],
+      "why": "certutil is a signed Microsoft binary being used to fetch remote content."
+    },
+    {
+      "id": "BITSADMIN_TRANSFER",
+      "label": "BITS used to transfer a file",
+      "patterns": [["bitsadmin", "/transfer"], ["bitsadmin", "/addfile"], "start-bitstransfer -source"],
+      "match_mode": "substring",
+      "severity": "HIGH",
+      "mitre": ["T1197", "T1105"],
+      "why": "Background Intelligent Transfer Service moves files while surviving reboots and blending into normal update traffic."
+    },
+    {
+      "id": "WMIC_PROCESS_CREATE",
+      "label": "Process spawned through WMI",
+      "patterns": ["process call create"],
+      "match_mode": "substring",
+      "severity": "HIGH",
+      "mitre": ["T1047"],
+      "why": "Creates a process via WMI, detaching it from the normal parent chain."
+    },
+    {
+      "id": "REMOTE_WMI",
+      "label": "WMI aimed at a remote host",
+      "patterns": ["/node:", ["-computername", "invoke-command"], ["-computername", "invoke-wmimethod"], ["-computername", "new-cimsession"]],
+      "match_mode": "substring",
+      "severity": "HIGH",
+      "mitre": ["T1047", "T1021"],
+      "why": "Executes against another machine — movement between hosts rather than local activity. -ComputerName alone is a read-only query in most cmdlets, so it must be paired with an execution cmdlet."
+    },
+    {
+      "id": "PSEXEC_EXEC",
+      "label": "PsExec-style remote execution",
+      "patterns": ["psexec", "psexesvc", "paexec"],
+      "match_mode": "substring",
+      "severity": "HIGH",
+      "mitre": ["T1569.002", "T1021"],
+      "why": "Service-based remote execution tooling."
+    },
+    {
+      "id": "REMOTE_SHARE_COPY",
+      "label": "Copy to or from a network share",
+      "patterns": ["\\\\admin$", "\\\\c$", "\\\\ipc$"],
+      "match_mode": "substring",
+      "severity": "MEDIUM",
+      "mitre": ["T1021.002"],
+      "why": "Administrative share access, typical of hands-on-keyboard movement."
+    },
+    {
+      "id": "RUNDLL32_SCRIPT",
+      "label": "rundll32 executing script content",
+      "patterns": ["javascript:", "vbscript:", "mshtml,runhtmlapplication"],
+      "match_mode": "substring",
+      "severity": "HIGH",
+      "mitre": ["T1218.011"],
+      "why": "A signed binary being used to run inline script, bypassing application control."
+    },
+    {
+      "id": "MSHTA_REMOTE",
+      "label": "mshta fetching remote content",
+      "patterns": [["mshta", "http"], ["mshta", ".hta"], ["mshta", "javascript:"], ["mshta", "vbscript:"]],
+      "match_mode": "substring",
+      "severity": "MEDIUM",
+      "mitre": ["T1218.005"],
+      "why": "HTML Application host pointed at a remote or scripted payload. The binary alone is not the signal — its target is."
+    },
+    {
+      "id": "REGSVR_REMOTE",
+      "label": "regsvr32 loading a remote scriptlet",
+      "patterns": ["scrobj.dll", "/i:http"],
+      "match_mode": "substring",
+      "severity": "HIGH",
+      "mitre": ["T1218.010"],
+      "why": "The 'squiblydoo' pattern — a signed binary loading a remote COM scriptlet."
+    },
+    {
+      "id": "RUN_KEY_WRITE",
+      "label": "Autorun registry key written",
+      "patterns": ["currentversion\\run", "currentversion\\runonce", "currentversion\\explorer\\shell folders"],
+      "match_mode": "substring",
+      "severity": "HIGH",
+      "mitre": ["T1547.001"],
+      "why": "Establishes execution at every logon."
+    },
+    {
+      "id": "SCHTASKS_CREATE",
+      "label": "Scheduled task created",
+      "patterns": [["schtasks", "/create"], "register-scheduledtask", "new-scheduledtask"],
+      "match_mode": "substring",
+      "severity": "MEDIUM",
+      "mitre": ["T1053.005"],
+      "why": "Scheduled execution. Extremely common in legitimate administration — read alongside what is being scheduled. Requires the creation verb: a read-only /query is not persistence."
+    },
+    {
+      "id": "SERVICE_CREATE",
+      "label": "Windows service created",
+      "patterns": ["sc create", "sc.exe create", "new-service"],
+      "match_mode": "substring",
+      "severity": "MEDIUM",
+      "mitre": ["T1543.003"],
+      "why": "Services run as SYSTEM and start automatically."
+    },
+    {
+      "id": "UAC_BYPASS_HELPER",
+      "label": "Known UAC bypass helper binary",
+      "patterns": ["fodhelper", "computerdefaults", "eventvwr", "sdclt"],
+      "match_mode": "substring",
+      "severity": "HIGH",
+      "mitre": ["T1548.002"],
+      "why": "Auto-elevating binaries abused to run code at high integrity without a prompt."
+    },
+    {
+      "id": "LSASS_DUMP",
+      "label": "LSASS memory access",
+      "patterns": ["sekurlsa", ["comsvcs.dll", "minidump"], ["lsass", "dump"], ["procdump", "lsass"], ["lsass", "-ma"]],
+      "match_mode": "substring",
+      "severity": "CRITICAL",
+      "mitre": ["T1003.001"],
+      "why": "Reading LSASS memory yields plaintext credentials and hashes. Requires the dumping action, not merely the word lsass — monitoring tooling mentions the process routinely."
+    },
+    {
+      "id": "NET_USER_ADD",
+      "label": "Local account created",
+      "patterns": [["net user", "/add"], "new-localuser"],
+      "match_mode": "substring",
+      "severity": "MEDIUM",
+      "mitre": ["T1136.001"],
+      "why": "A new account is a durable foothold that survives cleanup of the original payload."
+    },
+    {
+      "id": "ADMIN_GROUP_ADD",
+      "label": "Account added to administrators",
+      "patterns": ["localgroup administrators", "add-localgroupmember"],
+      "match_mode": "substring",
+      "severity": "HIGH",
+      "mitre": ["T1098"],
+      "why": "Grants local administrative rights."
+    },
+    {
+      "id": "DEFENDER_TAMPER",
+      "label": "Defender configuration tampered with",
+      "patterns": ["set-mppreference", "add-mppreference", "-disablerealtimemonitoring", "-exclusionpath", "-exclusionextension"],
+      "match_mode": "substring",
+      "severity": "HIGH",
+      "mitre": ["T1562.001"],
+      "why": "Disabling protection or excluding a path is a deliberate step to let something else run unimpeded."
+    },
+    {
+      "id": "AMSI_BYPASS",
+      "label": "AMSI bypass attempt",
+      "patterns": ["amsiinitfailed", "amsiutils", "amsiscanbuffer"],
+      "match_mode": "substring",
+      "severity": "CRITICAL",
+      "mitre": ["T1562.001"],
+      "why": "Neutralises the Antimalware Scan Interface so in-memory content is never inspected. No legitimate use."
+    },
+    {
+      "id": "ETW_BYPASS",
+      "label": "ETW telemetry disabled",
+      "patterns": ["etweventwrite", "etwenable"],
+      "match_mode": "substring",
+      "severity": "CRITICAL",
+      "mitre": ["T1562.006"],
+      "why": "Blinds Event Tracing for Windows, which most EDR products depend on."
+    },
+    {
+      "id": "FIREWALL_DISABLE",
+      "label": "Host firewall turned off",
+      "patterns": ["advfirewall set", "set-netfirewallprofile"],
+      "match_mode": "substring",
+      "severity": "MEDIUM",
+      "mitre": ["T1562.004"],
+      "why": "Opens the host to inbound access."
+    },
+    {
+      "id": "EVENT_LOG_CLEAR",
+      "label": "Event log cleared",
+      "patterns": ["wevtutil cl", "clear-eventlog", "wevtutil.exe cl"],
+      "match_mode": "substring",
+      "severity": "HIGH",
+      "mitre": ["T1070.001"],
+      "why": "Destroys the record of what happened. Almost never legitimate on a workstation."
+    },
+    {
+      "id": "HISTORY_CLEAR",
+      "label": "Shell history cleared",
+      "patterns": ["clear-history", "consolehost_history"],
+      "match_mode": "substring",
+      "severity": "MEDIUM",
+      "mitre": ["T1070.003"],
+      "why": "Removes the operator's own command history."
+    },
+    {
+      "id": "SHADOW_COPY_DELETE",
+      "label": "Volume shadow copies deleted",
+      "patterns": ["delete shadows", "shadowcopy delete", "wbadmin delete"],
+      "match_mode": "substring",
+      "severity": "CRITICAL",
+      "mitre": ["T1490"],
+      "why": "Removes local restore points. The standard immediate precursor to ransomware encryption."
+    },
+    {
+      "id": "RECOVERY_DISABLE",
+      "label": "Windows recovery disabled",
+      "patterns": ["recoveryenabled no", "bootstatuspolicy ignoreallfailures", "disable-computerrestore"],
+      "match_mode": "substring",
+      "severity": "CRITICAL",
+      "mitre": ["T1490"],
+      "why": "Prevents the host from repairing itself, alongside shadow copy deletion."
+    },
+    {
+      "id": "ARCHIVE_STAGING",
+      "label": "Data archived for collection",
+      "patterns": ["compress-archive", "makecab", "rar.exe a", "7z.exe a"],
+      "match_mode": "substring",
+      "severity": "MEDIUM",
+      "mitre": ["T1560.001"],
+      "why": "Bundling files is the staging step before exfiltration."
+    },
+    {
+      "id": "HIDDEN_ATTRIBUTE",
+      "label": "File marked hidden",
+      "patterns": ["attrib +h", "attrib +s +h"],
+      "match_mode": "substring",
+      "severity": "LOW",
+      "mitre": ["T1564.001"],
+      "why": "Conceals a dropped file from casual inspection."
+    }
+  ]
+}

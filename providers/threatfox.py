@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 import requests
 
 from config import Settings
-from ioc.parser import IOC
+from ioc.parser import IOC, scheme_variants
 
 
 TF_BASE = "https://threatfox-api.abuse.ch/api/v1/"
@@ -62,6 +62,8 @@ def _query_variants(ioc: IOC) -> list[str]:
         return []
     variants = [value]
     if ioc.type == "url":
+        # Feed lookup — http:// first, since that is the form most feeds store.
+        variants.extend(scheme_variants(ioc))
         try:
             host = (urlparse(value).hostname or "").strip().lower()
         except ValueError:

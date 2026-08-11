@@ -243,6 +243,29 @@ def _to_name_glob(value: str, modifier: str) -> str | None:
     return f"*\\{basename}".lower()
 
 
+# Globs that match essentially every process of their kind. They arise when a
+# rule constrained a path ("a binary under \\Users\\...\\*.exe") and this
+# extraction reduced it to a basename, discarding the only discriminating part.
+# Shipping one is worse than dropping the rule: it matches everything and, being
+# scored by severity, outranks the specific rules it competes with.
+_INFORMATIONLESS_GLOB_CORES = frozenset({
+    "", ".exe", ".dll", ".com", ".bat", ".cmd", ".ps1", ".scr", ".msi",
+})
+
+
+def _is_informationless_glob(glob: str) -> bool:
+    """Report whether a glob matches essentially any process name.
+
+    Args:
+        glob: A candidate name glob.
+
+    Returns:
+        True when the pattern carries no discriminating information.
+    """
+    core = str(glob or "").strip().lower().strip("*").lstrip("\\").strip("*")
+    return core in _INFORMATIONLESS_GLOB_CORES
+
+
 def _collect_field_globs(
     node: Any, fields: tuple[str, ...], out: list[str], dropped: list[str] | None = None
 ) -> None:
@@ -347,6 +370,9 @@ def extract_pairs_from_rule(name: str, text: str) -> list[dict[str, Any]]:
             continue
         _collect_field_globs(detection[block], _PARENT_FIELDS, parent_globs, dropped)
         _collect_field_globs(detection[block], _CHILD_FIELDS, child_globs, dropped)
+
+    parent_globs = [g for g in parent_globs if not _is_informationless_glob(g)]
+    child_globs = [g for g in child_globs if not _is_informationless_glob(g)]
 
     if not parent_globs or not child_globs:
         return []

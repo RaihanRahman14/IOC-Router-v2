@@ -17,11 +17,27 @@ from providers.mxtoolbox import mxtoolbox_lookup_batch
 from providers.whoxy import whoxy_lookup_batch
 from providers.ransomware_live import ransomware_live_lookup_batch
 
-CACHE_REV = "providers-v12"
+CACHE_REV = "providers-v13"
 
 
 def _inflate(payload: list) -> list[IOC]:
-    return [IOC(value=v, type=t) for v, t in payload]
+    """Rebuild IOC objects from the cache-key tuples produced by the callers.
+
+    Accepts both the legacy ``(value, type)`` shape and the current
+    ``(value, type, scheme_inferred)`` shape so older payload builders keep working.
+
+    Args:
+        payload: Sequence of 2- or 3-element IOC tuples.
+
+    Returns:
+        The reconstructed IOC list.
+    """
+    out: list[IOC] = []
+    for row in payload:
+        value, ioc_type = row[0], row[1]
+        inferred = bool(row[2]) if len(row) > 2 else False
+        out.append(IOC(value=value, type=ioc_type, scheme_inferred=inferred))
+    return out
 
 
 @st.cache_data(ttl=86400)
