@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import requests
 
 from config import Settings
+from core.http import get_session
 from ioc.parser import IOC
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ def _extract_sld_name(value: str) -> str:
 
 def _whois_lookup(domain: str, key: str) -> dict:
     try:
-        r = requests.get(
+        r = get_session().get(
             WHOXY_BASE,
             params={"key": key, "whois": domain},
             timeout=15,
@@ -53,7 +54,7 @@ def _whois_lookup(domain: str, key: str) -> dict:
 def _reverse_whois(field: str, value: str, key: str, max_results: int = 10) -> dict:
     """Run a reverse WHOIS lookup by email, company, or keyword."""
     try:
-        r = requests.get(
+        r = get_session().get(
             WHOXY_BASE,
             params={"key": key, "reverse": "whois", field: value, "mode": "mini"},
             timeout=15,

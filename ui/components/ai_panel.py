@@ -469,16 +469,23 @@ def render_ai_panel(run_results: dict, settings) -> None:
                 lines.append(f"    Verdict: {_entry.get('aggregated_verdict', 'Unknown')}")
             if _waf_flags:
                 lines.append(f"  Findings:\n{flags_to_ai_context(_waf_flags)}")
-            _skipped = _waf[0].get("checks_skipped") if _waf else []
+            # Every payload's warnings, not just the first one's. Reading
+            # _waf[0] alone presented a second, truncated payload to the model
+            # as though it had been fully assessed.
+            _skipped = sorted({
+                note for _entry in _waf for note in (_entry.get("checks_skipped") or [])
+            })
             if _skipped:
                 lines.append(
                     "  Checks NOT performed (do not imply these were cleared): "
                     + "; ".join(_skipped)
                 )
             lines.append(
-                "  Every verdict here is 'Unknown' because attack-pattern matching is not "
-                "implemented yet, NOT because the payloads were assessed and cleared. Do not "
-                "describe these payloads as benign, harmless, or checked."
+                "  These verdicts come from local rule sets only — OWASP CRS patterns and a "
+                "curated CVE fingerprint list — with no external provider consulted. "
+                "'Unknown' means no local rule matched; it is NOT a finding of benign, "
+                "harmless, or checked-and-clear. 'Suspicious' means a pattern matched but "
+                "nothing independent confirmed it."
             )
 
         if section == "DESCRIPTION":

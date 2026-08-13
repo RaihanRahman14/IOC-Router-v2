@@ -5,8 +5,9 @@ from providers.shodan import enrichWithInternetDB, scoreRisk, summarize_shodan_i
 
 
 class TestShodanInternetDB(unittest.TestCase):
-    @patch("providers.shodan.requests.get")
-    def test_high_vulns_and_risky_port(self, mock_get):
+    @patch("providers.shodan.get_session")
+    def test_high_vulns_and_risky_port(self, mock_session):
+        mock_get = mock_session.return_value.get
         response = Mock()
         response.status_code = 200
         response.json.return_value = {
@@ -22,8 +23,9 @@ class TestShodanInternetDB(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["risk_summary"]["risk_level"], "HIGH")
 
-    @patch("providers.shodan.requests.get")
-    def test_medium_risky_port_without_vulns(self, mock_get):
+    @patch("providers.shodan.get_session")
+    def test_medium_risky_port_without_vulns(self, mock_session):
+        mock_get = mock_session.return_value.get
         response = Mock()
         response.status_code = 200
         response.json.return_value = {
@@ -38,8 +40,9 @@ class TestShodanInternetDB(unittest.TestCase):
         items = enrichWithInternetDB(["5.6.7.8"])
         self.assertEqual(items[0]["risk_summary"]["risk_level"], "MEDIUM")
 
-    @patch("providers.shodan.requests.get")
-    def test_low_common_ports_without_vulns(self, mock_get):
+    @patch("providers.shodan.get_session")
+    def test_low_common_ports_without_vulns(self, mock_session):
+        mock_get = mock_session.return_value.get
         response = Mock()
         response.status_code = 200
         response.json.return_value = {
@@ -54,8 +57,9 @@ class TestShodanInternetDB(unittest.TestCase):
         items = enrichWithInternetDB(["9.9.9.9"])
         self.assertEqual(items[0]["risk_summary"]["risk_level"], "LOW")
 
-    @patch("providers.shodan.requests.get")
-    def test_unknown_for_404(self, mock_get):
+    @patch("providers.shodan.get_session")
+    def test_unknown_for_404(self, mock_session):
+        mock_get = mock_session.return_value.get
         response = Mock()
         response.status_code = 404
         mock_get.return_value = response
@@ -74,8 +78,9 @@ class TestShodanInternetDB(unittest.TestCase):
         risk = scoreRisk(item)
         self.assertLessEqual(len(risk.get("reasons", [])), 3)
 
-    @patch("providers.shodan.requests.get")
-    def test_summary_output_shape(self, mock_get):
+    @patch("providers.shodan.get_session")
+    def test_summary_output_shape(self, mock_session):
+        mock_get = mock_session.return_value.get
         response = Mock()
         response.status_code = 200
         response.json.return_value = {

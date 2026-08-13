@@ -6,9 +6,12 @@ import unittest
 from unittest.mock import MagicMock
 
 
+from providers.nvd import parse_nvd_item
+
 # Streamlit imports happen at module load time; stub the package and the
-# `streamlit.components.v1` submodule so the panel module can be imported
-# without a running Streamlit context.
+# `streamlit.components.v1` submodule so the *panel* module can be imported
+# without a running Streamlit context. The parser above needs no stub — it
+# lives in the provider layer, which is Streamlit-free by design.
 sys.modules.setdefault("streamlit", MagicMock())
 sys.modules.setdefault("streamlit.components", MagicMock())
 sys.modules.setdefault("streamlit.components.v1", MagicMock())
@@ -16,7 +19,6 @@ sys.modules.setdefault("streamlit.components.v1", MagicMock())
 from ui.components.cve_panel import (  # noqa: E402
     CVE_RECORD_URL,
     _format_selected_text,
-    _parse_nvd_item,
 )
 
 
@@ -85,7 +87,7 @@ SAMPLE_ITEMS = [
 
 class TestParseNvdItem(unittest.TestCase):
     def test_keeps_full_description(self) -> None:
-        parsed = _parse_nvd_item(SAMPLE_ITEMS[0], kev_data={}, mitre_data={})
+        parsed = parse_nvd_item(SAMPLE_ITEMS[0], kev_data={}, mitre_data={})
         self.assertIn("descriptionFull", parsed)
         self.assertTrue(parsed["descriptionFull"].startswith("Malicious code was discovered"))
         # No char truncation: the card clamps visually via CSS, so the display
@@ -93,7 +95,7 @@ class TestParseNvdItem(unittest.TestCase):
         self.assertEqual(parsed["description"], parsed["descriptionFull"])
 
     def test_short_description_not_truncated(self) -> None:
-        parsed = _parse_nvd_item(SAMPLE_ITEMS[2], kev_data={}, mitre_data={})
+        parsed = parse_nvd_item(SAMPLE_ITEMS[2], kev_data={}, mitre_data={})
         self.assertEqual(
             parsed["descriptionFull"],
             "Microsoft Outlook Elevation of Privilege Vulnerability.",
@@ -101,7 +103,7 @@ class TestParseNvdItem(unittest.TestCase):
         self.assertEqual(parsed["description"], parsed["descriptionFull"])
 
     def test_score_and_severity_extracted(self) -> None:
-        parsed = _parse_nvd_item(SAMPLE_ITEMS[1], kev_data={}, mitre_data={})
+        parsed = parse_nvd_item(SAMPLE_ITEMS[1], kev_data={}, mitre_data={})
         self.assertEqual(parsed["score"], 10.0)
         self.assertEqual(parsed["severity"], "CRITICAL")
 
@@ -128,7 +130,7 @@ class TestParseNvdItem(unittest.TestCase):
                 }
             }
         }
-        parsed = _parse_nvd_item(SAMPLE_ITEMS[2], kev_data={}, mitre_data=mitre_data)
+        parsed = parse_nvd_item(SAMPLE_ITEMS[2], kev_data={}, mitre_data=mitre_data)
         self.assertEqual(parsed["vendorProject"], "Microsoft")
         self.assertEqual(parsed["product"], "Outlook")
         self.assertEqual(parsed["versionRange"], "< 16.0.16227.20280")
@@ -145,7 +147,7 @@ class TestParseNvdItem(unittest.TestCase):
                 "knownRansomwareCampaignUse": "Known",
             }
         }
-        parsed = _parse_nvd_item(SAMPLE_ITEMS[1], kev_data=kev_data, mitre_data={})
+        parsed = parse_nvd_item(SAMPLE_ITEMS[1], kev_data=kev_data, mitre_data={})
         self.assertEqual(
             parsed["descriptionFull"],
             "Apache Log4j2 contains a JNDI injection vulnerability.",
@@ -157,7 +159,7 @@ class TestParseNvdItem(unittest.TestCase):
 
 class TestFormatSelectedText(unittest.TestCase):
     def test_single_cve_format(self) -> None:
-        parsed = _parse_nvd_item(SAMPLE_ITEMS[2], kev_data={}, mitre_data={})
+        parsed = parse_nvd_item(SAMPLE_ITEMS[2], kev_data={}, mitre_data={})
         out = _format_selected_text([parsed])
 
         url = CVE_RECORD_URL.format(cve_id="CVE-2023-23397")
@@ -194,7 +196,7 @@ class TestFormatSelectedText(unittest.TestCase):
 
     def test_multiple_cves_separated_by_blank_line(self) -> None:
         parsed = [
-            _parse_nvd_item(it, kev_data={}, mitre_data={}) for it in SAMPLE_ITEMS
+            parse_nvd_item(it, kev_data={}, mitre_data={}) for it in SAMPLE_ITEMS
         ]
         out = _format_selected_text(parsed)
 

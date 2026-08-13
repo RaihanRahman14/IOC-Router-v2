@@ -42,6 +42,11 @@ DELIMITER = " | "
 # this form the empty-payload case below is unreachable from the app.
 _TRAILING_DELIMITER = " |"
 
+# What the left-hand side must look like for a payload-less line to be accepted:
+# a request path or a bare query string, not arbitrary prose that happens to end
+# in a pipe.
+_PATH_SHAPED_RE = re.compile(r"^[/?][^\s]*$|^[^\s]*\?[^\s]*$")
+
 
 @dataclass
 class WafPayloadInput:
@@ -175,12 +180,16 @@ def parse_waf_line(line: str) -> WafPayloadInput | None:
     path = left.strip() or None
     payload = right.strip()
 
-    # An empty payload is kept, not rejected. The delimiter says the analyst
-    # meant this as a path/payload pair, so telling them the payload is missing
-    # beats silently dropping the line — which is what returning None would do,
-    # since parse_iocs discards anything it cannot type.
+    # An empty payload is kept, not rejected — but only when the *path* looks
+    # like a request path. The delimiter says the analyst meant a path/payload
+    # pair, so telling them the payload is missing beats silently dropping the
+    # line. Without the path check, though, any line merely ending in " |" would
+    # be typed as a WAF payload, and ioc/parser.py exempts this type from the
+    # manual-mode filter, so the analyst would have no way to exclude it.
     if not payload:
-        return WafPayloadInput(raw_line=line, path=path, payload="", markers=[])
+        if path and _PATH_SHAPED_RE.match(path):
+            return WafPayloadInput(raw_line=line, path=path, payload="", markers=[])
+        return None
 
     markers = payload_markers(payload)
     if not markers:
@@ -202,3 +211,62 @@ def is_waf_payload_line(line: str) -> bool:
         True when :func:`parse_waf_line` would produce a result.
     """
     return parse_waf_line(line) is not None
+
+
+def parse_waf_field(text: str) -> list[WafPayloadInput]:
+    """Parse the dedicated WAF Payload field, one payload per line.
+
+    Neither of the two restrictions :func:`parse_waf_line` enforces applies
+    here, and both are lifted deliberately:
+
+    * **The delimiter is optional.** D5 requires it in the IOC textarea because
+      :data:`ioc.parser.SCHEMELESS_URL_RE` claims host-plus-path lines, so
+      ``example.com/login?id=1' OR '1'='1`` is a URL by every existing rule and
+      widening the payload detector to win that contest would put ordinary URLs
+      at risk. A dedicated field has no such contest — the analyst chose this
+      box, which *is* the declaration of intent the delimiter stood in for. This
+      closes the payload-only fallback that D5 deferred, in the one place it is
+      safe to close.
+    * **The marker gate does not reject.** Markers are still recorded, because
+      the UI and the analysis display them, but a line that trips none is
+      analysed anyway rather than dropped. The gate exists to stop an unrelated
+      line carrying a stray pipe from being typed as a payload in a shared box;
+      applied here it would silently discard something the analyst explicitly
+      submitted, which is the failure D5 argues against for the empty-payload
+      case.
+
+    Args:
+        text: Raw contents of the WAF Payload textarea. One payload per line;
+            each line may optionally be ``path | payload``.
+
+    Returns:
+        One :class:`WafPayloadInput` per non-empty line, in submission order.
+        Empty when the field is blank.
+    """
+    out: list[WafPayloadInput] = []
+    for raw_line in (text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        if DELIMITER in line:
+            left, _, right = line.partition(DELIMITER)
+            path = left.strip() or None
+            payload = right.strip()
+        elif line.endswith(_TRAILING_DELIMITER):
+            path = line[: -len(_TRAILING_DELIMITER)].strip() or None
+            payload = ""
+        else:
+            # No delimiter: the whole line is the payload. There is no path to
+            # report rather than a guessed one — inventing a split here would
+            # put arbitrary payload text in a field the UI labels "Request path".
+            path = None
+            payload = line
+
+        out.append(WafPayloadInput(
+            raw_line=line,
+            path=path,
+            payload=payload,
+            markers=payload_markers(payload),
+        ))
+    return out

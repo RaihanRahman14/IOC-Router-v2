@@ -1,4 +1,20 @@
-"""Verdict aggregation helpers."""
+"""Verdict aggregation helpers.
+
+**One authoritative verdict.** ``Verdict`` and ``Confidence`` — produced by the
+rule cascade in :func:`summarize_results` — are the verdict of record. They are
+what the results table, the ticket notes, and the AI prompt all report, and the
+only fields any new consumer should read as "is this IOC bad".
+
+The ``ConfidenceScore`` family that rides alongside them (from
+``ioc.confidence_scorer``) is a *supporting signal*: it ranks how much
+corroborating evidence the providers supplied. It deliberately does not decide
+the verdict, because the two disagree often — a lone VirusTotal hit scores near
+zero while the cascade calls it Malicious, and a confirmed MalwareBazaar sample
+scores 100 while the cascade only reaches Suspicious. Rendering both as verdicts
+put two different answers on one screen; the score is now presented as evidence
+strength only. ``VerdictFromScore`` is kept in the row for that module's own
+bookkeeping and must not be displayed as a verdict.
+"""
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
@@ -30,10 +46,12 @@ def summarize_results(
         hybrid_results: Hybrid Analysis results keyed by IOC value (optional).
 
     Returns:
-        Tuple of (summary, rows). `summary` includes a `session_summary` key
-        carrying the numeric confidence-score aggregation. `rows` contains the
-        original qualitative fields plus the new `ConfidenceScore` family of
-        fields produced by `ioc.confidence_scorer`.
+        Tuple of (summary, rows). `summary` carries the authoritative verdict
+        counts plus a `session_summary` key holding the numeric score
+        aggregation. `rows` contains the authoritative `Verdict` / `Confidence`
+        pair plus the supporting `ConfidenceScore` family produced by
+        `ioc.confidence_scorer` — see this module's docstring for which of the
+        two decides.
     """
     summary = {
         "total": len(items),
@@ -166,6 +184,11 @@ def summarize_results(
             }
         )
 
+    # The cascade above has no Benign branch — its weakest outcome is Unknown
+    # ("VT: no detections" / "No data"), so this count is structurally always
+    # zero rather than incidentally so. The hero still renders the card to keep
+    # the five verdict buckets visible; giving the cascade a real Benign branch
+    # is a scoring change, deliberately out of scope here.
     summary["benign"] = 0
     summary["session_summary"] = compute_session_summary(per_ioc_scores)
     return summary, rows

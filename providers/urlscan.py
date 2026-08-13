@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import requests
 
 from config import Settings
+from core.http import get_session
 from ioc.parser import IOC, scheme_variants
 
 
@@ -19,7 +20,7 @@ KNOWN_TRACKERS = ("google-analytics", "doubleclick", "googletagmanager", "facebo
 
 def _search(query: str, key: str) -> dict:
     try:
-        r = requests.get(
+        r = get_session().get(
             f"{URLSCAN_BASE}/search/",
             headers={"API-Key": key},
             params={"q": query, "size": 1},
@@ -73,7 +74,7 @@ def _domain_url_variants(domain: str) -> list[str]:
 
 def _submit(url: str, key: str) -> dict:
     try:
-        r = requests.post(
+        r = get_session().post(
             f"{URLSCAN_BASE}/scan/",
             headers={"API-Key": key, "Content-Type": "application/json"},
             json={"url": url, "visibility": "private"},
@@ -88,7 +89,7 @@ def _submit(url: str, key: str) -> dict:
 
 def _result(uuid: str, key: str) -> dict:
     try:
-        r = requests.get(
+        r = get_session().get(
             f"{URLSCAN_BASE}/result/{uuid}/",
             headers={"API-Key": key},
             timeout=15,

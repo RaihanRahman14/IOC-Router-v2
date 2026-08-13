@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import requests
 
 from config import Settings
+from core.http import get_session
 from ioc.parser import IOC
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ def _extract_queries(ioc_value: str, ioc_type: str) -> tuple[str, str]:
 def _search_victims(query: str, key: str) -> dict:
     """Search ransomware victims by keyword via Ransomware.live API."""
     try:
-        r = requests.get(
+        r = get_session().get(
             f"{_BASE}/victims/search",
             params={"q": query, "order": "discovered"},
             headers={"accept": "application/json", "X-API-KEY": key},

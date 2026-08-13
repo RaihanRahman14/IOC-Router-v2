@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import dataclasses
-import time
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -25,22 +24,20 @@ from core.waf_payload_analyzer import (
     analyze_waf_payload,
     to_rows as waf_analysis_rows,
 )
-from core.cache import (
-    vt_cached, urlscan_cached, abuse_cached, tf_cached,
-    mb_cached, shodan_cached, dnsd_cached, ha_cached, mxtoolbox_cached,
-    whoxy_cached, ransomware_live_cached,
-    CACHE_REV,
-)
+from core.waf_payload_parser import parse_waf_field
+from core.cache import CACHE_REV, cve_by_id_cached
+from core.orchestrator import PROVIDER_KEYS, run_provider_lookups
 from ui.styles import build_global_css_and_header, LANDING_CSS
 from ui.components.drawer import render_api_drawer
 from ui.components.output_renderer import (
     render_cmdline_breakdown,
     render_results_output,
     render_session_hero,
+    render_waf_breakdown,
 )
 from ui.components.ioc_card import render_ioc_cards
 from ui.components.ai_panel import render_ai_panel
-from ui.components.cve_panel import fetch_cve_by_id, render_cve_panel
+from ui.components.cve_panel import render_cve_panel
 from ui.components.bug_report import render_bug_report_button
 from ui.components.note_popup import render_note_button
 from ui.components.timing_popup import render_timing_button
@@ -324,7 +321,8 @@ def _clear_all_outputs() -> None:
 _INPUT_CONTEXT_KEYS: tuple[str, ...] = (
     "output_format", "alert_name", "host", "host_ip", "time_detected",
     "device_action", "device_action_others", "critical_asset_sel",
-    "file_path", "command_line", "parent_process", "child_process", "raw_log",
+    "file_path", "command_line", "parent_process", "child_process",
+    "waf_payload_field", "raw_log",
 )
 
 
@@ -366,6 +364,7 @@ parent_process: str = st.session_state.get("parent_process", "")
 child_process: str = st.session_state.get("child_process", "")
 file_path: str = st.session_state.get("file_path", "")
 command_line: str = st.session_state.get("command_line", "")
+waf_payload_field: str = st.session_state.get("waf_payload_field", "")
 
 # ── Handle pending resets before rendering ────────────────────────────────────
 if st.session_state.get("reset_input"):
@@ -377,6 +376,7 @@ if st.session_state.get("reset_input"):
     st.session_state["child_process"] = ""
     st.session_state["file_path"] = ""
     st.session_state["command_line"] = ""
+    st.session_state["waf_payload_field"] = ""
     st.session_state["reset_input"] = False
     raw = ""
     raw_log = ""
@@ -386,6 +386,7 @@ if st.session_state.get("reset_input"):
     child_process = ""
     file_path = ""
     command_line = ""
+    waf_payload_field = ""
 
 if st.session_state.get("load_sample"):
     st.session_state["ioc_input"] = "8.8.8.8\nexample.com\nhttps://example.com/login\n44d88612fea8a8f36de82e1278abb02f"
@@ -583,12 +584,28 @@ def _render_context_expander(
     global output_format, alert_name, host, host_ip, time_detected
     global device_action, device_action_others, critical_asset
     global file_path, command_line, parent_process, child_process, raw_log
+    global waf_payload_field
     _title = "🗂️ AI context" if include_ai_settings else "🗂️ Context"
     _kp = key_prefix
     with st.expander(_title):
-        output_format = st.selectbox(
-            "Output format", ["Ticket notes", "Table", "JSON", "Shareable Text"], index=0, key=f"{_kp}output_format"
-        )
+        _top = st.columns(3)
+        with _top[0]:
+            output_format = st.selectbox(
+                "Output format", ["Ticket notes", "Table", "JSON", "Shareable Text"], index=0, key=f"{_kp}output_format"
+            )
+        with _top[1]:
+            device_action = st.selectbox(
+                "Device Action",
+                ["Blocked", "None", "Isolated", "Prevented", "Allowed", "Detected", "File Cleaned", "Others"],
+                key=f"{_kp}device_action",
+            )
+        with _top[2]:
+            _asset_sel = st.selectbox(
+                "Asset Criticality",
+                ["Non Critical Asset", "Critical Asset"],
+                index=0, key=f"{_kp}critical_asset_sel",
+            )
+            critical_asset = _asset_sel == "Critical Asset"
 
         _opt = st.columns(2)
         with _opt[0]:
@@ -602,20 +619,6 @@ def _render_context_expander(
                 "Time Detected", placeholder="2025-01-01 08:00:00", key=f"{_kp}time_detected"
             )
 
-        _proc = st.columns([2, 1])
-        with _proc[0]:
-            device_action = st.selectbox(
-                "Device Action",
-                ["None", "Blocked", "Isolated", "Prevented", "Allowed", "Detected", "File Cleaned", "Others"],
-                key=f"{_kp}device_action",
-            )
-        with _proc[1]:
-            _asset_sel = st.selectbox(
-                "Asset Criticality",
-                ["Non Critical Asset", "Critical Asset"],
-                index=0, key=f"{_kp}critical_asset_sel",
-            )
-            critical_asset = _asset_sel == "Critical Asset"
         if device_action == "Others":
             device_action_others = st.text_input(
                 "Specify Action",
@@ -623,23 +626,69 @@ def _render_context_expander(
                 key=f"{_kp}device_action_others",
             )
 
-        # text_area, not text_input: a base64 -enc payload routinely runs past
-        # 500 characters, which a single-line input clips into uselessness.
-        command_line = st.text_area(
-            "Command Line",
-            placeholder="e.g. powershell.exe -nop -w hidden -enc SQBFAFgA...",
-            height=68,
-            key=f"{_kp}command_line",
-        )
-        file_path = st.text_input(
-            "File Path", placeholder="e.g. C:\\Users\\user\\Downloads\\malware.exe", key=f"{_kp}file_path"
-        )
-        parent_process = st.text_input(
-            "Parent Process", placeholder="e.g. explorer.exe", key=f"{_kp}parent_process"
-        )
-        child_process = st.text_input(
-            "Child Process", placeholder="e.g. cmd.exe", key=f"{_kp}child_process"
-        )
+        # text_area, not text_input: a base64 -enc payload / multi-line WAF
+        # payload batch routinely runs past 500 characters, which a
+        # single-line input clips into uselessness.
+        _cmd_col, _waf_col = st.columns(2)
+        with _cmd_col:
+            command_line = st.text_area(
+                "Command Line",
+                placeholder="e.g. powershell.exe -nop -w hidden -enc SQBFAFgA...",
+                height=68,
+                key=f"{_kp}command_line",
+                help=(
+                    "Tokenized and deobfuscated locally (cmd.exe / PowerShell), "
+                    "then matched against LOLBAS abuse patterns and Sigma "
+                    "CommandLine rules. Indicators recovered from a decoded "
+                    "payload join the normal IOC enrichment automatically. "
+                    "Never executed, never submitted to any provider."
+                ),
+            )
+        with _waf_col:
+            waf_payload_field = st.text_area(
+                "WAF Payload",
+                placeholder="e.g. /login?user= | ' OR '1'='1  (one per line)",
+                height=68,
+                key=f"{_kp}waf_payload_field",
+                help=(
+                    "One payload per line. Optionally prefix with a request "
+                    "path using \" | \" (e.g. \"/login | ' OR '1'='1\"). "
+                    "Analysed locally against OWASP CRS and curated CVE "
+                    "fingerprints — never submitted to any provider."
+                ),
+            )
+
+        _fp_col, _pp_col, _cp_col = st.columns(3)
+        with _fp_col:
+            file_path = st.text_input(
+                "File Path", placeholder="e.g. C:\\Users\\user\\Downloads\\malware.exe", key=f"{_kp}file_path",
+                help=(
+                    "Checked locally against a known-system-process whitelist "
+                    "with typosquat detection (e.g. scvhost.exe vs svchost.exe, "
+                    "including extension swaps) and the LOLBAS dual-use "
+                    "binary list. No network lookup."
+                ),
+            )
+        with _pp_col:
+            parent_process = st.text_input(
+                "Parent Process", placeholder="e.g. explorer.exe", key=f"{_kp}parent_process",
+                help=(
+                    "Checked locally against a Sigma-derived list of "
+                    "known-suspicious parent→child process pairings. Fill in "
+                    "Child Process too for the pairing check to run — either "
+                    "field alone only gets the whitelist/LOLBAS check."
+                ),
+            )
+        with _cp_col:
+            child_process = st.text_input(
+                "Child Process", placeholder="e.g. cmd.exe", key=f"{_kp}child_process",
+                help=(
+                    "Checked locally against a Sigma-derived list of "
+                    "known-suspicious parent→child process pairings. Fill in "
+                    "Parent Process too for the pairing check to run — either "
+                    "field alone only gets the whitelist/LOLBAS check."
+                ),
+            )
 
         raw_log = st.text_area(
             "Context (optional)",
@@ -1020,10 +1069,8 @@ def _manual_payload_for_provider(
     ]
 
 
-_PROVIDER_KEYS: tuple[str, ...] = (
-    "vt", "urlscan", "abuse", "tf", "mb", "shodan",
-    "dns", "ha", "mxtoolbox", "whoxy", "ransomware_live",
-)
+# Provider keys live in core.orchestrator — the module that dispatches them.
+_PROVIDER_KEYS: tuple[str, ...] = PROVIDER_KEYS
 
 
 def _has_key_map(settings_obj: Settings) -> dict[str, bool]:
@@ -1090,37 +1137,33 @@ def _manual_allowed_by_type(items: list[IOC]) -> dict[str, set[str]]:
 
 
 def _has_process_input() -> bool:
-    """Return True if any process/filepath context field was filled.
+    """Return True if any process/filepath/WAF context field was filled.
 
-    Lets a Run proceed on process context alone. With an empty IOC box the
-    provider lookups simply have nothing to query — every provider flag comes
-    out False and no worker threads start — so this costs no API calls.
+    Lets a Run proceed on context alone. With an empty IOC box the provider
+    lookups simply have nothing to query — every provider flag comes out
+    False and no worker threads start — so this costs no API calls.
     """
     return bool(
         (file_path or "").strip()
         or (command_line or "").strip()
         or (parent_process or "").strip()
         or (child_process or "").strip()
+        or (waf_payload_field or "").strip()
     )
 
 
 # ── Enrichment execution (triggered from Input tab Run button) ───────────────
 if run_requested and (raw.strip() or _has_process_input()):
-    # ── WAF payload partition (docs/waf_payload_analyzer.md D6) ────────
-    # WAF payloads arrive through the same textarea as every other IOC, so they
-    # are inside parsed_input_items by construction. They must come out before
-    # anything downstream sees them: summarize_results() emits one row and one
-    # session-summary count per item, and a payload has no provider data to put
-    # in either. Provider dispatch is already safe on its own — _IOC_TYPE_TO_GROUP
-    # has no entry for the type, so allowed_by_type resolves to an empty set and
-    # no lookup can fire — but the rows and the counts are not.
-    _waf_items = [i for i in parsed_input_items if i.type == "waf_payload"]
-    items = [i for i in parsed_input_items if i.type != "waf_payload"]
-    # Local analysis, no network. Runs on the partitioned list only, so a
-    # payload can never be handed to a provider even by accident.
-    _waf_results = [
-        analyze_waf_payload(i.waf) for i in _waf_items if i.waf is not None
-    ]
+    # ── WAF payload analysis (docs/waf_payload_analyzer.md D6) ─────────
+    # WAF payloads now arrive through their own Context field rather than the
+    # main IOC textarea, so ``items`` never contains one and needs no
+    # partitioning — summarize_results() only ever sees actual IOCs.
+    # Provider dispatch has nothing to special-case either: this list is never
+    # passed to ``_payload()``, so a payload cannot be handed to a provider
+    # even by accident.
+    items = list(parsed_input_items)
+    _waf_items = parse_waf_field(waf_payload_field)
+    _waf_results = [analyze_waf_payload(w) for w in _waf_items]
     # NVD/KEV enrichment for a matched CVE fingerprint happens here, not in the
     # analyzer: that module performs no network I/O, and its verdict must never
     # depend on a lookup succeeding (docs/waf_payload_analyzer.md D4). A failed
@@ -1133,7 +1176,7 @@ if run_requested and (raw.strip() or _has_process_input()):
             continue
         _cve_id = _fp["cve"]
         if _cve_id not in _waf_cve_cache:
-            _waf_cve_cache[_cve_id] = fetch_cve_by_id(_cve_id)
+            _waf_cve_cache[_cve_id] = cve_by_id_cached(_cve_id, CACHE_REV)
         _record = _waf_cve_cache[_cve_id]
         _fp["nvd"] = _record
         _fp["kev"] = bool(_record.get("isKev")) if _record else None
@@ -1200,42 +1243,28 @@ if run_requested and (raw.strip() or _has_process_input()):
 
         provider_flags = {p: bool(_payload(p)) for p in _PROVIDER_KEYS}
 
-        _provider_timings: dict[str, dict] = {}
+        # Every enabled provider runs on its own worker thread, so the wait is
+        # the slowest provider rather than the sum of all of them.
+        with st.spinner("Menjalankan provider lookup…"):
+            _provider_results, _timings = run_provider_lookups(
+                settings=settings,
+                provider_flags=provider_flags,
+                payload_for=_payload,
+                allow_urlscan_submit=allow_urlscan_submit,
+            )
 
-        def _timed(key: str, enabled: bool, call_fn):
-            """Run a provider call, measure wall time, record n_iocs.
+        vt_results              = _provider_results["vt"]
+        urlscan_results         = _provider_results["urlscan"]
+        abuse_results           = _provider_results["abuse"]
+        tf_results              = _provider_results["tf"]
+        mb_results              = _provider_results["mb"]
+        shodan_results          = _provider_results["shodan"]
+        dnsd_results            = _provider_results["dnsd"]
+        ha_results              = _provider_results["ha"]
+        mxtoolbox_results       = _provider_results["mxtoolbox"]
+        whoxy_results           = _provider_results["whoxy"]
+        ransomware_live_results = _provider_results["ransomware_live"]
 
-            Args:
-                key: Provider short key (matches _PROVIDER_KEYS).
-                enabled: Whether this provider has any IOC to query.
-                call_fn: Zero-arg callable returning the provider result dict.
-
-            Returns:
-                The provider result dict, or {} when disabled.
-            """
-            payload = _payload(key) if enabled else []
-            if not enabled:
-                _provider_timings[key] = {"time": 0.0, "n": 0}
-                return {}
-            t0 = time.perf_counter()
-            result = call_fn()
-            _provider_timings[key] = {
-                "time": time.perf_counter() - t0,
-                "n": len(payload),
-            }
-            return result
-
-        vt_results              = _timed("vt",              provider_flags["vt"],              lambda: vt_cached(_payload("vt"), settings.vt_key))
-        urlscan_results         = _timed("urlscan",         provider_flags["urlscan"],         lambda: urlscan_cached(_payload("urlscan"), settings.urlscan_key, allow_urlscan_submit))
-        abuse_results           = _timed("abuse",           provider_flags["abuse"],           lambda: abuse_cached(_payload("abuse"), settings.abuse_key, CACHE_REV))
-        tf_results              = _timed("tf",              provider_flags["tf"],              lambda: tf_cached(_payload("tf"), settings.threatfox_key, CACHE_REV))
-        mb_results              = _timed("mb",              provider_flags["mb"],              lambda: mb_cached(_payload("mb"), settings.malwarebazaar_key, CACHE_REV))
-        shodan_results          = _timed("shodan",          provider_flags["shodan"],          lambda: shodan_cached(_payload("shodan"), settings.shodan_key, CACHE_REV))
-        dnsd_results            = _timed("dns",             provider_flags["dns"],             lambda: dnsd_cached(_payload("dns"), settings.dnsdumpster_key, CACHE_REV))
-        ha_results              = _timed("ha",              provider_flags["ha"],              lambda: ha_cached(_payload("ha"), settings.hybrid_analysis_key, CACHE_REV))
-        mxtoolbox_results       = _timed("mxtoolbox",       provider_flags["mxtoolbox"],       lambda: mxtoolbox_cached(_payload("mxtoolbox"), settings.mxtoolbox_key, CACHE_REV))
-        whoxy_results           = _timed("whoxy",           provider_flags["whoxy"],           lambda: whoxy_cached(_payload("whoxy"), settings.whoxy_key, CACHE_REV))
-        ransomware_live_results = _timed("ransomware_live", provider_flags["ransomware_live"], lambda: ransomware_live_cached(_payload("ransomware_live"), settings.ransomware_live_key, CACHE_REV))
         summary, rows = summarize_results(
             items,
             vt_results,
@@ -1299,10 +1328,7 @@ if run_requested and (raw.strip() or _has_process_input()):
             "cmdline_analysis": dataclasses.asdict(_cmd_result),
             "cmdline_flags": _cmd_result.flags,
             "allowed_by_type": {t: sorted(ps) for t, ps in allowed_by_type.items()},
-            "timings": {
-                "providers": _provider_timings,
-                "providers_total": sum(v["time"] for v in _provider_timings.values()),
-            },
+            "timings": _timings,
         }
         # New enrichment run invalidates any prior AI timing — it belongs to
         # the previous result set. Auto-AI (if enabled) will repopulate it.
@@ -1345,6 +1371,12 @@ if active_tab == "Result":
             # and the IOC cards below it cover the indicators it yielded.
             render_cmdline_breakdown(
                 st.session_state["run_results"].get("cmdline_analysis") or {}
+            )
+            # Same placement rationale as the command-line breakdown: it explains
+            # the WAF rows the ticket notes summarise, and sits above the IOC
+            # cards because a payload yields no indicators of its own.
+            render_waf_breakdown(
+                st.session_state["run_results"].get("waf_analysis") or []
             )
             render_ioc_cards(st.session_state["run_results"])
         else:

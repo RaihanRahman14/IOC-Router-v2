@@ -129,6 +129,12 @@ HIGH_SEVERITY_CATEGORIES = frozenset({"sqli", "xss", "rce", "lfi", "rfi", "php"}
 # that is not pure punctuation noise.
 CRS_SCORE_THRESHOLD = 5.0
 
+# Per-category PL1/PL2 weight at which a category flag is reported HIGH rather
+# than MEDIUM. Deliberately well above CRS_SCORE_THRESHOLD, which is a single
+# rule: D10 forbids treating one match as conclusive, and a flag that says HIGH
+# on one match says exactly that to the analyst and to the evidence mapper.
+CATEGORY_HIGH_SEVERITY_WEIGHT = 15.0
+
 # §4 rule 1 is the module's only single-source Malicious. Everything else needs
 # two independent layers agreeing — see D10, and the admission bar in
 # core/data/cve_fingerprints.json that keeps the exception defensible.
@@ -168,7 +174,11 @@ class WafPayloadAnalysisResult:
         crs_anomaly_score_pl1: The same sum restricted to CRS paranoia level
             1, which is what a default CRS deployment would score.
         crs_match_count: True number of matches, including any beyond the cap.
-        crs_categories: Distinct attack categories that fired.
+        crs_categories: Distinct attack categories that fired, any level.
+        crs_category_stats: Per-category counts and weights over every match,
+            split by paranoia level. Flags and rows read this rather than
+            re-deriving totals from the display-capped ``crs_matches``.
+        crs_truncated: True when only the head of the payload was scanned.
         cve_fingerprint_match: The curated CVE signature that fired, or None.
             ``nvd`` and ``kev`` enrichment is attached by the caller.
         checks_skipped: Human-readable list of checks that did not run.
@@ -191,6 +201,8 @@ class WafPayloadAnalysisResult:
     crs_anomaly_score_pl1: float = 0.0
     crs_match_count: int = 0
     crs_categories: list[str] = field(default_factory=list)
+    crs_category_stats: dict = field(default_factory=dict)
+    crs_truncated: bool = False
     cve_fingerprint_match: dict | None = None
     checks_skipped: list[str] = field(default_factory=list)
     aggregated_verdict: str = "Unknown"
@@ -222,6 +234,28 @@ def decode_payload(payload: str) -> tuple[str, list[str], bool]:
         return payload, [], False
 
     return run.text, run.chain, not run.truncated
+
+
+def decision_categories(result: "WafPayloadAnalysisResult") -> list[str]:
+    """Categories that fired at paranoia level 1 or 2.
+
+    The only category list anything may escalate or raise a flag on. Reading
+    ``crs_categories`` instead re-admits CRS's PL3/PL4 punctuation counters,
+    which fire on ordinary JSON and source code — the exact noise the PL1/PL2
+    score exists to exclude. A verdict computed one way and a flag computed the
+    other is how a benign line ends up marked ``Unknown`` while still telling
+    the AI narrative that an exploit was attempted.
+
+    Args:
+        result: A populated analysis result.
+
+    Returns:
+        Category names, sorted, restricted to PL1/PL2.
+    """
+    return sorted(
+        cat for cat, stats in result.crs_category_stats.items()
+        if stats.get("weight_pl12", 0)
+    )
 
 
 def _with_link(flag: dict, mitre: list[str], preferred: str = "") -> dict:
@@ -273,26 +307,36 @@ def build_flags(result: WafPayloadAnalysisResult) -> list[dict]:
             FLAG_SOURCE,
         ), _MITRE_EXPLOIT, fingerprint.get("reference", "")))
 
-    for category in result.crs_categories:
+    for category in decision_categories(result):
         flag_id = _CATEGORY_FLAGS.get(category)
         if flag_id is None:
             continue
-        hits = [m for m in result.crs_matches if m.get("category") == category]
-        weight = sum(m.get("severity_weight", 0) for m in hits)
+        stats = result.crs_category_stats.get(category, {})
+        count = int(stats.get("count_pl12", 0))
+        weight = float(stats.get("weight_pl12", 0))
         # Severity follows the weight this category contributed, never the count
-        # of rules. Counting matches is what turns one noisy rule set into a
-        # stream of CRITICALs.
-        severity = "HIGH" if weight >= CRS_SCORE_THRESHOLD else "MEDIUM"
-        example = hits[0] if hits else {}
+        # of rules, and never a single match — see
+        # CATEGORY_HIGH_SEVERITY_WEIGHT.
+        severity = "HIGH" if weight >= CATEGORY_HIGH_SEVERITY_WEIGHT else "MEDIUM"
+        # The example comes from the capped display list, so it may be absent
+        # for a category whose matches all fell past the cap. The counts above
+        # never depend on it.
+        example = next(
+            (m for m in result.crs_matches if m.get("category") == category), {},
+        )
+        detail = (
+            f"{count} rule(s) matched at paranoia level 1-2, weight {weight:g} "
+            f"of a decision score of {result.crs_anomaly_score_pl12:g}."
+        )
+        if example:
+            detail += f" Example: {example.get('rule_id')} — {example.get('message', '')}"
         flags.append(_with_link(_flag(
             flag_id,
             f"OWASP CRS {_CATEGORY_LABELS.get(category, category)} pattern match",
             "Exploitation",
             severity,
             _MITRE_EXPLOIT,
-            f"{len(hits)} rule(s) matched, weight {weight:g} of a total anomaly "
-            f"score of {result.crs_anomaly_score:g}. "
-            f"Example: {example.get('rule_id', '?')} — {example.get('message', '')}",
+            detail,
             FLAG_SOURCE,
         ), _MITRE_EXPLOIT, ""))
 
@@ -357,9 +401,7 @@ def aggregate_verdict(result: WafPayloadAnalysisResult) -> str:
         # ordinary query string is not a finding.
         return "Unknown"
 
-    high_severity = bool(
-        {m.get("category") for m in result.crs_matches} & HIGH_SEVERITY_CATEGORIES
-    )
+    high_severity = bool(set(decision_categories(result)) & HIGH_SEVERITY_CATEGORIES)
 
     # §4 rule 2 — an attack-technique category match, corroborated only by a
     # layer that is not CRS.
@@ -431,27 +473,41 @@ def to_rows(result: WafPayloadAnalysisResult) -> list[dict]:
         return []
 
     fingerprint = result.cve_fingerprint_match
+    decided = decision_categories(result)
+    # A scan that saw only the head of the payload must never render as a clean
+    # one. Without this a 2 kB-truncated payload with SQLi past the bound read
+    # as "No CRS rule or CVE signature matched".
+    partial = " (payload truncated — not fully scanned)" if result.crs_truncated else ""
+
     if not result.parse_ok:
         evidence = "No payload after the delimiter — nothing to analyse"
     elif fingerprint:
-        evidence = (
-            f"{fingerprint['cve']} ({fingerprint['name']}) signature matched"
-        )
+        evidence = f"{fingerprint['cve']} ({fingerprint['name']}) signature matched"
     elif not result.decode_ok:
         evidence = "Decoding did not complete; the payload shown is partial"
-    elif result.crs_match_count:
+    elif decided:
         # The score leads, because a single rule id says far less than the
         # weighted total does — and reading one match as decisive is the alert
-        # fatigue this module is written to avoid.
-        categories = "/".join(result.crs_categories)
+        # fatigue this module is written to avoid. Both figures are the PL1/PL2
+        # ones, so the evidence matches the verdict it sits beside.
+        count = sum(
+            int(result.crs_category_stats[c].get("count_pl12", 0)) for c in decided
+        )
         evidence = (
-            f"CRS {categories}: {result.crs_match_count} rule(s), "
-            f"anomaly score {result.crs_anomaly_score:g}"
+            f"CRS {'/'.join(decided)}: {count} rule(s), "
+            f"anomaly score {result.crs_anomaly_score_pl12:g}{partial}"
+        )
+    elif result.crs_match_count:
+        evidence = (
+            f"Only low-confidence CRS rules matched (score "
+            f"{result.crs_anomaly_score:g} at paranoia level 3-4){partial}"
         )
     elif result.was_encoded:
-        evidence = f"Decoded via: {' -> '.join(result.decode_chain)}; no rule matched"
+        evidence = (
+            f"Decoded via: {' -> '.join(result.decode_chain)}; no rule matched{partial}"
+        )
     else:
-        evidence = "No CRS rule or CVE signature matched"
+        evidence = f"No CRS rule or CVE signature matched{partial}"
 
     # Confidence tracks how much agreed, not how loudly. A curated CVE
     # signature is the only single source this module trusts on its own; two
@@ -459,13 +515,16 @@ def to_rows(result: WafPayloadAnalysisResult) -> list[dict]:
     if result.cve_fingerprint_match:
         confidence = "High"
         sources = "Local (CVE fingerprint)"
-    elif result.crs_match_count and result.crs_anomaly_score >= CRS_SCORE_THRESHOLD:
+    elif result.crs_anomaly_score_pl12 >= CATEGORY_HIGH_SEVERITY_WEIGHT:
         confidence = "Med"
         sources = "Local (OWASP CRS)"
-    elif result.crs_match_count:
+    elif result.crs_anomaly_score_pl12:
         confidence = "Low"
         sources = "Local (OWASP CRS)"
     else:
+        # Includes the case where only PL3/PL4 punctuation rules fired: those
+        # do not decide anything, so claiming CRS as a source would overstate
+        # what was found.
         confidence = "Low"
         sources = "Local (decode only)"
 
@@ -517,6 +576,8 @@ def analyze_waf_payload(data: WafPayloadInput) -> WafPayloadAnalysisResult:
     result.crs_anomaly_score_pl1 = scan.anomaly_score_pl1
     result.crs_match_count = scan.match_count
     result.crs_categories = list(scan.categories)
+    result.crs_category_stats = dict(scan.category_stats)
+    result.crs_truncated = scan.truncated
     if scan.truncated:
         # A scan of the first 2 kB is not a scan of the payload, and the
         # difference has to reach the analyst rather than sitting in a field.

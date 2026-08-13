@@ -24,6 +24,7 @@ from typing import Optional
 
 import requests
 
+from core.http import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +139,7 @@ def _refresh_aws_ranges(timeout: int = 10) -> None:
         and leave the existing cache untouched.
     """
     try:
-        resp = requests.get(_AWS_RANGES_URL, timeout=timeout)
+        resp = get_session().get(_AWS_RANGES_URL, timeout=timeout)
     except requests.RequestException as exc:
         logger.warning("AWS ip-ranges fetch failed: %s", exc)
         return
@@ -340,7 +341,7 @@ def lookup_asn(ip: str, timeout: int = 5) -> tuple[Optional[int], Optional[str]]
         if ip in _asn_lookup_cache:
             return _asn_lookup_cache[ip]
     try:
-        resp = requests.get(_ASN_LOOKUP_URL.format(ip=ip), timeout=timeout)
+        resp = get_session().get(_ASN_LOOKUP_URL.format(ip=ip), timeout=timeout)
     except requests.RequestException:
         result: tuple[Optional[int], Optional[str]] = (None, None)
         with _asn_lookup_lock:

@@ -114,7 +114,14 @@ class CrsScanResult:
             what a default CRS deployment would score. Carried separately
             because ``matches`` is capped and cannot be re-summed downstream.
         match_count: True number of matched rules.
-        categories: Distinct categories that fired.
+        categories: Distinct categories that fired, at any paranoia level.
+        category_stats: Per-category totals computed over **every** match, not
+            over the display-capped ``matches`` list, and split by paranoia
+            level: ``{category: {count, weight, count_pl12, weight_pl12}}``.
+            Consumers that report or escalate on a category must read this —
+            deriving counts from ``matches`` silently under-reports any category
+            whose matches fell past the cap, and deriving them from all paranoia
+            levels re-admits the punctuation noise that verdicts exclude.
         truncated: True when the payload was longer than :data:`MAX_SCAN_LEN`
             and only its head was scanned.
     """
@@ -125,6 +132,7 @@ class CrsScanResult:
     anomaly_score_pl1: float = 0.0
     match_count: int = 0
     categories: list[str] = field(default_factory=list)
+    category_stats: dict[str, dict[str, float]] = field(default_factory=dict)
     truncated: bool = False
 
 
@@ -233,6 +241,7 @@ def scan(raw_payload: str, decoded_payload: str | None = None) -> CrsScanResult:
     cache: dict[tuple[str, tuple[str, ...]], tuple[str, list[str]]] = {}
 
     matches: list[CrsMatch] = []
+    stats: dict[str, dict[str, float]] = {}
     score = 0.0
     score_pl12 = 0.0
     score_pl1 = 0.0
@@ -258,6 +267,16 @@ def scan(raw_payload: str, decoded_payload: str | None = None) -> CrsScanResult:
                 dropped_conditions=list(rule["dropped_conditions"]),
                 unsupported_transforms=unsupported,
             ))
+            bucket = stats.setdefault(
+                rule["category"],
+                {"count": 0, "weight": 0.0, "count_pl12": 0, "weight_pl12": 0.0},
+            )
+            bucket["count"] += 1
+            bucket["weight"] += rule["severity_weight"]
+            if rule["paranoia_level"] <= 2:
+                bucket["count_pl12"] += 1
+                bucket["weight_pl12"] += rule["severity_weight"]
+
             score += rule["severity_weight"]
             if rule["paranoia_level"] <= 2:
                 score_pl12 += rule["severity_weight"]
@@ -276,6 +295,10 @@ def scan(raw_payload: str, decoded_payload: str | None = None) -> CrsScanResult:
         anomaly_score_pl12=round(score_pl12, 2),
         anomaly_score_pl1=round(score_pl1, 2),
         match_count=len(matches),
-        categories=sorted({m.category for m in matches}),
+        categories=sorted(stats),
+        category_stats={
+            cat: {k: round(v, 2) for k, v in vals.items()}
+            for cat, vals in sorted(stats.items())
+        },
         truncated=truncated,
     )

@@ -137,6 +137,15 @@ def _vuln_warnings_for_ports(ports: list[int]) -> list[str]:
     return warnings
 
 
+# Verdict text colors, matching the badge palette used further down the card.
+_VERDICT_COLORS: dict[str, str] = {
+    "Malicious": "#f87171",
+    "Suspicious": "#fbbf24",
+    "Benign": "#4ade80",
+    "Unknown": "#cfd3dc",
+}
+
+
 def _confidence_score_color(score: float) -> tuple[str, str]:
     """Return (background, accent) hex colors for a 0–100 score, matching the panel above."""
     if score >= 70:
@@ -154,15 +163,27 @@ def _render_confidence_score_card(row: dict) -> None:
     Reads the `ConfidenceScore` family of fields added by `summarize_results`.
     Renders nothing if those fields are missing (graceful fallback).
 
+    This card shows *evidence strength*, never a verdict. The row's
+    ``VerdictFromScore`` is deliberately not displayed: it disagrees with the
+    authoritative ``Verdict`` in most cases (see `ioc.verdict`), and showing
+    both put two conflicting answers in front of the analyst at once.
+
     Args:
         row: A single row dict from `run_results["rows"]`.
     """
     if not row or row.get("ConfidenceScore") is None:
         return
 
+    # The verdict of record leads the card; the score sits beside it as support.
+    # Pairing them here is deliberate — the score used to be the only judgement
+    # shown at the top of an expander, which invited reading it as the verdict.
+    verdict = row.get("Verdict") or "Unknown"
+    verdict_color = _VERDICT_COLORS.get(verdict, "#cfd3dc")
+    confidence = row.get("Confidence") or "Low"
+    evidence = row.get("Primary Evidence") or ""
+
     score = float(row.get("ConfidenceScore") or 0.0)
     label = row.get("ConfidenceLabel") or "Unknown"
-    verdict_score = row.get("VerdictFromScore") or "Unknown"
     provider_scores = row.get("ProviderScores") or {}
     active = row.get("ActiveProviders") or []
     infra_note = row.get("InfraNote")
@@ -208,13 +229,22 @@ def _render_confidence_score_card(row: dict) -> None:
         f"flex-wrap:wrap;gap:8px;'>"
         f"    <div style='min-width:0;'>"
         f"      <div style='font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;"
-        f"color:#9ea8cf;'>Confidence Score</div>"
-        f"      <div style='font-size:1.6rem;font-weight:700;color:{accent};line-height:1.2;"
-        f"word-break:break-word;'>"
-        f"{score:.1f}<span style='font-size:0.8rem;color:#9ea8cf;'> / 100</span>"
+        f"color:#9ea8cf;'>Verdict</div>"
+        f"      <div style='font-size:1.6rem;font-weight:700;color:{verdict_color};"
+        f"line-height:1.2;word-break:break-word;'>{verdict}"
         f"      <span style='font-size:0.8rem;color:#cfd3dc;margin-left:10px;"
-        f"display:inline-block;'>"
-        f"({label} · {verdict_score})</span></div>"
+        f"display:inline-block;'>({confidence} confidence)</span></div>"
+        f"      <div style='font-size:0.75rem;color:#9ea8cf;margin-top:2px;'>{evidence}</div>"
+        f"    </div>"
+        f"    <div style='min-width:0;text-align:right;'>"
+        f"      <div style='font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;"
+        f"color:#9ea8cf;'>Evidence Strength</div>"
+        f"      <div style='font-size:1.15rem;font-weight:700;color:{accent};line-height:1.2;'>"
+        f"{score:.1f}<span style='font-size:0.75rem;color:#9ea8cf;'> / 100</span>"
+        f"      <span style='font-size:0.75rem;color:#cfd3dc;margin-left:6px;'>"
+        f"({label})</span></div>"
+        f"      <div style='font-size:0.72rem;color:#9ea8cf;margin-top:2px;'>"
+        f"provider corroboration, not a verdict</div>"
         f"    </div>"
         f"  </div>"
         f"  <div style='background:#0f1117;border-radius:6px;height:6px;margin-top:8px;"

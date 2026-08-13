@@ -1,30 +1,78 @@
-"""VirusTotal client (lookup-only)."""
+"""VirusTotal client (lookup-only).
+
+A single IOC costs several VT calls: the object itself, plus comments, votes,
+and — depending on the type — resolutions or a behaviour summary. Run in
+sequence, a handful of IOCs turns into dozens of chained round trips. The batch
+below therefore works in two bounded-concurrency phases: fetch every primary
+object, then fetch the enrichment calls for the objects that actually exist.
+The request *count* is unchanged (in fact lower — see :func:`_enrichment_calls`);
+only the waiting overlaps.
+"""
 from __future__ import annotations
 
 import base64
+import logging
+from dataclasses import dataclass, field
+from typing import Callable
+
 import requests
 
 from config import Settings
+from core.http import get_session, run_parallel
 from core.infra_classifier import classify as classify_infra
 from ioc.parser import IOC, scheme_variants
 
 
+logger = logging.getLogger(__name__)
+
 VT_BASE = "https://www.virustotal.com/api/v3"
+
+# IOC types this client knows how to query. Anything else gets an empty result.
+_SUPPORTED_TYPES = frozenset({"ip", "domain", "hash", "url"})
+
+# VT endpoint segment per IOC type.
+_ENDPOINTS = {
+    "ip": "ip_addresses",
+    "domain": "domains",
+    "hash": "files",
+    "url": "urls",
+}
 
 
 def _vt_get(path: str, key: str, params: dict | None = None) -> dict:
+    """GET a VT API path and return the decoded body, or {} on any failure.
+
+    Args:
+        path: API path below :data:`VT_BASE`, e.g. ``"/domains/example.com"``.
+        key: VirusTotal API key.
+        params: Optional query parameters.
+
+    Returns:
+        The parsed JSON body, or an empty dict when the request failed, was
+        rejected, or did not return an object.
+    """
     try:
-        r = requests.get(
+        r = get_session().get(
             f"{VT_BASE}{path}",
             headers={"x-apikey": key},
             params=params,
             timeout=15,
         )
-    except requests.RequestException:
+    except requests.RequestException as exc:
+        logger.warning("VirusTotal request to %s failed: %s", path, exc)
+        return {}
+    if r.status_code == 429:
+        # Worth its own line: a throttled lookup returns the same empty dict as
+        # "VT has never seen this", and downstream that reads as a clean verdict.
+        logger.warning("VirusTotal rate-limited the request to %s (HTTP 429)", path)
         return {}
     if r.status_code != 200:
         return {}
-    return r.json()
+    try:
+        return r.json()
+    except ValueError:
+        logger.warning("VirusTotal returned a non-JSON body for %s", path)
+        return {}
 
 
 def _url_id(url: str) -> str:
@@ -33,12 +81,29 @@ def _url_id(url: str) -> str:
     return b64.rstrip("=")
 
 
-def _lookup_url(url: str, key: str, candidates: list[str] | None = None) -> dict:
-    """Look up a URL report, optionally falling back to alternate scheme forms.
+@dataclass
+class _Primary:
+    """The main VT object for one IOC, before enrichment calls are folded in."""
+
+    endpoint: str
+    ident: str
+    data: dict = field(default_factory=dict)
+    # Only set for a URL whose scheme the parser inferred and which matched.
+    matched_url: str | None = None
+
+    @property
+    def exists(self) -> bool:
+        """True when VT actually returned an object for this identifier."""
+        return bool(self.data.get("data"))
+
+
+def _fetch_primary_url(url: str, key: str, candidates: list[str] | None = None) -> _Primary:
+    """Fetch a URL report, trying alternate scheme forms in order.
 
     ``candidates`` carries the http:// and https:// variants of a URL whose scheme
-    the parser inferred. The first candidate holding an actual report wins; if none
-    do, the packed result is keyed to ``url`` so the caller sees the canonical form.
+    the parser inferred. Deliberately sequential and first-hit-wins: firing both
+    concurrently would spend an extra call on every URL that matches on the first
+    form, and VT quota is scarcer than the latency saved.
 
     Args:
         url: Canonical URL value of the IOC.
@@ -46,61 +111,104 @@ def _lookup_url(url: str, key: str, candidates: list[str] | None = None) -> dict
         candidates: Ordered URL forms to try. Defaults to ``[url]``.
 
     Returns:
-        The packed VirusTotal result dict, empty of stats when no report exists.
+        The primary object, keyed to ``url`` when no candidate held a report.
     """
     for candidate in (candidates or [url]):
         url_id = _url_id(candidate)
         data = _vt_get(f"/urls/{url_id}", key)
         if data.get("data"):
-            packed = _pack_vt(data, key, "urls", url_id)
-            packed["matched_url"] = candidate
-            return packed
-    return _pack_vt({}, key, "urls", _url_id(url))
+            return _Primary("urls", url_id, data, matched_url=candidate)
+    return _Primary("urls", _url_id(url))
 
 
-def _lookup_ip(ip: str, key: str) -> dict:
-    data = _vt_get(f"/ip_addresses/{ip}", key)
-    return _pack_vt(data, key, "ip_addresses", ip)
+def _fetch_primary(ioc: IOC, key: str) -> _Primary:
+    """Fetch the main VT object for one IOC.
+
+    Args:
+        ioc: The IOC to look up. Must be one of :data:`_SUPPORTED_TYPES`.
+        key: VirusTotal API key.
+
+    Returns:
+        The primary object for the IOC.
+    """
+    if ioc.type == "url":
+        return _fetch_primary_url(ioc.value, key, scheme_variants(ioc))
+    endpoint = _ENDPOINTS[ioc.type]
+    return _Primary(endpoint, ioc.value, _vt_get(f"/{endpoint}/{ioc.value}", key))
 
 
-def _lookup_domain(domain: str, key: str) -> dict:
-    data = _vt_get(f"/domains/{domain}", key)
-    return _pack_vt(data, key, "domains", domain)
+def _enrichment_calls(
+    primary: _Primary, key: str
+) -> dict[str, Callable[[], dict]]:
+    """Build the follow-up calls that decorate a primary object.
+
+    Only called for an object that exists. Previously these fired even when VT
+    held no object at all, spending two to four calls of a scarce quota on an
+    identifier guaranteed to return nothing — and the empty responses were
+    dropped anyway, so skipping them leaves the result dict identical.
+
+    Args:
+        primary: The already-fetched primary object.
+        key: VirusTotal API key.
+
+    Returns:
+        Mapping of result-dict field name to the callable fetching it.
+    """
+    endpoint, ident = primary.endpoint, primary.ident
+    calls: dict[str, Callable[[], dict]] = {
+        "comments": lambda: _vt_get(f"/{endpoint}/{ident}/comments", key, params={"limit": 5}),
+        "votes": lambda: _vt_get(f"/{endpoint}/{ident}/votes", key, params={"limit": 5}),
+    }
+    if endpoint in ("ip_addresses", "domains"):
+        calls["resolutions"] = lambda: _vt_get(
+            f"/{endpoint}/{ident}/resolutions", key, params={"limit": 10}
+        )
+    if endpoint == "files":
+        calls["behavior"] = lambda: _vt_get(f"/files/{ident}/behaviour_summary", key)
+    return calls
 
 
-def _lookup_hash(h: str, key: str) -> dict:
-    data = _vt_get(f"/files/{h}", key)
-    return _pack_vt(data, key, "files", h)
+def _pack_core(primary: _Primary) -> dict:
+    """Build the result dict for one IOC from its primary object alone.
 
+    Args:
+        primary: The fetched primary object.
 
-def _pack_vt(data: dict, key: str, endpoint: str, ident: str) -> dict:
-    vt_data = data.get("data", {}) if data else {}
-    attrs = vt_data.get("attributes", {}) if vt_data else {}
-    relationships = vt_data.get("relationships", {}) if vt_data else {}
+    Returns:
+        The result dict, without the enrichment fields.
+    """
+    vt_data = primary.data.get("data", {}) or {}
+    attrs = vt_data.get("attributes", {}) or {}
+    relationships = vt_data.get("relationships", {}) or {}
     out = {
-        "id": vt_data.get("id") or ident,
+        "id": vt_data.get("id") or primary.ident,
         "type": vt_data.get("type"),
         "stats": attrs.get("last_analysis_stats", {}),
         "analysis_results": attrs.get("last_analysis_results", {}),
         "attributes": attrs,
         "relationships": list(relationships.keys()),
+        "infra_classification": _classify_vt_infra(primary.endpoint, primary.ident, attrs),
     }
-    comments = _vt_get(f"/{endpoint}/{ident}/comments", key, params={"limit": 5})
-    if comments.get("data"):
-        out["comments"] = comments.get("data", [])
-    votes = _vt_get(f"/{endpoint}/{ident}/votes", key, params={"limit": 5})
-    if votes.get("data"):
-        out["votes"] = votes.get("data", [])
-    if endpoint in ("ip_addresses", "domains"):
-        resolutions = _vt_get(f"/{endpoint}/{ident}/resolutions", key, params={"limit": 10})
-        if resolutions.get("data"):
-            out["resolutions"] = resolutions.get("data", [])
-    if endpoint == "files":
-        behavior = _vt_get(f"/files/{ident}/behaviour_summary", key)
-        if behavior.get("data"):
-            out["behavior"] = behavior.get("data", {}).get("attributes", behavior.get("data"))
-    out["infra_classification"] = _classify_vt_infra(endpoint, ident, attrs)
+    if primary.matched_url:
+        out["matched_url"] = primary.matched_url
     return out
+
+
+def _apply_enrichment(out: dict, field_name: str, response: dict) -> None:
+    """Fold one enrichment response into the result dict, if it carried data.
+
+    Args:
+        out: The result dict being assembled, mutated in place.
+        field_name: Which enrichment this is (``comments``, ``behavior``, ...).
+        response: The raw VT response for that call.
+    """
+    data = response.get("data")
+    if not data:
+        return
+    if field_name == "behavior":
+        out["behavior"] = response.get("data", {}).get("attributes", data)
+    else:
+        out[field_name] = data
 
 
 def _classify_vt_infra(endpoint: str, ident: str, attrs: dict) -> dict | None:
@@ -127,20 +235,44 @@ def _classify_vt_infra(endpoint: str, ident: str, attrs: dict) -> dict | None:
 
 
 def vt_lookup_batch(items: list[IOC], settings: Settings) -> dict[str, dict]:
-    out: dict[str, dict] = {}
+    """Look up every supported IOC in the batch and return results by IOC value.
+
+    Args:
+        items: The IOCs to enrich. Unsupported types yield an empty result.
+        settings: Settings carrying ``vt_key``.
+
+    Returns:
+        Mapping of IOC value to its VT result dict.
+    """
+    out: dict[str, dict] = {ioc.value: {} for ioc in items}
     if not settings.vt_key:
         return out
-    for ioc in items:
-        if ioc.type == "ip":
-            out[ioc.value] = _lookup_ip(ioc.value, settings.vt_key)
-        elif ioc.type == "domain":
-            out[ioc.value] = _lookup_domain(ioc.value, settings.vt_key)
-        elif ioc.type == "hash":
-            out[ioc.value] = _lookup_hash(ioc.value, settings.vt_key)
-        elif ioc.type == "url":
-            out[ioc.value] = _lookup_url(
-                ioc.value, settings.vt_key, scheme_variants(ioc)
-            )
-        else:
-            out[ioc.value] = {}
+
+    key = settings.vt_key
+    targets = [ioc for ioc in items if ioc.type in _SUPPORTED_TYPES]
+    if not targets:
+        return out
+
+    # Phase 1 — one primary object per IOC, all in flight together.
+    primaries = run_parallel(
+        {ioc.value: (lambda i=ioc: _fetch_primary(i, key)) for ioc in targets},
+        label="VirusTotal lookup",
+    )
+    for value, primary in primaries.items():
+        out[value] = _pack_core(primary)
+
+    # Phase 2 — every enrichment call for every IOC as one flat batch, so a
+    # single slow object cannot hold up another IOC's follow-up calls.
+    tasks: dict[tuple[str, str], Callable[[], dict]] = {}
+    for value, primary in primaries.items():
+        if not primary.exists:
+            continue
+        for field_name, call in _enrichment_calls(primary, key).items():
+            tasks[(value, field_name)] = call
+
+    for (value, field_name), response in run_parallel(
+        tasks, label="VirusTotal enrichment"
+    ).items():
+        _apply_enrichment(out[value], field_name, response)
+
     return out

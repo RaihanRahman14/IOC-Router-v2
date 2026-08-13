@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import requests
 
 from config import Settings
+from core.http import get_session
 from ioc.parser import IOC
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ def _commands_for_ioc(ioc: IOC) -> list[str]:
 def _run_lookup(command: str, argument: str, api_key: str, timeout: int = 20) -> dict:
     """Call a single MxToolBox lookup command."""
     try:
-        r = requests.get(
+        r = get_session().get(
             f"{MXTOOLBOX_BASE}/{command}/",
             headers={"Authorization": api_key},
             params={"argument": argument},

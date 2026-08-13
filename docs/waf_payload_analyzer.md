@@ -387,6 +387,76 @@ which sets the bar for adding entries: a candidate pattern that could plausibly
 occur in legitimate traffic does not belong in the file, however well known its
 CVE. This constrains growth deliberately — see §7.
 
+### D11 — WAF payloads move to a dedicated Context field. D5's delimiter
+requirement and D6's partition are retired, not superseded in place.
+
+Milestones A–C shipped WAF payloads through the shared IOC textarea, gated by
+the ` | ` delimiter (D5) and partitioned back out of `parsed_input_items`
+before `summarize_results` and provider dispatch ever saw them (D6). That
+design existed to answer one question cheaply: *given a line that could be
+any IOC type, is this one a WAF payload?* The delimiter was the signal that
+answered it, and the partition was the mitigation for the entries it let
+through.
+
+That question stopped being the right one to ask once the module got its own
+input surface. **A dedicated `WAF Payload` field, in the Context panel beside
+Command Line**, means the analyst has already answered "is this a WAF
+payload" by choosing the box — the same way Command Line, File Path, Parent
+Process and Child Process never needed a detector or a delimiter, because the
+field they were typed into *is* the classification.
+
+**Decision:**
+
+1. **`ioc/parser.py` drops the `waf_payload` branch entirely.** `_detect_type`
+   no longer calls into `core/waf_payload_parser.py`, and `IOC` no longer
+   carries a `waf` field. A line shaped like `path | payload` typed into the
+   main IOC box is no longer detected as anything — it is dropped the same
+   way any other unrecognised line is (§7's standing "unparsed lines vanish
+   silently" gap, unchanged by this decision).
+2. **A new `parse_waf_field()`** in `core/waf_payload_parser.py` parses the
+   dedicated field instead: one payload per line, run through
+   `analyze_waf_payload()` directly in `app.py` — never through `parse_iocs`,
+   so there is no `items` list for a payload to reach and nothing left to
+   partition. D6's mitigation is no longer needed because the failure mode it
+   guarded against — a payload silently entering the IOC pipeline — cannot
+   happen structurally: `_waf_items` and `items` are built from two different
+   text inputs from the start.
+3. **Both restrictions D5 imposed are lifted in the new field, deliberately:**
+   - **The delimiter becomes optional.** D5 required it because
+     `SCHEMELESS_URL_RE` already claims host-plus-path lines in the shared
+     box, and letting WAF detection win that contest risked reclassifying
+     ordinary URLs. A dedicated field has no such contest to lose — this
+     closes the "payload-only fallback" D5 explicitly deferred, in the one
+     place closing it is safe.
+   - **The marker gate (`payload_markers`) no longer rejects a line.** In the
+     shared box the gate stopped an unrelated line with a stray pipe from
+     being misread as an attack. That risk doesn't exist when the analyst
+     chose the WAF box specifically; markers are still computed and shown
+     (they feed `WafPayloadInput.markers`), but a line tripping none is
+     analysed anyway rather than dropped.
+4. **The verdict ladder, CRS matching, decode chain, CVE fingerprinting and
+   flag mapping (D1–D4, D8–D10) are all unchanged.** `analyze_waf_payload()`
+   takes a `WafPayloadInput` regardless of which parser produced it, so
+   nothing downstream of the split needed to change — only how the split
+   happens.
+
+**What this costs:** batch submission of many payloads at once used to be
+possible by mixing them into the main IOC paste. The dedicated field keeps
+that — it takes one payload per line, same as before — but a payload can no
+longer be interleaved with IPs, domains, hashes, etc. in a single paste; the
+analyst now chooses which box a given line goes into. That trade mirrors how
+Command Line and File Path already worked, and is judged an improvement:
+those fields never had a false-classification risk to manage in the first
+place, and the WAF field now doesn't either.
+
+`tests/test_waf_payload_integration.py` is rewritten around this: it no
+longer exercises `parse_iocs`'s old `waf_payload` branch (removed) and instead
+asserts (a) a `path | payload` line typed into the IOC box is inert, (b)
+`parse_waf_field()` accepts payload-only lines and does not apply the marker
+gate, and (c) the end-to-end shape — two independent parses feeding
+`summarize_results` and `to_rows()` — produces the same row schema and
+verdict behaviour the shared-box path did.
+
 ---
 
 ## 2. File Layout
@@ -500,12 +570,17 @@ manufacture correlation the data does not support.
 
 ## 5. Integration Points
 
-**`ioc/parser.py`** — a `waf_payload` type, detected only via the ` | ` delimiter
-plus the validation gate (D5), placed last in `_detect_type`. The `IOC` dataclass
-([`parser.py:33`](../ioc/parser.py#L33)) gains one optional field to carry the
-split, defaulted so no existing construction site changes.
+**Superseded by D11.** The two entries below describe Milestones A–C as
+shipped; they are kept for history and are no longer how the module is wired.
+See D11 for the current path.
 
-**`app.py`** — partition before dispatch (D6):
+**`ioc/parser.py`** *(retired)* — a `waf_payload` type, detected only via the
+` | ` delimiter plus the validation gate (D5), placed last in `_detect_type`.
+The `IOC` dataclass carried one optional field for the split. Both are gone —
+`_detect_type` no longer has a WAF branch, and `IOC` no longer has a `waf`
+field.
+
+**`app.py`** *(retired)* — partition before dispatch (D6):
 
 ```python
 _waf_items = [i for i in parsed_input_items if i.type == "waf_payload"]
@@ -513,9 +588,18 @@ items = [i for i in parsed_input_items if i.type != "waf_payload"]
 _waf_results = [analyze_waf_payload(w) for w in _waf_items]
 ```
 
+**Current wiring**, per D11: a dedicated `WAF Payload` field in the Context
+expander (beside Command Line), parsed independently of `parse_iocs`:
+
+```python
+items = list(parsed_input_items)
+_waf_items = parse_waf_field(waf_payload_field)
+_waf_results = [analyze_waf_payload(w) for w in _waf_items]
+```
+
 placed alongside the existing `analyze_process_event` / `analyze_command_line`
-calls ([`app.py:1109`](../app.py#L1109), [`app.py:1123`](../app.py#L1123)). It
-takes no input from either and passes nothing to them.
+calls in the same enrichment block. It takes no input from either and passes
+nothing to them.
 
 **Rows** — `run_results["waf_rows"]`, identical column schema to `process_rows`,
 with a parity test. One row per line, which is the natural fit briefing §7 notes:
@@ -870,6 +954,51 @@ CRS, which catches it at `Suspicious`. The corpus entry carries
 `expect_fingerprint: false` and a note; a separate test asserts that documented
 gaps still reach `Suspicious`, so a limitation cannot silently become a hole.
 
+#### Post-review corrections (2026-08-13)
+
+A code review of the finished module found eight defects that the test suite did
+not. Seven were one mistake propagating: **C3 moved verdicts onto the PL1/PL2
+score and nothing else moved with them.**
+
+| Was | Now |
+|---|---|
+| `build_flags` read all paranoia levels and the display-capped match list | reads `crs_category_stats`, PL1/PL2 only, uncapped |
+| `aggregate_verdict` derived categories from the capped `crs_matches` | uses `decision_categories()` |
+| Row confidence used the full anomaly score | uses `crs_anomaly_score_pl12` |
+| A 2 kB-truncated scan rendered as "No CRS rule matched" | the row says the payload was truncated |
+| AI prompt read `checks_skipped` from the first payload only | reads every payload's |
+| AI prompt still said "attack-pattern matching is not implemented yet" | describes what actually ran |
+
+The visible symptom: `50% off -- limited time` came out `Unknown` while raising a
+**HIGH** `WAF_SQLI_MATCH` that set `exploit_attempt=True` in the Threat Analysis
+narrative — a benign line telling the AI an exploit was attempted.
+
+**Every test passed throughout.** They checked verdicts, and they checked flags,
+but nothing checked that the two agreed.
+[`tests/test_waf_consistency.py`](../tests/test_waf_consistency.py) now asserts
+relationships between outputs rather than the value of any one output, so moving
+one of them forces the others to move too.
+
+Two defects were independent of that cluster:
+
+- **`t_urldecode` did not map `+` to a space**, which ModSecurity's does. `+` is
+  how a query string encodes a space, so it is the form real payloads arrive in:
+  `1+union+all+select+1,2,3` scored 10 against 25 for the space-separated form.
+  Fixed with `unquote_plus`; detection on plus-encoded payloads more than
+  doubled.
+- **A line ending in `" |"` bypassed the marker gate entirely**, and since
+  `waf_payload` is exempt from the manual-mode type filter (D6) the analyst had
+  no way to exclude it. The empty-payload branch now requires the left side to
+  be path-shaped.
+
+`CATEGORY_HIGH_SEVERITY_WEIGHT = 15.0` was added so a category flag needs roughly
+three PL1/PL2 rules to be HIGH. `CRS_SCORE_THRESHOLD` is one rule, and reusing it
+for flag severity made every match HIGH — D10's "one rule is never conclusive"
+applies to flags as much as to verdicts.
+
+`fetch_cve_by_id` is now cached for 24h. It sat uncached in the enrichment path,
+so every Run re-fetched the same identifiers.
+
 ---
 
 ## 7. Open Items Carried Forward
@@ -885,13 +1014,19 @@ gaps still reach `Suspicious`, so a limitation cannot silently become a hole.
   only to the extent CRS's own authors handled them.
 - **The anomaly threshold is deferred by design (§4, C3).** Shipping B with the
   score visible but inert is the mitigation, not an oversight.
-- **The payload-only fallback is not built (D5).** Briefing §2.1 step 4 remains
-  unimplemented; revisit against real usage, and only with a rule that does not
-  put ordinary URLs at risk of reclassification.
-- **Unparsed lines still vanish silently (D6).** Briefing §5.6's manual-review
-  routing needs a `parse_iocs` contract change affecting every caller. Worth
-  doing as its own piece of work — it would benefit every IOC type, not just
-  this one.
+- **Resolved by D11: the payload-only fallback.** Briefing §2.1 step 4 was
+  deferred in the shared IOC box because of the reclassification risk against
+  `SCHEMELESS_URL_RE`. The dedicated `WAF Payload` field has no such
+  contest, so this is now built — a payload with no ` | ` delimiter is
+  accepted as-is.
+- **Unparsed lines still vanish silently in the IOC box (D6, now general).**
+  Briefing §5.6's manual-review routing needs a `parse_iocs` contract change
+  affecting every caller. This applied specifically to WAF payloads before
+  D11; after it, a `path | payload` line typed into the main IOC box is not
+  a WAF payload at all (that detector is gone) and is dropped the same as any
+  other unrecognised line — the gap is now the general one every IOC type
+  shares, not one specific to this module. Worth doing as its own piece of
+  work; would benefit every type.
 - **The CVE fingerprint dictionary is the load-bearing assumption behind the only
   single-source `Malicious` in the module (D10).** Every entry added weakens or
   strengthens that exception. Growth should be evidence-driven per briefing §10,

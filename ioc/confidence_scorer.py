@@ -5,8 +5,11 @@ Computes a 0.0–100.0 confidence score per IOC by:
 2. Weighting active providers (re-normalized when some return no data)
 3. Applying an infra-classification modifier (BP floor / FP discount / HIGH_RISK boost)
 
-This is additive — it does not replace the qualitative "Confidence"
-(High/Med/Low) field in `ioc.verdict.summarize_results`.
+This module measures **evidence strength, not guilt**. The verdict of record is
+the rule cascade in `ioc.verdict.summarize_results`; nothing here overrides it,
+and `verdict_from_score` / `session_label` must never be rendered as a verdict
+alongside it. They exist so the score can be described in words — see
+`ioc.verdict` for the full rationale.
 """
 from __future__ import annotations
 
@@ -365,6 +368,9 @@ def compute_confidence_score(
 
     score_100 = round(final_score * 100, 1)
 
+    # `verdict` here is the score's own band name, kept for this module's
+    # bookkeeping and for the session distribution. It is NOT the IOC's verdict
+    # — `ioc.verdict` owns that — and no UI surface may present it as one.
     if score_100 >= 70:
         label = "High"
         verdict = "Malicious"
@@ -405,14 +411,16 @@ def compute_session_summary(per_ioc_scores: list[dict]) -> dict:
 
     Returns:
         Dict with keys: highest_score, highest_ioc, verdict_distribution,
-        session_label.
+        session_label. ``session_label`` names the *evidence strength* band
+        (Strong / Moderate / Weak / Minimal), not a threat verdict — the
+        verdict counts in ``summary`` come from the cascade in `ioc.verdict`.
     """
     if not per_ioc_scores:
         return {
             "highest_score": 0.0,
             "highest_ioc": None,
             "verdict_distribution": {},
-            "session_label": "Unknown",
+            "session_label": "Minimal",
         }
 
     best = max(per_ioc_scores, key=lambda x: x.get("score", 0))
@@ -422,15 +430,18 @@ def compute_session_summary(per_ioc_scores: list[dict]) -> dict:
         v = entry.get("verdict_from_score", "Unknown")
         distribution[v] = distribution.get(v, 0) + 1
 
+    # Named for evidence strength rather than threat level ("Strong", not "High
+    # Threat"): this sits next to the authoritative verdict counts in the hero,
+    # and a threat-shaped word there reads as a second, competing verdict.
     highest = best.get("score", 0.0)
     if highest >= 70:
-        session_label = "High Threat"
+        session_label = "Strong"
     elif highest >= 40:
-        session_label = "Medium Threat"
+        session_label = "Moderate"
     elif highest >= 10:
-        session_label = "Low / Unknown"
+        session_label = "Weak"
     else:
-        session_label = "Likely Benign"
+        session_label = "Minimal"
 
     return {
         "highest_score": highest,

@@ -65,7 +65,7 @@ def _timing_dialog() -> None:
                         f"{n} IOC{'s' if n != 1 else ''}",
                         unsafe_allow_html=True,
                     )
-                st.markdown(f"**Providers subtotal:** `{prov_total:.2f}s`")
+                st.markdown(f"**Providers elapsed:** `{prov_total:.2f}s`")
         if ai_timing:
             st.divider()
             st.markdown("**AI (Threat Analysis)**")
@@ -73,8 +73,11 @@ def _timing_dialog() -> None:
         st.divider()
         st.markdown(f"**Total elapsed:** `{grand_total:.2f}s`")
         st.caption(
-            "Provider times include cache hits (near-instant) and network calls. "
-            "AI time only appears once a Threat Analysis has actually been generated."
+            "Providers run in parallel, so the individual times overlap and add "
+            "up to more than the elapsed figure — that one is the real wall time "
+            "of the lookup block. Times include cache hits (near-instant) and "
+            "network calls. AI time only appears once a Threat Analysis has "
+            "actually been generated."
         )
 
     if st.button("← Back", use_container_width=True, key="timing_back_btn"):

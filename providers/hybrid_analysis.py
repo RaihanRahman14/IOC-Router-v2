@@ -6,6 +6,7 @@ from typing import Any
 import requests
 
 from config import Settings
+from core.http import get_session
 from ioc.parser import IOC
 
 
@@ -23,7 +24,7 @@ def _headers(api_key: str) -> dict[str, str]:
 
 def _request(method: str, path: str, api_key: str, **kwargs: Any) -> Any:
     try:
-        response = requests.request(
+        response = get_session().request(
             method,
             f"{HA_BASE}{path}",
             headers=_headers(api_key),
@@ -374,10 +375,26 @@ def _ip_lookup(ip_value: str, api_key: str) -> dict[str, Any]:
     return output
 
 
-def hybrid_analysis_enrich(ioc_type: str, ioc_value: str) -> dict[str, Any]:
+def hybrid_analysis_enrich(
+    ioc_type: str, ioc_value: str, settings: Settings | None = None
+) -> dict[str, Any]:
+    """Enrich a single IOC via Hybrid Analysis.
+
+    Args:
+        ioc_type: IOC type — ``hash``, ``url``, ``domain``, ``ip``, or ``email``.
+        ioc_value: The indicator to look up.
+        settings: Settings carrying ``hybrid_analysis_key``. Falls back to the
+            environment when omitted, which is what the standalone scripts and
+            tests rely on; the app always passes the resolved Settings so a key
+            entered in the API drawer takes precedence over ``.env``.
+
+    Returns:
+        The provider's result dict — always populated, carrying ``message`` when
+        the lookup could not run.
+    """
     ioc_type_normalized = _string(ioc_type).strip().lower()
     value = _string(ioc_value).strip()
-    key = Settings.from_env().hybrid_analysis_key
+    key = (settings or Settings.from_env()).hybrid_analysis_key
 
     if ioc_type_normalized == "email":
         output = _base_output("email", value)
@@ -403,8 +420,10 @@ def hybrid_analysis_enrich(ioc_type: str, ioc_value: str) -> dict[str, Any]:
     return output
 
 
-def hybrid_analysis_lookup_batch(items: list[IOC]) -> dict[str, dict[str, Any]]:
+def hybrid_analysis_lookup_batch(
+    items: list[IOC], settings: Settings | None = None
+) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for ioc in items:
-        out[ioc.value] = hybrid_analysis_enrich(ioc.type, ioc.value)
+        out[ioc.value] = hybrid_analysis_enrich(ioc.type, ioc.value, settings)
     return out

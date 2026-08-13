@@ -12,6 +12,42 @@ except Exception:
     pd = None
 
 
+# CRS category codes rendered for an analyst rather than for a rule author.
+# Module-level because both the ticket notes and the WAF breakdown below spell
+# out the same categories, and two copies would drift.
+_WAF_CATEGORY_LABELS = {
+    "sqli": "SQL injection",
+    "xss": "cross-site scripting",
+    "rce": "command injection",
+    "lfi": "local file inclusion",
+    "rfi": "remote file inclusion",
+    "php": "PHP injection",
+    "ssrf": "server-side request forgery",
+    "protocol": "HTTP protocol anomaly",
+}
+
+
+def _truncate_note(text: str, limit: int = 300) -> str:
+    """Shorten a value for a ticket-note line, marking that it was cut.
+
+    Ticket notes are pasted into SIEM fields, so a decoded one-liner running to
+    several kilobytes has to be bounded. The marker matters as much as the
+    bound: a silently cut command line reads as a complete one.
+
+    Args:
+        text: The value to shorten.
+        limit: Maximum characters to keep before the marker.
+
+    Returns:
+        The value unchanged when short enough, otherwise a truncated copy with
+        a trailing ``… [truncated]``.
+    """
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "… [truncated]"
+
+
 def _score_color(score: float) -> tuple[str, str]:
     """Pick (background, accent) hex colors for a 0–100 confidence score.
 
@@ -82,12 +118,16 @@ def _count_card(label_name: str, value: int) -> str:
 
 
 def render_session_hero(summary: dict) -> None:
-    """Render the full-width session hero block: score panel + count cards.
+    """Render the full-width session hero block: evidence panel + count cards.
 
-    Combines the session-level threat score (left) with the verdict counts
-    (right) into a single block intended to span the full Result-tab width,
-    sitting above the split columns. Falls back to a counts-only block when
-    no session summary is present (older runs).
+    Combines the session-level evidence-strength score (left) with the
+    authoritative verdict counts (right) into a single block intended to span
+    the full Result-tab width, sitting above the split columns. Falls back to a
+    counts-only block when no session summary is present (older runs).
+
+    The two halves answer different questions on purpose: the cards say what the
+    verdicts are, the panel says how well corroborated the evidence behind them
+    was. Only the cards are a verdict.
 
     Args:
         summary: The aggregated summary dict returned by `summarize_results`.
@@ -123,28 +163,26 @@ def render_session_hero(summary: dict) -> None:
         return
 
     highest = float(sess.get("highest_score") or 0.0)
-    label = sess.get("session_label") or "Unknown"
+    label = sess.get("session_label") or "Minimal"
     highest_ioc = sess.get("highest_ioc") or "—"
-    distribution = sess.get("verdict_distribution") or {}
 
     bg, accent = _score_color(highest)
     fill_pct = max(0.0, min(100.0, highest))
 
-    dist_pills = "".join(
-        f"<span style='background:#1e1e2e;border:1px solid #333;border-radius:999px;"
-        f"padding:2px 10px;margin-right:6px;font-size:0.78rem;color:#cfd3dc;'>"
-        f"{verd}: <b style='color:{accent};'>{cnt}</b></span>"
-        for verd, cnt in distribution.items()
-    )
-
+    # The score's own verdict distribution used to be rendered here as pills,
+    # directly beside the count cards on the right — two different tallies of
+    # the same batch, disagreeing more often than not. The cards hold the
+    # verdict of record (see `ioc.verdict`), so this panel now reports only
+    # what the score can actually speak to: how strong the evidence was.
     left_html = (
         f"<div style='font-size:0.78rem;letter-spacing:0.08em;text-transform:uppercase;"
-        f"color:#9ea8cf;'>Session Threat Score</div>"
+        f"color:#9ea8cf;'>Strongest Evidence In Session</div>"
         f"<div style='display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px;'>"
-        f"  <div style='font-size:1.85rem;font-weight:700;color:{accent};line-height:1.1;'>{label}</div>"
+        f"  <div style='font-size:1.85rem;font-weight:700;color:{accent};line-height:1.1;'>"
+        f"{highest:.1f}<span style='font-size:0.9rem;color:#9ea8cf;'> / 100</span></div>"
         f"  <span style='background:#0f1117;border:1px solid {accent};color:{accent};"
         f"border-radius:999px;padding:3px 12px;font-size:0.82rem;font-weight:600;'>"
-        f"score {highest:.1f} / 100</span>"
+        f"{label} corroboration</span>"
         f"</div>"
         f"<div style='font-size:0.82rem;color:#9ea8cf;margin-top:6px;'>"
         f"Highest IOC: <span style='font-family:monospace;color:#e8eaf0;"
@@ -155,7 +193,9 @@ def render_session_hero(summary: dict) -> None:
         f"  <div style='background:{accent};width:{fill_pct:.1f}%;height:100%;"
         f"transition:width 0.3s;'></div>"
         f"</div>"
-        f"<div style='margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;'>{dist_pills}</div>"
+        f"<div style='font-size:0.75rem;color:#9ea8cf;margin-top:10px;'>"
+        f"How much the providers corroborated each other. The verdict counts "
+        f"alongside are decided by the verdict rules, not by this score.</div>"
     )
 
     html = (
@@ -237,6 +277,140 @@ def render_cmdline_breakdown(analysis: dict) -> None:
                 "Parsed on a best-effort basis — the line was malformed, so treat the "
                 "breakdown above as incomplete."
             )
+
+
+def render_waf_breakdown(analysis: list[dict]) -> None:
+    """Render the WAF payload breakdown above the results table.
+
+    The counterpart to :func:`render_cmdline_breakdown`, for the same reason it
+    exists: the decode chain, the matched CRS rules and the paranoia-level split
+    are the parts an analyst reads before trusting the verdict, and none of them
+    survive being flattened into a single table cell.
+
+    Unlike the command-line module there may be several payloads in one run, so
+    each gets its own block inside the expander.
+
+    Args:
+        analysis: The ``waf_analysis`` list from ``run_results``. Anything falsy
+            renders nothing at all.
+    """
+    if not analysis:
+        return
+
+    with st.expander("🛡️ WAF payload breakdown", expanded=True):
+        for index, entry in enumerate(analysis, 1):
+            if index > 1:
+                st.divider()
+            if len(analysis) > 1:
+                st.markdown(f"**Payload {index} of {len(analysis)}**")
+
+            path = entry.get("path")
+            st.caption(f"Request path: **{path}**" if path else "Request path: *(none supplied)*")
+
+            # The submitted payload comes first: everything below is a claim
+            # about it, and decoding may have rewritten what the rules saw.
+            st.caption("Payload submitted")
+            st.code(entry.get("raw_payload") or "(empty)", language="text")
+
+            if entry.get("was_encoded"):
+                chain = " → ".join(entry.get("decode_chain") or []) or "unspecified"
+                st.warning(f"Encoded — decoded via {chain}")
+                st.caption("Decoded form")
+                st.code(entry.get("decoded_payload") or "", language="text")
+
+            markers = entry.get("markers") or []
+            if markers:
+                st.caption("Admitted by marker: " + ", ".join(f"`{m}`" for m in markers))
+
+            # A curated fingerprint is the only single-source route to Malicious
+            # (docs/waf_payload_analyzer.md D10), so it is stated before the CRS
+            # detail rather than buried under it.
+            fingerprint = entry.get("cve_fingerprint_match") or {}
+            if fingerprint:
+                st.error(
+                    f"CVE fingerprint: **{fingerprint.get('name')}** "
+                    f"({fingerprint.get('cve')})"
+                )
+                kev = fingerprint.get("kev")
+                if kev is None:
+                    st.caption(
+                        "NVD/KEV enrichment not retrieved — the lookup did not complete. "
+                        "This is not the same as 'not known-exploited'."
+                    )
+                elif kev:
+                    st.caption("Listed in the CISA Known Exploited Vulnerabilities catalogue.")
+                else:
+                    st.caption("Not listed in the CISA KEV catalogue.")
+
+            matches = entry.get("crs_matches") or []
+            match_count = entry.get("crs_match_count", len(matches))
+            if match_count:
+                # PL1+PL2 is the deciding score (calibration C3): PL3/PL4 rules
+                # count punctuation and fire on ordinary JSON and source code,
+                # so showing the full score alone would misrepresent the verdict.
+                st.markdown(
+                    f"**OWASP CRS — {match_count} rule(s) matched.** "
+                    f"Anomaly score {entry.get('crs_anomaly_score_pl12', 0):g} "
+                    f"(PL1+PL2, decides the verdict) · "
+                    f"{entry.get('crs_anomaly_score', 0):g} all levels · "
+                    f"{entry.get('crs_anomaly_score_pl1', 0):g} PL1 only"
+                )
+
+                categories = entry.get("crs_categories") or []
+                if categories:
+                    st.markdown(
+                        "Categories: "
+                        + ", ".join(
+                            _WAF_CATEGORY_LABELS.get(c, c) for c in sorted(categories)
+                        )
+                    )
+
+                for match in matches:
+                    label = _WAF_CATEGORY_LABELS.get(
+                        match.get("category"), match.get("category", "")
+                    )
+                    st.markdown(
+                        f"- `{match.get('rule_id')}` **{label}** "
+                        f"[{match.get('severity')}, PL{match.get('paranoia_level')}, "
+                        f"weight {match.get('severity_weight', 0):g}] — "
+                        f"{match.get('message', '')} "
+                        f"*(matched on {match.get('matched_on', 'raw')})*"
+                    )
+                    # Provenance, not decoration: a rule that was extracted
+                    # without part of its logic will under-match, and an analyst
+                    # reading the hit needs to know it was partial.
+                    dropped = match.get("dropped_conditions") or []
+                    if dropped:
+                        st.caption("    Partial rule — " + "; ".join(dropped))
+
+                if len(matches) < match_count:
+                    st.caption(
+                        f"Showing the {len(matches)} heaviest of {match_count} matches."
+                    )
+            elif entry.get("parse_ok", True):
+                st.markdown("**OWASP CRS — no rule matched.**")
+
+            # Every reason the result may be thinner than it looks, last, where
+            # it qualifies everything above it.
+            if not entry.get("parse_ok", True):
+                st.caption("No payload followed the delimiter — there was nothing to analyse.")
+            elif not entry.get("decode_ok", True):
+                st.caption("Decoding did not complete; the decoded form above is partial.")
+            if entry.get("crs_truncated"):
+                st.caption("Payload exceeded the scan cap — only its head was matched.")
+
+            skipped = entry.get("checks_skipped") or []
+            if skipped:
+                st.caption("Checks NOT performed: " + "; ".join(skipped))
+
+            verdict = entry.get("aggregated_verdict", "Unknown")
+            if verdict == "Unknown":
+                st.caption(
+                    "Verdict **Unknown** — nothing matched locally. This module never "
+                    "returns Benign, so this is not a clean result."
+                )
+            else:
+                st.caption(f"Verdict: **{verdict}** — local analysis, no provider lookup.")
 
 
 def render_results_output(output_format: str, run_results: dict) -> None:
@@ -583,6 +757,109 @@ def render_results_output(output_format: str, run_results: dict) -> None:
             "waf_payload": "#WAF Payload",
         }
 
+        # Conclusions for the WAF rows, built from the structured analysis
+        # rather than by parsing the Evidence string back apart. waf_rows and
+        # waf_analysis are produced in the same order, one row per payload.
+        def _waf_conclusion(entry: dict) -> str:
+            verdict = entry.get("aggregated_verdict", "Unknown")
+            fingerprint = entry.get("cve_fingerprint_match") or {}
+            if fingerprint:
+                return (
+                    f"{verdict} — {fingerprint.get('name')} "
+                    f"({fingerprint.get('cve')}) exploitation attempt"
+                )
+            stats = entry.get("crs_category_stats") or {}
+            decided = sorted(
+                c for c, s in stats.items() if s.get("weight_pl12", 0)
+            )
+            if decided:
+                labels = ", ".join(_WAF_CATEGORY_LABELS.get(c, c) for c in decided)
+                return f"{verdict} — {labels} pattern"
+            if not entry.get("parse_ok", True):
+                return "Unknown — no payload supplied"
+            return "Unknown — no known attack pattern matched"
+
+        _waf_conclusions = iter([
+            _waf_conclusion(e) for e in (run_results.get("waf_analysis") or [])
+        ])
+
+        # Detail lines for the command-line rows. The row itself carries only
+        # the parsed statement, a verdict and one evidence string — everything
+        # the breakdown expander shows (what was actually submitted, the decode
+        # chain that rewrote it, the parsed structure) was absent from the
+        # ticket, which is the artefact that leaves the tool. Built from
+        # ``cmdline_analysis`` rather than re-parsed out of the row.
+        def _cmdline_details(analysis: dict) -> list[list[str]]:
+            """Return the extra ticket lines for each command-line row.
+
+            Args:
+                analysis: The ``cmdline_analysis`` dict from ``run_results``.
+
+            Returns:
+                One list of lines per parsed statement, aligned with the order
+                ``core.cmdline_analyzer.to_rows`` emits its rows in.
+            """
+            commands = analysis.get("commands") or []
+            if not commands:
+                return []
+
+            # Run-wide context belongs on the first statement only; repeating it
+            # per statement would pad a ticket with identical lines.
+            shared: list[str] = []
+            interpreter = analysis.get("interpreter_detected") or "unknown"
+            shared.append(f"Interpreter: {interpreter}")
+
+            submitted = analysis.get("original_command")
+            if submitted and analysis.get("was_obfuscated"):
+                # The Artifact line shows the decoded statement, so without this
+                # the ticket never records what the analyst actually observed.
+                shared.append(f"Submitted: {_truncate_note(submitted)}")
+                chain = " -> ".join(analysis.get("decode_chain") or []) or "unspecified"
+                shared.append(f"Obfuscated: decoded via {chain}")
+                revealed = analysis.get("revealed_keywords") or []
+                if revealed:
+                    shared.append("Revealed only after decoding: " + ", ".join(revealed))
+
+            if not analysis.get("parse_ok"):
+                shared.append(
+                    "Parsing: best-effort — the line was malformed, so the "
+                    "structure below is incomplete"
+                )
+
+            cross = analysis.get("cross_reference") or {}
+            if cross.get("applied") and cross.get("note"):
+                shared.append(f"Cross-reference: {cross['note']}")
+
+            lolbas = analysis.get("lolbas_cross_check") or {}
+            if lolbas.get("match_strength") == "CONFIRMED_ABUSE_PATTERN":
+                shared.append(
+                    f"LOLBAS: {lolbas.get('binary')} arguments match its documented "
+                    f"{lolbas.get('category') or 'abuse'} pattern — {lolbas.get('matched')}"
+                )
+            elif lolbas.get("match_strength") == "DUAL_USE_PRESENT":
+                shared.append(
+                    f"LOLBAS: {lolbas.get('binary')} is dual-use, but its arguments match "
+                    "no documented abuse pattern"
+                )
+
+            out: list[list[str]] = []
+            for index, command in enumerate(commands):
+                lines = list(shared) if index == 0 else []
+                structure = [f"base={command.get('base_command', '')}"]
+                flags = command.get("flags") or []
+                arguments = command.get("arguments") or []
+                if flags:
+                    structure.append("flags=" + ", ".join(flags))
+                if arguments:
+                    structure.append("arguments=" + ", ".join(arguments))
+                lines.append("Structure: " + _truncate_note(" | ".join(structure)))
+                out.append(lines)
+            return out
+
+        _cmdline_detail_lines = iter(
+            _cmdline_details(run_results.get("cmdline_analysis") or {})
+        )
+
         notes = []
         # Ticket notes previously iterated `rows` alone, which silently omitted
         # every finding from the process, command-line and WAF modules — all
@@ -597,16 +874,19 @@ def render_results_output(output_format: str, run_results: dict) -> None:
             if t in _LOCAL_ROW_HEADINGS:
                 notes.append(_LOCAL_ROW_HEADINGS[t])
                 notes.append(f"Artifact: {val}")
+                if t == "command_line":
+                    notes.extend(next(_cmdline_detail_lines, []))
                 notes.append(f"Evidence: {row.get('Primary Evidence', '')}")
-                notes.append(f"Source: {row.get('Sources', '')} (no provider lookup)")
-                notes.append(
-                    "Conclusion: "
-                    + (
-                        f"{verdict} — local analysis only, not corroborated by a provider"
-                        if verdict != "Unknown"
-                        else "Unknown — nothing matched locally; this is not a clean result"
-                    )
-                )
+                # "Local (…)" already says no provider was consulted, so the
+                # conclusion does not repeat it — it names what was found.
+                notes.append(f"Source: {row.get('Sources', '')}")
+                if t == "waf_payload":
+                    conclusion = next(_waf_conclusions, verdict)
+                elif verdict == "Unknown":
+                    conclusion = "Unknown — nothing matched locally"
+                else:
+                    conclusion = verdict
+                notes.append(f"Conclusion: {conclusion}")
                 notes.append("")
                 continue
             if t == "ip":

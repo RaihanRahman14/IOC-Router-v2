@@ -1,18 +1,21 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from providers.hybrid_analysis import hybrid_analysis_enrich
+from config import Settings
+from ioc.parser import IOC
+from providers.hybrid_analysis import hybrid_analysis_enrich, hybrid_analysis_lookup_batch
 
 
 class TestHybridAnalysisProvider(unittest.TestCase):
     @patch("providers.hybrid_analysis.Settings.from_env")
-    @patch("providers.hybrid_analysis.requests.request")
-    def test_hash_enrichment_with_report(self, mock_request, mock_from_env):
+    @patch("providers.hybrid_analysis.get_session")
+    def test_hash_enrichment_with_report(self, mock_session, mock_from_env):
         """Hash lookup is a two-step flow: /search/hash → job id, then /report/{id}/summary.
 
         All sample metadata (verdict, threat_score, vx_family, file info) is read
         from the step-2 report summary — the search response only supplies the id.
         """
+        mock_request = mock_session.return_value.request
         mock_from_env.return_value = Mock(hybrid_analysis_key="k")
         search_response = Mock()
         search_response.status_code = 200
@@ -69,9 +72,10 @@ class TestHybridAnalysisProvider(unittest.TestCase):
         self.assertTrue(any("schtasks" in item.lower() for item in result["behavior"]["persistence"]))
 
     @patch("providers.hybrid_analysis.Settings.from_env")
-    @patch("providers.hybrid_analysis.requests.request")
-    def test_hash_job_id_from_reports_envelope(self, mock_request, mock_from_env):
+    @patch("providers.hybrid_analysis.get_session")
+    def test_hash_job_id_from_reports_envelope(self, mock_session, mock_from_env):
         """/search/hash may answer with a {"reports": [...]} envelope instead of a list."""
+        mock_request = mock_session.return_value.request
         mock_from_env.return_value = Mock(hybrid_analysis_key="k")
         search_response = Mock()
         search_response.status_code = 200
@@ -95,8 +99,9 @@ class TestHybridAnalysisProvider(unittest.TestCase):
         self.assertEqual(result["threat_score"], "40")
 
     @patch("providers.hybrid_analysis.Settings.from_env")
-    @patch("providers.hybrid_analysis.requests.request")
-    def test_hash_without_job_id_reports_no_results(self, mock_request, mock_from_env):
+    @patch("providers.hybrid_analysis.get_session")
+    def test_hash_without_job_id_reports_no_results(self, mock_session, mock_from_env):
+        mock_request = mock_session.return_value.request
         mock_from_env.return_value = Mock(hybrid_analysis_key="k")
         search_response = Mock()
         search_response.status_code = 200
@@ -111,8 +116,9 @@ class TestHybridAnalysisProvider(unittest.TestCase):
         self.assertEqual(mock_request.call_count, 1)
 
     @patch("providers.hybrid_analysis.Settings.from_env")
-    @patch("providers.hybrid_analysis.requests.request")
-    def test_url_quick_scan_enrichment(self, mock_request, mock_from_env):
+    @patch("providers.hybrid_analysis.get_session")
+    def test_url_quick_scan_enrichment(self, mock_session, mock_from_env):
+        mock_request = mock_session.return_value.request
         mock_from_env.return_value = Mock(hybrid_analysis_key="k")
         submit_response = Mock()
         submit_response.status_code = 200
@@ -141,8 +147,9 @@ class TestHybridAnalysisProvider(unittest.TestCase):
         self.assertEqual(result["redirect_chain"], ["http://evil.test", "https://evil.test/login"])
 
     @patch("providers.hybrid_analysis.Settings.from_env")
-    @patch("providers.hybrid_analysis.requests.request")
-    def test_domain_correlation_only(self, mock_request, mock_from_env):
+    @patch("providers.hybrid_analysis.get_session")
+    def test_domain_correlation_only(self, mock_session, mock_from_env):
+        mock_request = mock_session.return_value.request
         mock_from_env.return_value = Mock(hybrid_analysis_key="k")
         response = Mock()
         response.status_code = 200
@@ -166,6 +173,63 @@ class TestHybridAnalysisProvider(unittest.TestCase):
     def test_email_not_supported(self):
         result = hybrid_analysis_enrich("email", "phish@example.com")
         self.assertEqual(result["message"], "Hybrid Analysis does not analyze email indicators.")
+
+
+class TestHybridAnalysisKeyResolution(unittest.TestCase):
+    """A key passed by the caller must win over the environment.
+
+    The app resolves API keys from the drawer first and ``.env`` second, then
+    hands the result down. Falling back to ``Settings.from_env()`` when a
+    caller has supplied Settings would silently discard the drawer key.
+    """
+
+    @patch("providers.hybrid_analysis.Settings.from_env")
+    @patch("providers.hybrid_analysis.get_session")
+    def test_passed_settings_take_precedence_over_env(self, mock_session, mock_from_env):
+        mock_request = mock_session.return_value.request
+        mock_from_env.return_value = Mock(hybrid_analysis_key="env-key")
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = []
+        mock_request.return_value = response
+
+        hybrid_analysis_enrich(
+            "hash",
+            "44d88612fea8a8f36de82e1278abb02f",
+            Settings(hybrid_analysis_key="drawer-key"),
+        )
+
+        mock_from_env.assert_not_called()
+        sent_headers = mock_request.call_args[1]["headers"]
+        self.assertEqual(sent_headers["api-key"], "drawer-key")
+
+    @patch("providers.hybrid_analysis.Settings.from_env")
+    def test_missing_key_in_passed_settings_is_reported(self, mock_from_env):
+        """Explicit empty Settings must not silently fall back to the env key."""
+        mock_from_env.return_value = Mock(hybrid_analysis_key="env-key")
+
+        result = hybrid_analysis_enrich("hash", "44d8", Settings())
+
+        self.assertEqual(result["message"], "HYBRID_ANALYSIS_KEY is missing")
+
+    @patch("providers.hybrid_analysis.Settings.from_env")
+    @patch("providers.hybrid_analysis.get_session")
+    def test_batch_forwards_settings_to_every_item(self, mock_session, mock_from_env):
+        mock_request = mock_session.return_value.request
+        mock_from_env.return_value = Mock(hybrid_analysis_key="env-key")
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = []
+        mock_request.return_value = response
+
+        hybrid_analysis_lookup_batch(
+            [IOC(value="1.2.3.4", type="ip"), IOC(value="bad.test", type="domain")],
+            Settings(hybrid_analysis_key="drawer-key"),
+        )
+
+        mock_from_env.assert_not_called()
+        for call in mock_request.call_args_list:
+            self.assertEqual(call[1]["headers"]["api-key"], "drawer-key")
 
 
 if __name__ == "__main__":

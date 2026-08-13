@@ -4,6 +4,7 @@ from __future__ import annotations
 import requests
 
 from config import Settings
+from core.http import get_session
 
 
 GROQ_BASE = "https://api.groq.com/openai/v1"
@@ -23,7 +24,7 @@ def groq_generate(prompt: str, settings: Settings, model: str = "llama-3.1-8b-in
         "max_tokens": 4096,
     }
     try:
-        r = requests.post(
+        r = get_session().post(
             f"{GROQ_BASE}/chat/completions",
             headers={"Authorization": f"Bearer {settings.groq_key}"},
             json=payload,

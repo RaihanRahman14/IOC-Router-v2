@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import requests
 
 from config import Settings
+from core.http import get_session
 from ioc.parser import IOC, scheme_variants
 
 
@@ -23,7 +24,7 @@ def _tf_query(query: str, value: str, key: str, exact_match: bool | None = None)
     if exact_match is not None:
         payload["exact_match"] = bool(exact_match)
     try:
-        r = requests.post(
+        r = get_session().post(
             TF_BASE,
             headers={"Auth-Key": key},
             json=payload,

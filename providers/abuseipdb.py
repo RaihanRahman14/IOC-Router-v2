@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import requests
 
 from config import Settings
+from core.http import get_session
 from ioc.parser import IOC
 
 
@@ -255,7 +256,7 @@ def abuseipdb_lookup_batch(items: list[IOC], settings: Settings) -> dict[str, di
         last_error = ""
         for target in targets:
             try:
-                r = requests.get(
+                r = get_session().get(
                     f"{ABUSE_BASE}/check",
                     headers={"Key": settings.abuse_key, "Accept": "application/json"},
                     params={"ipAddress": target, "maxAgeInDays": 90, "verbose": True},

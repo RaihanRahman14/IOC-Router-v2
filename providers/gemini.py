@@ -14,6 +14,7 @@ from typing import Any
 import requests
 
 from config import Settings
+from core.http import get_session
 
 
 GEMINI_BASE = "https://generativelanguage.googleapis.com"
@@ -195,7 +196,7 @@ def gemini_list_models(settings: Settings) -> tuple[list[str], str]:
     version = settings.gemini_api_version or "v1beta"
     url = f"{GEMINI_BASE}/{version}/models"
     try:
-        response = requests.get(
+        response = get_session().get(
             url,
             headers={"x-goog-api-key": settings.gemini_key},
             timeout=_LIST_MODELS_TIMEOUT_SECONDS,
@@ -261,7 +262,7 @@ def _generate_once(
         },
     }
     try:
-        response = requests.post(
+        response = get_session().post(
             url,
             headers={"x-goog-api-key": key, "Content-Type": "application/json"},
             json=payload,

@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import requests
 
 from config import Settings
+from core.http import get_session
 from core.infra_classifier import classify as classify_infra, lookup_asn
 from ioc.parser import IOC
 
@@ -110,7 +111,7 @@ def _internetdb_get(ip: str, timeout: int = 10) -> tuple[dict | None, str | None
     while attempts < 3:
         attempts += 1
         try:
-            response = requests.get(url, timeout=timeout)
+            response = get_session().get(url, timeout=timeout)
         except requests.Timeout:
             if not timeout_retry_done:
                 timeout_retry_done = True

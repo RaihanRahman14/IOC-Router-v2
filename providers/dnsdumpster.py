@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 import requests
 
 from config import Settings
+from core.http import get_session
 from ioc.parser import IOC
 
 
@@ -290,7 +291,7 @@ def dnsdumpster_lookup_batch(items: list[IOC], settings: Settings) -> dict[str, 
             out[ioc.value] = {"error": f"No domain target for IOC type '{ioc.type}'"}
             continue
         try:
-            r = requests.get(
+            r = get_session().get(
                 f"{DNSD_BASE}/domain/{target}",
                 headers={"X-API-Key": settings.dnsdumpster_key},
                 timeout=15,

