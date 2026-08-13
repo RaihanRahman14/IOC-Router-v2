@@ -201,7 +201,7 @@ class TestEndToEndShape(unittest.TestCase):
         self.assertTrue(result.ioc_candidates)
         self.assertTrue(result.rule_matches)
         # Malicious, not Suspicious: obfuscation plus a high-severity Sigma
-        # match is plan §4 rule 1, and Layer 5 supplies the second source that
+        # match is the escalation rule, and Layer 5 supplies the second source that
         # MALICIOUS_REQUIRES_CORROBORATION demands.
         self.assertEqual(result.aggregated_verdict, "Malicious")
         self.assertTrue(ca.to_rows(result))

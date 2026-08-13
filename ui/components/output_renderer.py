@@ -175,7 +175,7 @@ def render_cmdline_breakdown(analysis: dict) -> None:
     """Render the command-line structural breakdown above the results table.
 
     This is the "explainshell" half of the command-line module and, per its
-    briefing §7, the part analysts read first — before any flag or verdict. It
+    docs/cmdline_analyzer.md, the part analysts read first — before any flag or verdict. It
     is rendered as its own block rather than squeezed into a table row, because
     a token list does not survive being flattened into one cell.
 
@@ -259,7 +259,12 @@ def render_results_output(output_format: str, run_results: dict) -> None:
     # the same column schema so the table needs no special-casing. Kept separate
     # from `rows` upstream because that list is one-entry-per-atomic-IOC.
     process_rows = run_results.get("process_rows") or []
-    table_rows = rows + process_rows
+    # WAF payload rows share that same column schema (asserted by a test), and
+    # are likewise kept out of `rows` upstream — see docs/waf_payload_analyzer.md
+    # D6, where letting them into it would add evidence-free rows and inflate
+    # the session counts.
+    waf_rows = run_results.get("waf_rows") or []
+    table_rows = rows + process_rows + waf_rows
 
 
     if output_format == "Table":
@@ -331,6 +336,8 @@ def render_results_output(output_format: str, run_results: dict) -> None:
             payload["process_analysis"] = run_results["process_analysis"]
         if run_results.get("cmdline_analysis"):
             payload["cmdline_analysis"] = run_results["cmdline_analysis"]
+        if run_results.get("waf_analysis"):
+            payload["waf_analysis"] = run_results["waf_analysis"]
         st.json(payload)
 
     elif output_format == "Shareable Text":
@@ -565,11 +572,43 @@ def render_results_output(output_format: str, run_results: dict) -> None:
                 return
             notes_list.append(line)
 
+        # Rows produced by the local analyzers rather than by a provider. They
+        # carry the same column schema but no provider data, so they take a
+        # single generic branch instead of a per-provider one.
+        _LOCAL_ROW_HEADINGS = {
+            "file_path": "#File Path",
+            "process": "#Process",
+            "parent_child_pair": "#Parent-Child Pair",
+            "command_line": "#Command Line",
+            "waf_payload": "#WAF Payload",
+        }
+
         notes = []
-        for row in rows:
+        # Ticket notes previously iterated `rows` alone, which silently omitted
+        # every finding from the process, command-line and WAF modules — all
+        # three keep their rows outside `rows` on purpose (see
+        # docs/waf_payload_analyzer.md D6). This is the app's *default* output
+        # format, so an analyst pasting it into a ticket was handing over an
+        # incomplete picture without any sign that something was missing.
+        for row in list(rows) + list(process_rows) + list(waf_rows):
             t = row["Type"]
             val = row["Artifact"]
             verdict = row["Verdict"]
+            if t in _LOCAL_ROW_HEADINGS:
+                notes.append(_LOCAL_ROW_HEADINGS[t])
+                notes.append(f"Artifact: {val}")
+                notes.append(f"Evidence: {row.get('Primary Evidence', '')}")
+                notes.append(f"Source: {row.get('Sources', '')} (no provider lookup)")
+                notes.append(
+                    "Conclusion: "
+                    + (
+                        f"{verdict} — local analysis only, not corroborated by a provider"
+                        if verdict != "Unknown"
+                        else "Unknown — nothing matched locally; this is not a clean result"
+                    )
+                )
+                notes.append("")
+                continue
             if t == "ip":
                 notes.append("#IP")
                 notes.append(f"IP: {val}")

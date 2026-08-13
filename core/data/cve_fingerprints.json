@@ -1,0 +1,100 @@
+{
+  "_meta": {
+    "schema": "list of {cve, name, pattern, case_insensitive, category, why_specific, reference}",
+    "purpose": "Layer 4 fingerprint set for core.cve_fingerprint",
+    "curation": "hand-written from public CVE write-ups; never generated or scraped",
+    "updated": "2026-08-11",
+    "admission_bar": [
+      "A match here returns Malicious on its own — the only single-source Malicious in the module (docs/waf_payload_analyzer.md D10). Every other path requires two independent layers.",
+      "That exception is only defensible while every pattern is impossible in legitimate traffic. 'Well known CVE' is NOT sufficient grounds for an entry; 'this string has no benign reason to exist' is.",
+      "why_specific is mandatory and must state why benign traffic cannot produce the pattern. An entry whose justification is only 'this is a famous exploit' invalidates the exception for every other entry in the file.",
+      "Grow deliberately, based on what is actually seen (briefing 10). A larger set is not a better set."
+    ],
+    "rejected": [
+      {
+        "candidate": "/owa/auth/.*\\.js",
+        "proposed_for": "CVE-2021-34473 (ProxyShell)",
+        "reason": "Proposed by the source briefing, and it matches ordinary Outlook Web Access traffic — OWA serves its own scripts from /owa/auth/. Shipping it would mark every Exchange user's browser as a confirmed exploit, at Malicious, from a single source. The autodiscover SSRF pattern below is used instead."
+      },
+      {
+        "candidate": "X-AnonResource-Backend cookie",
+        "proposed_for": "CVE-2021-26855 (ProxyLogon)",
+        "reason": "The distinctive marker is an HTTP header, and this module only ever sees a path and a payload. A path-only approximation would match benign /ecp/ traffic."
+      }
+    ]
+  },
+  "fingerprints": [
+    {
+      "cve": "CVE-2021-44228",
+      "name": "Log4Shell",
+      "category": "rce",
+      "pattern": "\\$\\{\\s*(?:jndi|\\$\\{[^}]*\\}|[a-z:]*jndi)\\s*:\\s*(?:ldaps?|rmi|dns|iiop|corba|nis|nds|http)\\s*:",
+      "case_insensitive": true,
+      "why_specific": "A JNDI lookup expression inside a ${} interpolation, naming a remote protocol. No application legitimately asks a user to supply one; the nested-${} alternative covers the ${${lower:j}ndi:} obfuscation used to bypass early filters.",
+      "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-44228"
+    },
+    {
+      "cve": "CVE-2022-22965",
+      "name": "Spring4Shell",
+      "category": "rce",
+      "pattern": "class\\.module\\.classLoader\\.",
+      "case_insensitive": true,
+      "why_specific": "Reaches the JVM ClassLoader through Spring's data-binding property path. A legitimate form never binds a parameter named class.module.classLoader — the property chain exists only to escape the bound object.",
+      "reference": "https://nvd.nist.gov/vuln/detail/CVE-2022-22965"
+    },
+    {
+      "cve": "CVE-2021-34473",
+      "name": "ProxyShell",
+      "category": "ssrf",
+      "pattern": "autodiscover/autodiscover\\.json(?:\\?|%3f)[^\\s]{0,200}@",
+      "case_insensitive": true,
+      "why_specific": "The Exchange autodiscover SSRF: a query string beginning with @ so the explicit-path parser mis-routes the request to the backend. Ordinary autodiscover requests carry an Email parameter, never a leading @ in the query. The leading slash is not required and the ? may arrive percent-encoded, because the exploit is commonly seen nested inside another parameter.",
+      "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-34473"
+    },
+    {
+      "cve": "CVE-2014-6271",
+      "name": "Shellshock",
+      "category": "rce",
+      "pattern": "\\(\\s*\\)\\s*\\{\\s*:?\\s*;?\\s*\\}\\s*;",
+      "case_insensitive": false,
+      "why_specific": "An empty Bash function definition immediately followed by a command separator — the exact byte sequence that triggers the parser bug. It is not valid or meaningful content in any user-supplied field.",
+      "reference": "https://nvd.nist.gov/vuln/detail/CVE-2014-6271"
+    },
+    {
+      "cve": "CVE-2017-5638",
+      "name": "Struts2 S2-045",
+      "category": "rce",
+      "pattern": "#context\\[['\"]com\\.opensymphony\\.xwork2\\.dispatcher\\.HttpServletResponse['\"]\\]|#_memberAccess\\s*(?:=|\\[)",
+      "case_insensitive": true,
+      "why_specific": "OGNL expressions that reach Struts internals and disable its member-access sandbox. Both are framework-internal names that no client-supplied value has a reason to contain.",
+      "reference": "https://nvd.nist.gov/vuln/detail/CVE-2017-5638"
+    },
+    {
+      "cve": "CVE-2021-41773",
+      "name": "Apache 2.4.49 path traversal",
+      "category": "lfi",
+      "pattern": "\\.%2e[/\\\\]|%2e\\.[/\\\\]",
+      "case_insensitive": true,
+      "why_specific": "Traversal that encodes only one of the two dots, which is what slipped past the 2.4.49 path check. The mixed literal-and-encoded form has no legitimate use: a real relative path is either percent-encoded or it is not, never half of each within a single segment.",
+      "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-41773"
+    },
+    {
+      "cve": "CVE-2019-11510",
+      "name": "Pulse Secure arbitrary file read",
+      "category": "lfi",
+      "pattern": "/dana-na/\\.\\./dana-ws/|/dana-na/\\.\\./dana/html5acc/",
+      "case_insensitive": true,
+      "why_specific": "Traversal out of the Pulse Secure web root to an internal endpoint. The literal ../ between two product-specific path segments cannot be produced by normal navigation.",
+      "reference": "https://nvd.nist.gov/vuln/detail/CVE-2019-11510"
+    },
+    {
+      "cve": "CVE-2020-5902",
+      "name": "F5 BIG-IP TMUI RCE",
+      "category": "lfi",
+      "pattern": "/tmui/login\\.jsp/\\.\\./|/hsqldb(?:\\?|/|;)",
+      "case_insensitive": true,
+      "why_specific": "A traversal appended to the TMUI login page, and the unauthenticated hsqldb endpoint it reaches. Neither shape occurs when the interface is used normally.",
+      "reference": "https://nvd.nist.gov/vuln/detail/CVE-2020-5902"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 """Tests for core.cmdline_parser — Layer 1 tokenizer and interpreter detection.
 
-Written before the implementation, per ``docs/cmdline_analyzer_plan.md`` §6 A1:
+Written before the implementation, per ``docs/cmdline_analyzer.md`` §6 A1:
 the tokenizer is the module's highest-risk component and Windows quoting has
 more corner cases than it looks like it does.
 """
@@ -347,7 +347,7 @@ class TestRealWorldSamples(unittest.TestCase):
 
     def test_benign_scheduled_task_invocation(self) -> None:
         # Known-good sample: must parse cleanly and expose no surprises. The
-        # calibration corpus (plan §6) grows from cases like this one.
+        # calibration corpus grows from cases like this one.
         line = r'"C:\Program Files\Vendor\agent.exe" --service --config "C:\ProgramData\a.cfg"'
         result = cp.parse_command_line(line)
         self.assertTrue(result.parse_ok)

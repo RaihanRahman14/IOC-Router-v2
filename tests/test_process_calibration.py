@@ -1,7 +1,7 @@
 """Calibration gate for core.process_analyzer Layer 4.
 
 Sibling of ``test_cmdline_calibration.py``. Closes the "Option A's false-positive
-rate is unmeasured" item carried in ``docs/process_analyzer_plan.md`` §7 since
+rate is unmeasured" item carried in ``docs/process_analyzer.md`` §7 since
 the module shipped: the rate is 2 of 28 benign process pairs, both from one
 identified rule, and this file locks it there.
 """

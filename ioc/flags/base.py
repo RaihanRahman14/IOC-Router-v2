@@ -25,6 +25,30 @@ def _flag(
     }
 
 
+MITRE_TECHNIQUE_BASE_URL = "https://attack.mitre.org/techniques"
+
+
+def mitre_url(technique: str) -> str:
+    """Build the ATT&CK page URL for a technique id.
+
+    Canonical home for a helper that `core.process_analyzer` and
+    `core.cmdline_analyzer` each carry a byte-identical private copy of. New
+    call sites use this one; folding those two into it is a separate cleanup,
+    kept out of the change that introduced this so the shipped modules stay
+    untouched.
+
+    Args:
+        technique: e.g. ``"T1036.005"`` or ``"T1105"``.
+
+    Returns:
+        The technique's ATT&CK URL, or ``""`` for an unrecognised id.
+    """
+    value = str(technique or "").strip().upper()
+    if not value.startswith("T"):
+        return ""
+    return f"{MITRE_TECHNIQUE_BASE_URL}/{value.replace('.', '/')}/"
+
+
 def _days_since(ts: Any) -> int | None:
     """Convert unix timestamp or ISO string to age in days. None if unparseable."""
     if ts is None:

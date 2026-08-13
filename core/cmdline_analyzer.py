@@ -1,6 +1,6 @@
 """Command-line analysis — Layers 3 and 6, flag emission and verdict aggregation.
 
-Implements ``docs/cmdline_analyzer_plan.md`` Milestone A. The pipeline is:
+Implements ``docs/cmdline_analyzer.md``. The pipeline is:
 
 1. :mod:`core.cmdline_deobfuscator` folds the line (Layer 2);
 2. :mod:`core.cmdline_parser` tokenizes the *folded* text (Layer 1) — matching
@@ -8,7 +8,7 @@ Implements ``docs/cmdline_analyzer_plan.md`` Milestone A. The pipeline is:
 3. Layer 3 matches the curated keyword table;
 4. Layer 6 scores token entropy as a weak fallback;
 5. indicators found in the decoded text are returned as candidates for the
-   caller to enrich (plan D3).
+   caller to enrich.
 
 This module performs **no network I/O**. Like :mod:`core.process_analyzer`, it
 returns ``ioc_candidates`` and lets ``app.py`` feed them into the existing
@@ -68,7 +68,7 @@ CMDLINE_LOLBAS_ABUSE_PATTERN = "CMDLINE_LOLBAS_ABUSE_PATTERN"
 _KEYWORD_FLAG_PREFIX = "CMDLINE_"
 
 # Layer 4's two authorities, deliberately separated — the corpus supports one
-# and not the other (plan §6 C3).
+# and not the other. See the calibration section of docs/cmdline_analyzer.md.
 #
 # Measured over the calibration corpus: 4 of 30 known-bad samples confirmed, and
 # **0 of 32 known-good** falsely confirmed. Perfect precision, low recall — which
@@ -82,9 +82,10 @@ LOLBAS_SETS_SUSPICIOUS_FLOOR = True
 # alert shows a confirmed abuse pattern that no other layer caught.
 LOLBAS_COUNTS_AS_CORROBORATION = False
 
-# Sigma levels strong enough to escalate a verdict on their own (plan §4 rule 1).
+# Sigma levels strong enough to escalate a verdict on their own.
 _ESCALATING_SIGMA_LEVELS = frozenset({"high", "critical"})
-# Levels that count as an independent second source (plan D10 corroboration).
+# Levels that count as an independent second source. See the corroboration
+# rule in docs/cmdline_analyzer.md.
 _CORROBORATING_SIGMA_LEVELS = frozenset({"medium", "high", "critical"})
 _SIGMA_LEVEL_ORDER = {"informational": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
 _SIGMA_LEVEL_TO_SEVERITY = {
@@ -94,17 +95,17 @@ _SIGMA_LEVEL_TO_SEVERITY = {
 # The AI prompt and the UI both read these; an unbounded list drowns both.
 MAX_RULE_MATCHES = 8
 
-# Verdict ladder, weakest first. This module never returns "Benign" (plan D10):
+# Verdict ladder, weakest first. This module never returns "Benign":
 # "nothing matched our local datasets" is absence of evidence, and ioc.verdict
 # hardcodes the benign count to 0.
 VERDICT_LADDER = ("Unknown", "Suspicious", "Malicious")
 
-# Plan D10 / project rule: a single uncalibrated source cannot reach the top of
-# the ladder. Milestone B flips this once Sigma CommandLine matching lands.
+# Project rule: a single source cannot reach the top of the ladder. Layer 5
+# (Sigma) and Layer 4 (LOLBAS) are the only qualifying second sources.
 MALICIOUS_REQUIRES_CORROBORATION = True
 
-# Plan §4 rule 5: independent switch hits reinforce each other rather than
-# merely accumulating as list entries.
+# Independent switch hits reinforce each other rather than merely
+# accumulating as list entries.
 COMPOUNDING_THRESHOLD = 3
 
 # ── Layer 6 tuning ───────────────────────────────────────────────────────────
@@ -151,8 +152,8 @@ class CommandLineInput:
         context: The sibling Context field (``raw_log`` in session state),
             carried unparsed and only ever forwarded to the AI step.
         linked_process: The process module's *result* for the same session, when
-            the analyst also filled Parent/Child Process. Plan D7 takes the
-            result rather than the briefing's ``ProcessFilepathInput``, because
+            the analyst also filled Parent/Child Process. Takes the process
+            *result* rather than its input, because
             the cross-reference keys on findings — ``MASQUERADING_*`` and
             ``SUSPICIOUS_PARENT_CHILD_PAIR`` — which the raw input cannot supply
             without re-running the sibling module's layers here.
@@ -174,11 +175,11 @@ class CommandLineInput:
 
 @dataclass
 class CommandLineAnalysisResult:
-    """Everything Milestone A can determine about one command line.
+    """Everything the analyzer can determine about one command line.
 
     Attributes:
         parse_ok: False for empty input or a malformed line. Both route to
-            ``Unknown`` (plan D10); this keeps them distinguishable downstream.
+            ``Unknown``; this keeps them distinguishable downstream.
         interpreter_detected: ``powershell`` / ``cmd`` / ``unknown``.
         commands: One :class:`~core.cmdline_parser.ParsedCommand` per statement.
         was_obfuscated: True if any decode transform applied.
@@ -194,7 +195,8 @@ class CommandLineAnalysisResult:
         rule_matches: Layer 5 Sigma CommandLine matches, most severe first.
         joined_rule_count: How many matches the D6 rule-id join upgraded to an
             exact multi-field match using the process module's findings.
-        lolbas_cross_check: Layer 4 output. Always None until Milestone C.
+        lolbas_cross_check: Layer 4 output — a confirmed LOLBAS abuse pattern,
+            a dual-use annotation, or None.
         cross_reference: What the ``linked_process`` comparison contributed.
         checks_skipped: Layers that did not run, and why — so the AI narrative
             never implies certainty about a check that never happened.
@@ -418,7 +420,7 @@ def match_sigma_patterns(text: str, linked: ProcessAnalysisResult | None = None)
     """Match the Sigma-derived CommandLine patterns against command text — Layer 5.
 
     **A record whose source rule also constrained Image or ParentImage never
-    matches on its own.** This is a correction to plan D5, forced by measurement:
+    matches on its own.** This is a correction forced by measurement:
     Option A is not symmetric between the two fields. A parent→child pair is
     inherently specific (``winword.exe`` → ``cmd.exe``), but a CommandLine
     fragment often carries no specificity at all once its Image condition is
@@ -662,7 +664,7 @@ def find_high_entropy_tokens(commands: list) -> list[str]:
     """Find blob-shaped, high-entropy tokens — Layer 6's fallback signal.
 
     This is the weakest signal in the stack and never escalates a verdict on its
-    own (plan §4 rule 7): long base64 in a scheduled-task command line is
+    own (it is the weakest signal in the stack): long base64 in a scheduled-task command line is
     entirely normal. It exists to justify routing to manual review when an
     unfamiliar encoding defeated every other layer.
 
@@ -892,8 +894,7 @@ def _has_corroboration(result: CommandLineAnalysisResult) -> bool:
     """Report whether a second, independent detection source agrees.
 
     Layers 4 and 5 are the only sources that qualify, and neither exists in
-    Milestone A — so this is False throughout it, by design rather than by
-    accident.
+    only sources that qualify.
     """
     for match in result.rule_matches:
         if str(match.get("sigma_level") or "").lower() in _CORROBORATING_SIGMA_LEVELS:
@@ -907,15 +908,13 @@ def _has_corroboration(result: CommandLineAnalysisResult) -> bool:
 def aggregate_verdict(result: CommandLineAnalysisResult) -> str:
     """Reduce the layer findings to one qualitative verdict.
 
-    Implements plan §4 rules 4-8. Rules 1-3 need Layer 4/5 data and are
-    unreachable until Milestone B, which is what keeps this module from
-    over-calling on a single uncalibrated source.
+    Implements the verdict table in ``docs/cmdline_analyzer.md``.
 
     Args:
         result: A populated analysis result.
 
     Returns:
-        One of :data:`VERDICT_LADDER`. Never ``"Benign"`` (plan D10) — a command
+        One of :data:`VERDICT_LADDER`. Never ``"Benign"`` — a command
         line with no matches is ``Unknown``, and ``parse_ok`` distinguishes that
         from a parse failure.
     """
@@ -1061,10 +1060,10 @@ def _cross_reference(result: CommandLineAnalysisResult,
                      linked: ProcessAnalysisResult | None) -> dict | None:
     """Compare against the process module's findings for the same session.
 
-    Plan §4 caps this deliberately: the cross-reference may raise ``Unknown`` to
+    This is capped deliberately: the cross-reference may raise ``Unknown`` to
     ``Suspicious``, but it can never carry a verdict to ``Malicious`` on its own.
     The sibling module already reaches ``Malicious`` readily from name-only data
-    (its plan §7), and stacking a second automatic escalation on top of that
+    (see its documentation's known-limits section), and stacking a second automatic escalation on top of that
     would compound a known over-eager rule.
 
     Args:
@@ -1092,13 +1091,13 @@ def _cross_reference(result: CommandLineAnalysisResult,
         "applied": result.has_findings(),
         "note": (
             "The process/filepath analysis flagged the same event. Escalation is "
-            "capped at Suspicious here — see plan §4."
+            "capped at Suspicious here — see docs/cmdline_analyzer.md."
         ),
     }
 
 
 def analyze_command_line(data: CommandLineInput) -> CommandLineAnalysisResult:
-    """Run every Milestone A layer over one submitted command line.
+    """Run every layer over one submitted command line.
 
     Layers are skipped independently when their input is absent, and
     ``checks_skipped`` records what did not run so downstream ticket generation

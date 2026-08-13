@@ -1,6 +1,6 @@
 """Parent/child process and filepath analysis — Layers 1, 3 (partial) and 4.
 
-Implements ``docs/process_analyzer_plan.md``:
+Implements ``docs/process_analyzer.md``:
 
 * **Layer 1** — path-baseline whitelist + Levenshtein typosquat detection.
 * **Layer 2** — delegated to :mod:`core.lolbas_lookup`.
@@ -49,7 +49,7 @@ UNRESOLVED_THIRD_PARTY = "UNRESOLVED_THIRD_PARTY"
 # Emitted flag ids. These feed the existing 100+ flag system, whose evidence
 # mapper matches on **substrings of the id** — so these must avoid colliding
 # with reserved tokens like "SIGMA" (-> malware_executed) and
-# "PROCESS_INJECTION" (-> privilege_escalation). See plan §D2.
+# "PROCESS_INJECTION" (-> privilege_escalation). See docs/process_analyzer.md.
 SUSPICIOUS_PARENT_CHILD_PAIR = "SUSPICIOUS_PARENT_CHILD_PAIR"
 PARENT_CHAIN_CONTAMINATION = "PARENT_CHAIN_CONTAMINATION"
 DUAL_USE_BINARY = lolbas_lookup.DUAL_USE_BINARY
@@ -87,7 +87,7 @@ _PROCESS_FIELDS = (
     ("child_process", "Child Process"),
 )
 
-# ── Fuzzy-match tuning (see plan §7 — these are starting values, not validated) ──
+# ── Fuzzy-match tuning (see the known-limits section — these are starting values, not validated) ──
 # Levenshtein distance is computed over the *stem* (filename minus extension).
 # Short stems collide by chance far more easily than long ones, so they get a
 # stricter threshold instead of being skipped outright — a 1-edit typosquat of

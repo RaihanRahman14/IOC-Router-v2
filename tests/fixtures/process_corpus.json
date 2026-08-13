@@ -5,7 +5,7 @@
       "tolerated": "The pair may MATCH a Sigma rule but must not escalate the verdict above Unknown. Annotating a common pair is acceptable noise.",
       "known_defect": "The pair escalates today and should not. A measured, documented failure that is locked in place so it cannot spread — not an excuse. Removing an entry from this list is the fix; adding one requires justifying why it cannot be fixed."
     },
-    "purpose": "Calibration corpus for core.process_analyzer Layer 4 — the sibling of tests/fixtures/cmdline_corpus.json. Closes the 'Option A's false-positive rate is unmeasured' item in docs/process_analyzer_plan.md §7.",
+    "purpose": "Calibration corpus for core.process_analyzer Layer 4 — the sibling of tests/fixtures/cmdline_corpus.json. Closes the 'Option A's false-positive rate is unmeasured' item in docs/process_analyzer.md §7.",
     "updated": "2026-08-10",
     "sources": [
       "known_bad: parent/child combinations named in the process_analyzer plan's own §6 sanity check, plus common webshell and script-engine chains.",

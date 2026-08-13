@@ -1,6 +1,6 @@
 """Manual harness for the process/filepath analyzer.
 
-The analyzer is not wired into the Streamlit app yet (plan steps 7-9), so this
+This harness exercises the analyzer directly, so
 script is how you exercise it by hand: pass any subset of the four form fields
 and read back exactly what each layer decided.
 
@@ -115,6 +115,29 @@ def render(result: ProcessAnalysisResult) -> str:
     return "\n".join(out)
 
 
+def _force_utf8_output() -> None:
+    """Switch stdout/stderr to UTF-8 so the report survives a cp1252 console.
+
+    Same defect as the sibling harness, caught one step earlier: this script's
+    non-ASCII is currently limited to the em dash, which cp1252 happens to map,
+    so it garbles rather than crashes. The moment a flag label or a box-drawing
+    rule introduces a character cp1252 lacks, it becomes fatal — the failure the
+    command-line harness actually hit.
+
+    ``errors="replace"`` keeps that degradation cosmetic on a stream that cannot
+    be reconfigured.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            # Detached or non-reconfigurable stream. Printing is still worth
+            # attempting.
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point.
 
@@ -124,6 +147,8 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Process exit code.
     """
+    _force_utf8_output()
+
     parser = argparse.ArgumentParser(
         description="Run the process/filepath analyzer against ad-hoc input.",
     )

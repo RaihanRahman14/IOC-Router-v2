@@ -153,6 +153,34 @@ _CMDLINE_EVIDENCE: dict[str, frozenset[str]] = {
 }
 
 
+# Evidence keys claimed by WAF payload findings, keyed on exact flag id
+# (docs/waf_payload_analyzer.md D8).
+#
+# Matched on the exact id rather than a substring for a reason the substring
+# rules above make plain: "SQLI" and "CVE" are already substring-mapped to
+# exploit_attempt, so WAF_SQLI_MATCH would have inherited an evidence key while
+# WAF_XSS_MATCH and WAF_RCE_MATCH — cross-site scripting and remote code
+# execution — inherited none. That asymmetry would be an artefact of spelling,
+# not a judgement about what each finding proves.
+#
+# Deliberately unmapped: WAF_ENCODED_PAYLOAD. Encoding is an evasion signal, not
+# proof of an attack, and forcing it into an evidence key would overstate what it
+# shows. It still reaches the narrative through its MITRE tactic and severity.
+_WAF_EVIDENCE: dict[str, frozenset[str]] = {
+    "exploit_attempt": frozenset({
+        "WAF_CVE_FINGERPRINT",
+        "WAF_SQLI_MATCH",
+        "WAF_XSS_MATCH",
+        "WAF_RCE_MATCH",
+        "WAF_LFI_MATCH",
+        "WAF_RFI_MATCH",
+        "WAF_PHP_INJECTION_MATCH",
+        "WAF_SSRF_MATCH",
+        "WAF_PROTOCOL_ANOMALY",
+    }),
+}
+
+
 def flags_summary_for_evidence(flags: list[dict]) -> dict:
     """
     Map flags back into the evidence dict structure used by _build_analysis_summary.
@@ -223,6 +251,11 @@ def flags_summary_for_evidence(flags: list[dict]) -> dict:
         # claim about what the finding proves, and substring matching would let
         # a future keyword inherit one silently.
         for key, ids in _CMDLINE_EVIDENCE.items():
+            if fid in ids:
+                ev[key] = True
+
+        # WAF payload findings, same exact-id treatment and for the same reason.
+        for key, ids in _WAF_EVIDENCE.items():
             if fid in ids:
                 ev[key] = True
 

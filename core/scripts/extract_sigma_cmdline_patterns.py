@@ -4,7 +4,7 @@ Sibling of ``extract_sigma_pairs.py`` and its exact mirror image. That script
 keeps ``ParentImage``/``Image`` and drops the ``CommandLine`` condition; this one
 keeps ``CommandLine`` and drops the image constraints. Both are **Option A** —
 partial extraction — and both record which conditions they had to drop, which is
-what makes the rule-id join in ``docs/cmdline_analyzer_plan.md`` D6 possible: a
+what makes the rule-id join in ``docs/cmdline_analyzer.md`` D6 possible: a
 rule that appears in *both* datasets and matches in *both* modules during one
 session has had its full original condition satisfied.
 
@@ -459,7 +459,7 @@ def build_document(records: list[dict[str, Any]], source: str, rules_seen: int) 
             "notes": [
                 "Records where image_constrained or parentimage_constrained is true are "
                 "applied MORE BROADLY than their source rule intended. The rule-id join "
-                "(plan D6) narrows them back whenever the process module matches the same "
+                "(the rule-id join (docs/cmdline_analyzer.md)) narrows them back whenever the process module matches the same "
                 "sigma_rule_id in the same session.",
                 "Patterns shorter than min_pattern_len are dropped: a two-character "
                 "CommandLine fragment is faithful to its rule and useless without the "

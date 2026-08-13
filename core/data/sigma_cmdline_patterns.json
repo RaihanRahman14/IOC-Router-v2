@@ -16,7 +16,7 @@
     "complete_condition_count": 153,
     "min_pattern_len": 4,
     "notes": [
-      "Records where image_constrained or parentimage_constrained is true are applied MORE BROADLY than their source rule intended. The rule-id join (plan D6) narrows them back whenever the process module matches the same sigma_rule_id in the same session.",
+      "Records where image_constrained or parentimage_constrained is true are applied MORE BROADLY than their source rule intended. The rule-id join (the rule-id join (docs/cmdline_analyzer.md)) narrows them back whenever the process module matches the same sigma_rule_id in the same session.",
       "Patterns shorter than min_pattern_len are dropped: a two-character CommandLine fragment is faithful to its rule and useless without the Image condition that accompanied it.",
       "Regex conditions (|re) are never translated \u2014 matching attacker-influenced regex at runtime is a denial-of-service risk and hand translation would misreport the rule.",
       "position_relaxed marks a startswith/endswith condition matched as a plain substring, which is slightly broader than the source rule."

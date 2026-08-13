@@ -7,6 +7,8 @@ from urllib.parse import urlparse, urlunparse
 from dataclasses import dataclass
 from typing import List
 
+from core.waf_payload_parser import WafPayloadInput, is_waf_payload_line, parse_waf_line
+
 
 HASH_RE = re.compile(r"^[A-Fa-f0-9]{32}$|^[A-Fa-f0-9]{40}$|^[A-Fa-f0-9]{64}$")
 URL_RE = re.compile(r"^(https?://).+", re.IGNORECASE)
@@ -33,10 +35,14 @@ DEFAULT_SCHEME = "http"
 @dataclass
 class IOC:
     value: str
-    type: str  # ip, domain, url, hash
+    type: str  # ip, domain, url, hash, email, whois, waf_payload
     # True when ``value`` only carries a scheme because the parser added one.
     # Providers use this to decide whether trying the other scheme is worthwhile.
     scheme_inferred: bool = False
+    # Populated only for ``waf_payload``. Carries the path/payload split so the
+    # analyzer does not re-parse the line. Optional and defaulted, so every
+    # existing construction site is unaffected.
+    waf: WafPayloadInput | None = None
 
 
 def scheme_variants(ioc: IOC, https_first: bool = False) -> list[str]:
@@ -103,6 +109,13 @@ def _detect_type(value: str) -> str | None:
         return "url"
     if WHOIS_KEYWORD_RE.match(v):
         return "whois"
+    # Last in the cascade, deliberately. Every detector above is anchored
+    # ``^…$``, so none of them can match a line carrying the " | " delimiter —
+    # but running this check last also means a line that is a valid IP, hash or
+    # URL is never reinterpreted as a payload. See docs/waf_payload_analyzer.md
+    # D5 for why the delimiter is required rather than inferred.
+    if is_waf_payload_line(v):
+        return "waf_payload"
     return None
 
 
@@ -125,9 +138,20 @@ def parse_iocs(
         t = _detect_type(item)
         if not t:
             continue
-        if not auto_detect and allowed_types is not None and t not in allowed_types:
+        # ``waf_payload`` is exempt from the manual-mode type filter. That
+        # filter is driven by the IOC-group checkboxes, which exist to stop
+        # provider calls the analyst does not want; a WAF payload makes no
+        # provider calls and has no checkbox of its own, so filtering it here
+        # would drop the line with no way to opt back in.
+        if (
+            not auto_detect
+            and allowed_types is not None
+            and t != "waf_payload"
+            and t not in allowed_types
+        ):
             continue
         scheme_inferred = False
+        waf = None
         if t == "url":
             if not URL_RE.match(item):
                 item = f"{DEFAULT_SCHEME}://{item}"
@@ -135,5 +159,10 @@ def parse_iocs(
             item = _normalize_url(item)
         elif t == "domain":
             item = item.lower()
-        iocs.append(IOC(value=item, type=t, scheme_inferred=scheme_inferred))
+        elif t == "waf_payload":
+            # ``value`` stays the raw line: it is the dedup key above, the row
+            # label downstream, and what the analyst actually typed. The split
+            # rides alongside rather than replacing it.
+            waf = parse_waf_line(item)
+        iocs.append(IOC(value=item, type=t, scheme_inferred=scheme_inferred, waf=waf))
     return iocs

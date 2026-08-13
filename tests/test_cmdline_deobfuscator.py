@@ -1,6 +1,6 @@
 """Tests for core.cmdline_deobfuscator — Layer 2.
 
-Per ``docs/cmdline_analyzer_plan.md`` D2, every transform here is a pure string
+Per ``docs/cmdline_analyzer.md`` D2, every transform here is a pure string
 operation: nothing in this module may execute, evaluate or interpret the input.
 The tests below therefore assert on *folded text*, never on side effects.
 """

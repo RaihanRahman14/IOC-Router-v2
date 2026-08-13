@@ -233,7 +233,7 @@ class TestVerdict(unittest.TestCase):
         self.assertEqual(self._verdict(f"powershell -enc {blob}"), "Suspicious")
 
     def test_keyword_evidence_alone_still_cannot_reach_malicious(self) -> None:
-        # The corroboration rule survives Milestone B: keyword hits and
+        # The corroboration rule holds regardless of Layer 5: keyword hits and
         # obfuscation, with no Sigma rule agreeing, still top out at Suspicious.
         self.assertTrue(ca.MALICIOUS_REQUIRES_CORROBORATION)
         result = ca.analyze_command_line(ca.CommandLineInput(

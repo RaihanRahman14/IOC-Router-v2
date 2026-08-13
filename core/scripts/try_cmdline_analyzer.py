@@ -188,6 +188,30 @@ def print_summary(summary: dict) -> None:
     print()
 
 
+def _force_utf8_output() -> None:
+    """Switch stdout/stderr to UTF-8 so the report survives a cp1252 console.
+
+    A Windows console defaults to cp1252, which has no mapping for the U+2500
+    box-drawing rule in :func:`print_summary`. The whole corpus would run, the
+    numbers would be computed, and the process would then die with
+    ``UnicodeEncodeError`` at the first line of output — the one failure mode
+    that costs the entire result.
+
+    ``errors="replace"`` is the belt to that braces: on a stream that cannot be
+    reconfigured at all, a future non-ASCII character degrades to ``?`` instead
+    of becoming fatal again.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            # Detached or non-reconfigurable stream (a pytest capture, a pipe
+            # wrapper). Printing is still worth attempting.
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point.
 
@@ -197,6 +221,8 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Process exit code — non-zero when calibration finds a false positive.
     """
+    _force_utf8_output()
+
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("command_line", nargs="?", help="a command line to analyze")
     ap.add_argument("--calibrate", action="store_true", help="run the calibration corpus")

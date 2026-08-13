@@ -443,6 +443,44 @@ def render_ai_panel(run_results: dict, settings) -> None:
                 "treat it as unresolved, never as reassurance."
             )
 
+        # Structured findings from the WAF payload analyzer. The decoded payload
+        # and its chain go in verbatim, same reasoning as the command line above.
+        # The skipped-checks list matters more here than anywhere else: in
+        # Milestone A only decoding has run, so every verdict is Unknown for lack
+        # of a rule set rather than for lack of findings.
+        _waf = run_results.get("waf_analysis") or []
+        _waf_flags = run_results.get("waf_flags") or []
+        if _waf:
+            lines.append("WAF payload analysis (local, no provider lookup):")
+            for _entry in _waf[:10]:
+                _path = _entry.get("path") or "(no path)"
+                lines.append(f"  - Path: {_path}")
+                lines.append(f"    Payload: {_entry.get('raw_payload') or '(empty)'}")
+                if _entry.get("was_encoded"):
+                    lines.append(
+                        "    Decoded via "
+                        f"{' -> '.join(_entry.get('decode_chain') or [])}: "
+                        f"{_entry.get('decoded_payload') or ''}"
+                    )
+                if not _entry.get("parse_ok"):
+                    lines.append("    No payload followed the delimiter — nothing to analyse.")
+                elif not _entry.get("decode_ok"):
+                    lines.append("    Decoding did not complete; the payload above is partial.")
+                lines.append(f"    Verdict: {_entry.get('aggregated_verdict', 'Unknown')}")
+            if _waf_flags:
+                lines.append(f"  Findings:\n{flags_to_ai_context(_waf_flags)}")
+            _skipped = _waf[0].get("checks_skipped") if _waf else []
+            if _skipped:
+                lines.append(
+                    "  Checks NOT performed (do not imply these were cleared): "
+                    + "; ".join(_skipped)
+                )
+            lines.append(
+                "  Every verdict here is 'Unknown' because attack-pattern matching is not "
+                "implemented yet, NOT because the payloads were assessed and cleared. Do not "
+                "describe these payloads as benign, harmless, or checked."
+            )
+
         if section == "DESCRIPTION":
             host_ip_value = st.session_state.get("result_host_ip") or st.session_state.get("source_ip") or "N/A"
             raw_log_value = (st.session_state.get("result_raw_log") or "").strip()
@@ -616,7 +654,9 @@ def render_ai_panel(run_results: dict, settings) -> None:
         # folded in once here rather than inside the per-IOC loop above. They go
         # through the same evidence mapper as provider flags.
         _event_flags = (
-            (run_results.get("process_flags") or []) + (run_results.get("cmdline_flags") or [])
+            (run_results.get("process_flags") or [])
+            + (run_results.get("cmdline_flags") or [])
+            + (run_results.get("waf_flags") or [])
         )
         if _event_flags:
             _proc_summary = flags_summary_for_evidence(_event_flags)
@@ -859,6 +899,32 @@ def render_ai_panel(run_results: dict, settings) -> None:
             lines.append(f"   Evidence  : {row.get('Primary Evidence', '')}")
             lines.append(f"   Sources   : {row.get('Sources', '')}")
         lines.append("")
+
+        # ── Event analysis (process / command line / WAF payload) ─────────
+        # These rows live outside `rows` by design — they are per-event, not
+        # per-atomic-IOC — and this report used to read `rows` alone, so every
+        # local finding was dropped from the shared output. They are also not
+        # filtered by `selected_values`: that list holds IOC values, and an
+        # event finding has no IOC to be selected by.
+        _event_rows = (
+            list(st.session_state["run_results"].get("process_rows") or [])
+            + list(st.session_state["run_results"].get("waf_rows") or [])
+        )
+        if _event_rows:
+            lines.append("--- EVENT ANALYSIS (local, no provider lookup) ---")
+            for idx, row in enumerate(_event_rows, 1):
+                lines.append(f"{idx}. {row.get('Artifact', '')} [{row.get('Type', '')}]")
+                lines.append(
+                    f"   Verdict   : {row.get('Verdict', '')} "
+                    f"({row.get('Confidence', '')} confidence)"
+                )
+                lines.append(f"   Evidence  : {row.get('Primary Evidence', '')}")
+                lines.append(f"   Sources   : {row.get('Sources', '')}")
+            lines.append(
+                "NOTE: these findings come from local rule sets only. "
+                "'Unknown' means nothing matched locally, not that the artifact is clean."
+            )
+            lines.append("")
 
         # ── Threat Analysis ───────────────────────────────────────────────
         _ta_sum    = _build_analysis_summary(selected_values)
@@ -1150,6 +1216,8 @@ def render_ai_panel(run_results: dict, settings) -> None:
             _all_flags.append({**_pf, "ioc_value": _pf.get("label", ""), "ioc_type": "process"})
         for _cf in (run_results.get("cmdline_flags") or []):
             _all_flags.append({**_cf, "ioc_value": _cf.get("label", ""), "ioc_type": "command_line"})
+        for _wf in (run_results.get("waf_flags") or []):
+            _all_flags.append({**_wf, "ioc_value": _wf.get("label", ""), "ioc_type": "waf_payload"})
 
         _seen_fids: set[str] = set()
         _deduped_flags: list[dict] = []

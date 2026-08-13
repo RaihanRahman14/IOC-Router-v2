@@ -15,7 +15,7 @@
       "Deliberately narrower and more direct than Sigma — this is the fast first pass, not a rule engine.",
       "ids must avoid substrings reserved by ioc.flags.flags_summary_for_evidence (SIGMA, MALWARE, C2, RECON, PERSISTENCE, PRIVESC, LATERAL, SMB, RDP, EXPLOIT, CVE, PHISHING, RANSOMWARE, REGISTRY_MOD, MUTEX, PROCESS_INJECTION, MALWARE_DOWNLOAD, DOWNLOAD_SERVED). Emitted flag ids are CMDLINE_<id>.",
       "'-e' is deliberately absent as an encoded-command alias: too many unrelated tools use it. The deobfuscator still decodes it; only the flag is withheld.",
-      "Severities are starting values, not validated against real alert volume — see plan §7.",
+      "Severities are starting values, not validated against real alert volume — see the known-limits section.",
       "Prefer the list form over a bare binary name. A binary is not a technique: matching 'schtasks' alone labelled a read-only /query as 'Scheduled task created', and 'lsass' alone fired on monitoring tooling that merely names the process. Both were caught by the calibration corpus, not by review."
     ]
   },

@@ -21,6 +21,10 @@ from core.cmdline_analyzer import (
     analyze_command_line,
     to_rows as cmdline_analysis_rows,
 )
+from core.waf_payload_analyzer import (
+    analyze_waf_payload,
+    to_rows as waf_analysis_rows,
+)
 from core.cache import (
     vt_cached, urlscan_cached, abuse_cached, tf_cached,
     mb_cached, shodan_cached, dnsd_cached, ha_cached, mxtoolbox_cached,
@@ -36,7 +40,7 @@ from ui.components.output_renderer import (
 )
 from ui.components.ioc_card import render_ioc_cards
 from ui.components.ai_panel import render_ai_panel
-from ui.components.cve_panel import render_cve_panel
+from ui.components.cve_panel import fetch_cve_by_id, render_cve_panel
 from ui.components.bug_report import render_bug_report_button
 from ui.components.note_popup import render_note_button
 from ui.components.timing_popup import render_timing_button
@@ -1102,8 +1106,38 @@ def _has_process_input() -> bool:
 
 # ── Enrichment execution (triggered from Input tab Run button) ───────────────
 if run_requested and (raw.strip() or _has_process_input()):
-    items = parsed_input_items
-    if not items and not _has_process_input():
+    # ── WAF payload partition (docs/waf_payload_analyzer.md D6) ────────
+    # WAF payloads arrive through the same textarea as every other IOC, so they
+    # are inside parsed_input_items by construction. They must come out before
+    # anything downstream sees them: summarize_results() emits one row and one
+    # session-summary count per item, and a payload has no provider data to put
+    # in either. Provider dispatch is already safe on its own — _IOC_TYPE_TO_GROUP
+    # has no entry for the type, so allowed_by_type resolves to an empty set and
+    # no lookup can fire — but the rows and the counts are not.
+    _waf_items = [i for i in parsed_input_items if i.type == "waf_payload"]
+    items = [i for i in parsed_input_items if i.type != "waf_payload"]
+    # Local analysis, no network. Runs on the partitioned list only, so a
+    # payload can never be handed to a provider even by accident.
+    _waf_results = [
+        analyze_waf_payload(i.waf) for i in _waf_items if i.waf is not None
+    ]
+    # NVD/KEV enrichment for a matched CVE fingerprint happens here, not in the
+    # analyzer: that module performs no network I/O, and its verdict must never
+    # depend on a lookup succeeding (docs/waf_payload_analyzer.md D4). A failed
+    # call leaves ``nvd``/``kev`` as None, which the UI renders as "not
+    # retrieved" — never as "not known-exploited".
+    _waf_cve_cache: dict[str, dict | None] = {}
+    for _wr in _waf_results:
+        _fp = _wr.cve_fingerprint_match
+        if not _fp:
+            continue
+        _cve_id = _fp["cve"]
+        if _cve_id not in _waf_cve_cache:
+            _waf_cve_cache[_cve_id] = fetch_cve_by_id(_cve_id)
+        _record = _waf_cve_cache[_cve_id]
+        _fp["nvd"] = _record
+        _fp["kev"] = bool(_record.get("isKev")) if _record else None
+    if not items and not _waf_items and not _has_process_input():
         st.info("Tidak ada IOC valid setelah parsing.")
     else:
         # ── Process / filepath analysis (local, no network) ───────────────────
@@ -1250,6 +1284,12 @@ if run_requested and (raw.strip() or _has_process_input()):
             # Kept out of "rows": that list is indexed per-artifact by the IOC
             # cards and counted by the session summary, both of which assume one
             # entry per atomic IOC.
+            # Partitioned out of ``items`` above (D6). Rows are kept separate
+            # from ``rows`` for the same reason the process module keeps its
+            # own: three consumers of that list assume one entry per atomic IOC.
+            "waf_analysis": [dataclasses.asdict(r) for r in _waf_results],
+            "waf_flags": [f for r in _waf_results for f in r.flags],
+            "waf_rows": [row for r in _waf_results for row in waf_analysis_rows(r)],
             "process_analysis": dataclasses.asdict(_proc_result),
             "process_flags": _proc_result.flags,
             # Command-line rows share the process rows' column schema exactly

@@ -66,7 +66,7 @@ _COMMON_APP_KEYWORDS: list[str] = [
 # Short/ambiguous tokens — matched against vendor+product only to avoid false positives
 # (e.g. "padding oracle" in crypto CVEs, "runs on Linux", "azure" as a color).
 _COMMON_APP_VENDOR_ONLY: list[str] = [
-    "hp", "edge",
+    "hp", "edge", "IBM",
     "aws", "azure", "f5", "linux", "oracle", "php", "mysql",
 ]
 
@@ -712,6 +712,61 @@ def _fetch_nvd_page(pub_start: str, pub_end: str, start_index: int) -> dict:
     except requests.RequestException as exc:
         logger.error("NVD page fetch failed (startIndex=%d): %s", start_index, exc)
         return {"items": [], "total": 0, "error": True}
+
+
+def fetch_cve_by_id(cve_id: str) -> dict | None:
+    """Look up one CVE by identifier, with its CISA KEV status.
+
+    Added for the WAF payload module's Layer 4 (``docs/waf_payload_analyzer.md``
+    D4). The briefing assumed this panel could already be reused for that, but
+    everything else here fetches by **publication-date window** — the newest few
+    hours of CVEs. Every CVE a curated fingerprint can match is years old by
+    definition, so none of them would ever appear. Hence one narrow addition
+    rather than a new provider.
+
+    ``_fetch_kev_data`` is reused unchanged: it already returns the whole KEV
+    catalogue keyed by CVE ID, so "is this known-exploited?" costs nothing extra.
+
+    **Failure is not fatal to a verdict.** A fingerprint match is a local,
+    offline result; this call only decorates it. Returning None must leave the
+    caller reporting "not retrieved", never "not known-exploited".
+
+    Args:
+        cve_id: A CVE identifier, e.g. ``"CVE-2021-44228"``.
+
+    Returns:
+        A display-ready CVE dict as produced by :func:`_parse_nvd_item`, or None
+        when the identifier is malformed, unknown, or the lookup failed.
+    """
+    identifier = (cve_id or "").strip().upper()
+    if not re.fullmatch(r"CVE-\d{4}-\d{4,}", identifier):
+        logger.warning("refusing malformed CVE id: %r", cve_id)
+        return None
+
+    headers = {"Accept": "application/json"}
+    if _NVD_API_KEY:
+        headers["apiKey"] = _NVD_API_KEY
+    try:
+        resp = requests.get(
+            NVD_CVE_URL,
+            params={"cveId": identifier},
+            headers=headers,
+            timeout=20,
+        )
+        resp.raise_for_status()
+        items = resp.json().get("vulnerabilities", [])
+    except (requests.RequestException, ValueError) as exc:
+        logger.error("NVD lookup for %s failed: %s", identifier, exc)
+        return None
+
+    if not items:
+        return None
+
+    try:
+        return _parse_nvd_item(items[0], _fetch_kev_data(), {})
+    except (KeyError, TypeError, ValueError) as exc:
+        logger.error("NVD response for %s could not be parsed: %s", identifier, exc)
+        return None
 
 
 # ── Session state helpers ─────────────────────────────────────────────────────

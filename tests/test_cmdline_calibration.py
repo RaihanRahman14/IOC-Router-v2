@@ -76,7 +76,7 @@ class TestCalibrationGate(unittest.TestCase):
         )
 
     def test_malicious_verdicts_are_always_corroborated(self) -> None:
-        # Milestone B lifted the ceiling, but not the rule that guards it: every
+        # Layer 5 can lift the ceiling, but not the rule that guards it: every
         # Malicious verdict must rest on a second, independent source. Asserted
         # across the whole corpus rather than on a single crafted case.
         from core.cmdline_analyzer import (

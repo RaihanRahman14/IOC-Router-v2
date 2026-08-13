@@ -1,6 +1,6 @@
 """Command-line deobfuscation — Layer 2. Pure transforms, never execution.
 
-Implements ``docs/cmdline_analyzer_plan.md`` D2. The briefing proposed
+Implements ``docs/cmdline_analyzer.md`` D2. The briefing proposed
 **PowerDecode** for the string-obfuscation cases; that tool recovers each stage
 by *running* the sample, which is why its own documentation calls for an
 isolated VM. Doing that here would execute attacker-supplied PowerShell on the
@@ -22,6 +22,14 @@ Deliberately **not** covered: anything needing variable state, such as
 ``$env:ComSpec[4,15]-join''``. Resolving that means modelling a variable store,
 which is the first step toward writing an interpreter.
 
+The last group above — the encodings any text can carry — now lives in
+:mod:`core.decode_common`, shared with the WAF payload module
+(``docs/waf_payload_analyzer.md`` D2). What stays here is what only a
+PowerShell or cmd.exe command line can mean: the ``-EncodedCommand`` flag family
+and the four string-folding tricks. :data:`_PROFILE` carries this module's
+calibration of the shared transforms, and is the reason sharing them costs
+nothing: the WAF module's payloads need looser thresholds, and it passes its own.
+
 Decoding is iterative to a fixed point under two hard caps
 (:data:`MAX_DECODE_ROUNDS`, :data:`MAX_DECODED_BYTES`) so that a layered or
 self-expanding payload cannot hang a Streamlit rerun. Every applied transform is
@@ -30,43 +38,56 @@ its source is worse than no decode at all.
 """
 from __future__ import annotations
 
-import base64
-import binascii
+import functools
 import logging
 import re
-import urllib.parse
 from dataclasses import dataclass, field
+
+from core.decode_common import (
+    LABEL_BASE64,
+    LABEL_ESCAPES,
+    LABEL_HTML_ENTITIES,
+    LABEL_PERCENT,
+    DecodeProfile,
+    Transform,
+    b64_decode_text,
+    decode_base64_inline,
+    decode_escapes,
+    decode_html_entities,
+    decode_percent,
+    run_pipeline,
+)
 
 logger = logging.getLogger(__name__)
 
+# How the shared transforms are calibrated for a Windows command line. Every
+# value here is a deliberate difference from what a web payload would want —
+# see :class:`core.decode_common.DecodeProfile` for the reasoning per field.
+_PROFILE = DecodeProfile(
+    min_encoding_hits=2,
+    min_b64_inline=24,
+    b64_require_command_shape=True,
+    b64_utf16_first=True,
+    max_rounds=5,
+    max_bytes=1_000_000,
+)
+
 # Iteration guards. A layered payload legitimately needs a handful of passes;
 # anything beyond that is a decode bomb or a fixed-point bug.
-MAX_DECODE_ROUNDS = 5
-MAX_DECODED_BYTES = 1_000_000
+MAX_DECODE_ROUNDS = _PROFILE.max_rounds
+MAX_DECODED_BYTES = _PROFILE.max_bytes
 
 # Shortest run treated as a base64 payload. Below this, ordinary words are valid
-# base64 and decode to convincing-looking noise.
+# base64 and decode to convincing-looking noise. The flag tier can afford a lower
+# bar than the inline tier: an ``-enc`` argument is a payload by declaration.
 MIN_B64_FLAG_ARG = 20
-MIN_B64_INLINE = 24
-
-# Share of characters that must be printable for a decode to be believed.
-_PRINTABLE_RATIO = 0.90
-
-# Markers that distinguish a decoded *command* from a lucky-looking accident.
-_COMMAND_MARKERS = (" ", ".", "\\", "/", ":", "(", "-")
-_MIN_COMMAND_MARKERS = 2
-
-# How many occurrences an encoding needs before it is believed. One "%20" in a
-# URL is not percent-obfuscation; eight in a row is.
-_MIN_ENCODING_HITS = 2
+MIN_B64_INLINE = _PROFILE.min_b64_inline
 
 # PowerShell's -EncodedCommand and its accepted abbreviations.
 _ENC_FLAG_RE = re.compile(
     r"(?:(?<=\s)|^)-(?:e|en|enc|ec|encoded|encodedcommand|encodedarguments)\s+([^\s\"']+)",
     re.IGNORECASE,
 )
-_B64_RUN_RE = re.compile(r"[A-Za-z0-9+/]{%d,}={0,2}" % MIN_B64_INLINE)
-_B64_CHARS_RE = re.compile(r"^[A-Za-z0-9+/]+={0,2}$")
 
 _BACKTICK_IN_WORD_RE = re.compile(r"(?<=\w)`(?=\w)")
 _CHAR_CODE_RE = re.compile(r"\[char\]\s*(\d{1,7})", re.IGNORECASE)
@@ -79,11 +100,6 @@ _FORMAT_OP_RE = re.compile(
 )
 _FORMAT_ARG_RE = re.compile(r"['\"]([^'\"]*)['\"]")
 _FORMAT_SLOT_RE = re.compile(r"\{(\d+)\}")
-
-_PERCENT_RE = re.compile(r"%[0-9A-Fa-f]{2}")
-_HTML_ENTITY_RE = re.compile(r"&#(?:x([0-9A-Fa-f]+)|(\d+));")
-_UNICODE_ESCAPE_RE = re.compile(r"\\u([0-9A-Fa-f]{4})")
-_HEX_ESCAPE_RE = re.compile(r"\\x([0-9A-Fa-f]{2})")
 
 
 @dataclass
@@ -108,66 +124,13 @@ class DeobfuscationResult:
     truncated: bool = False
 
 
-def _looks_like_text(decoded: str) -> bool:
-    """Report whether decoded bytes plausibly represent human-readable text."""
-    if not decoded:
-        return False
-    printable = sum(1 for c in decoded if c.isprintable() or c in "\r\n\t")
-    return printable / len(decoded) >= _PRINTABLE_RATIO
-
-
-def _b64_decode_text(blob: str, *, require_command_shape: bool) -> str | None:
-    """Decode a base64 blob to text, or return None if it is not text.
-
-    PowerShell's ``-EncodedCommand`` payloads are UTF-16LE; decoding those as
-    UTF-8 yields NUL-interleaved output that silently fails every downstream
-    keyword and Sigma match, so UTF-16LE is tried first whenever the byte
-    pattern suggests it.
-
-    Args:
-        blob: Candidate base64 string.
-        require_command_shape: When True (opportunistic inline scan), the result
-            must also look like a command rather than merely being printable.
-
-    Returns:
-        Decoded text, or None if the blob is not valid base64 or not text.
-    """
-    candidate = blob.strip()
-    if not _B64_CHARS_RE.match(candidate):
-        return None
-
-    padded = candidate + "=" * (-len(candidate) % 4)
-    try:
-        raw = base64.b64decode(padded, validate=True)
-    except (binascii.Error, ValueError):
-        return None
-    if not raw:
-        return None
-
-    utf16_first = b"\x00" in raw and len(raw) % 2 == 0
-    orders = ["utf-16-le", "utf-8"] if utf16_first else ["utf-8", "utf-16-le"]
-    for encoding in orders:
-        try:
-            decoded = raw.decode(encoding)
-        except (UnicodeDecodeError, ValueError):
-            continue
-        if not _looks_like_text(decoded):
-            continue
-        if require_command_shape:
-            hits = sum(1 for marker in _COMMAND_MARKERS if marker in decoded)
-            if hits < _MIN_COMMAND_MARKERS:
-                continue
-        return decoded
-
-    return None
-
-
 def _decode_base64(text: str) -> tuple[str, bool]:
     """Decode base64 payloads in place, keeping the surrounding command intact.
 
     Two tiers, because confidence differs: an argument to an ``-enc``-family
-    flag is a payload by declaration, while a long base64-looking run anywhere
-    else is only a guess and has to clear a higher bar.
+    flag is a payload by declaration and only this module can recognise one,
+    while a long base64-looking run anywhere else is a guess and is handed to the
+    shared opportunistic decoder under this module's profile.
 
     Args:
         text: Current working text.
@@ -182,7 +145,11 @@ def _decode_base64(text: str) -> tuple[str, bool]:
         blob = match.group(1)
         if len(blob) < MIN_B64_FLAG_ARG:
             return match.group(0)
-        decoded = _b64_decode_text(blob, require_command_shape=False)
+        decoded = b64_decode_text(
+            blob,
+            require_command_shape=False,
+            utf16_first=_PROFILE.b64_utf16_first,
+        )
         if decoded is None:
             return match.group(0)
         changed = True
@@ -192,16 +159,7 @@ def _decode_base64(text: str) -> tuple[str, bool]:
     if changed:
         return text, True
 
-    def _replace_inline(match: re.Match[str]) -> str:
-        nonlocal changed
-        blob = match.group(0)
-        decoded = _b64_decode_text(blob, require_command_shape=True)
-        if decoded is None:
-            return blob
-        changed = True
-        return decoded
-
-    return _B64_RUN_RE.sub(_replace_inline, text), changed
+    return decode_base64_inline(text, _PROFILE)
 
 
 def _fold_backticks(text: str) -> tuple[str, bool]:
@@ -283,61 +241,21 @@ def _fold_format_operator(text: str) -> tuple[str, bool]:
     return folded, folded != text
 
 
-def _decode_percent(text: str) -> tuple[str, bool]:
-    """Percent-decode, but only when the encoding is used more than incidentally.
-
-    ``%SystemRoot%`` is not percent-encoding and a single ``%20`` in a URL is not
-    obfuscation; requiring several valid sequences keeps both out.
-    """
-    if len(_PERCENT_RE.findall(text)) < _MIN_ENCODING_HITS:
-        return text, False
-    decoded = urllib.parse.unquote(text)
-    return decoded, decoded != text
-
-
-def _decode_html_entities(text: str) -> tuple[str, bool]:
-    """Decode numeric HTML entities only.
-
-    Named entities are excluded on purpose: ``html.unescape`` would turn the
-    ``&copy`` in ``dir&copy a b`` into a copyright sign.
-    """
-    if len(_HTML_ENTITY_RE.findall(text)) < _MIN_ENCODING_HITS:
-        return text, False
-
-    def _replace(match: re.Match[str]) -> str:
-        raw_hex, raw_dec = match.group(1), match.group(2)
-        try:
-            return chr(int(raw_hex, 16) if raw_hex else int(raw_dec))
-        except (ValueError, OverflowError):
-            return match.group(0)
-
-    decoded = _HTML_ENTITY_RE.sub(_replace, text)
-    return decoded, decoded != text
-
-
-def _decode_escapes(text: str) -> tuple[str, bool]:
-    """Decode ``\\uXXXX`` and ``\\xNN`` escape sequences."""
-    decoded = text
-    for pattern, base in ((_UNICODE_ESCAPE_RE, 16), (_HEX_ESCAPE_RE, 16)):
-        if len(pattern.findall(decoded)) < _MIN_ENCODING_HITS:
-            continue
-        decoded = pattern.sub(lambda m: chr(int(m.group(1), base)), decoded)
-    return decoded, decoded != text
-
-
 # Transform order within a round. Character-level folds run before
 # concatenation so that ``[char]99+[char]97`` collapses in a single pass, and
-# base64 runs last so it sees an already-deobfuscated blob.
-_TRANSFORMS: tuple[tuple[str, object], ...] = (
+# base64 runs last so it sees an already-deobfuscated blob. The four shared
+# transforms keep the labels :mod:`core.decode_common` defines, so a decode chain
+# reads the same whichever module produced it.
+_TRANSFORMS: tuple[tuple[str, Transform], ...] = (
     ("backtick-split token", _fold_backticks),
     ("[char[]] code array", _fold_char_arrays),
     ("[char] code", _fold_char_codes),
     ("quoted string concatenation", _fold_concatenation),
     ("format operator (-f)", _fold_format_operator),
-    ("percent-encoding", _decode_percent),
-    ("HTML numeric entities", _decode_html_entities),
-    ("unicode/hex escapes", _decode_escapes),
-    ("base64 payload", _decode_base64),
+    (LABEL_PERCENT, functools.partial(decode_percent, profile=_PROFILE)),
+    (LABEL_HTML_ENTITIES, functools.partial(decode_html_entities, profile=_PROFILE)),
+    (LABEL_ESCAPES, functools.partial(decode_escapes, profile=_PROFILE)),
+    (LABEL_BASE64, _decode_base64),
 )
 
 
@@ -355,33 +273,16 @@ def deobfuscate(command_line: str | None) -> DeobfuscationResult:
     if not command_line or not command_line.strip():
         return DeobfuscationResult(original=command_line or "")
 
-    result = DeobfuscationResult(original=command_line)
-    text = command_line
+    run = run_pipeline(command_line, _TRANSFORMS, _PROFILE)
 
-    for round_index in range(MAX_DECODE_ROUNDS):
-        round_changed = False
-        for label, transform in _TRANSFORMS:
-            try:
-                text, changed = transform(text)  # type: ignore[operator]
-            except (re.error, ValueError, OverflowError, MemoryError) as exc:
-                logger.warning("deobfuscation step %r failed: %s", label, exc)
-                continue
-            if changed:
-                round_changed = True
-                result.decode_chain.append(label)
-
-        if len(text) > MAX_DECODED_BYTES:
-            text = text[:MAX_DECODED_BYTES]
-            result.truncated = True
-            result.rounds = round_index + 1
-            break
-
-        if not round_changed:
-            break
-        result.rounds = round_index + 1
-
-    if result.decode_chain:
+    result = DeobfuscationResult(
+        original=command_line,
+        decode_chain=run.chain,
+        rounds=run.rounds,
+        truncated=run.truncated,
+    )
+    if run.chain:
         result.was_obfuscated = True
-        result.decoded_command = text
+        result.decoded_command = run.text
 
     return result

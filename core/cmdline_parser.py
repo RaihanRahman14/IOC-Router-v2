@@ -1,6 +1,6 @@
 """Windows command-line tokenizer and interpreter detection — Layer 1.
 
-Implements ``docs/cmdline_analyzer_plan.md`` D1: a pure-Python tokenizer for both
+Implements ``docs/cmdline_analyzer.md`` D1: a pure-Python tokenizer for both
 cmd.exe and PowerShell, replacing the briefing's suggestion of shelling out to
 ``System.Management.Automation.Language.Parser``. That parser is not importable
 from Python — using it means spawning ``powershell.exe`` per analysis, which
@@ -486,7 +486,7 @@ def parse_command_line(command_line: str | None) -> ParseResult:
     """Parse a submitted command line into structured commands.
 
     This is the module's entry point and the source of the analyst-facing
-    structural breakdown (briefing §7). It never raises on malformed input —
+    structural breakdown (docs/cmdline_analyzer.md). It never raises on malformed input —
     a command line that cannot be parsed returns ``parse_ok=False`` with
     whatever tokens were recoverable, which the plan (D10) routes to ``Unknown``
     rather than to a silently clean result.

@@ -96,6 +96,8 @@ Source: [providers/path_prober.py](providers/path_prober.py) · UI: [ui/componen
 
 Extracts 100+ granular threat flags from provider responses, each labeled with a severity level (CRITICAL, HIGH, MEDIUM, LOW) and mapped to MITRE ATT&CK technique IDs. Flags are grouped by severity in collapsible sections, making it easy to triage the most critical indicators first.
 
+Each MITRE technique id on a flag is a direct link to its ATT&CK page, and the indicator badge links to the reporting provider's page for that IOC. **Indicators are rendered defanged** (`hxxp://198[.]51[.]100[.]7/a.ps1`) — a live link to attacker infrastructure sitting in a triage UI is one stray click away from a request nobody authorised.
+
 <p align="center">
   <img src="image/Threat Analysis 2.jpeg" width="60%">
 </p>
@@ -115,6 +117,95 @@ Every IP enriched via **Shodan** or **VirusTotal** is auto-classified by its hos
 **Hyperscaler refinement**: AWS / GCP / Azure share one ASN between CDN and compute services. AWS IPs are refined against the published [`ip-ranges.json`](https://ip-ranges.amazonaws.com/ip-ranges.json) feed (cached for 24h) — addresses in CloudFront subnets are classified as **BP**, everything else on AS16509 falls to **FP** (EC2). Known Google Public DNS IPs (`8.8.8.8` / `8.8.4.4`) are pinned to **BP**; other AS15169 / AS8075 addresses default to **FP** (compute).
 
 Source: [core/infra_classifier.py](core/infra_classifier.py) · Tests: [tests/test_infra_classifier.py](tests/test_infra_classifier.py)
+
+---
+
+### 4c. Endpoint Context Analysis — Process, Filepath & Command Line
+
+Alerts rarely arrive as a bare indicator. The **Context** panel accepts the
+endpoint fields an EDR alert actually carries — Device Action, Command Line,
+File Path, Parent Process, Child Process — and two local modules analyse them
+against datasets shipped in the repo. **Neither performs any network I/O**:
+they are pure functions of their input plus `core/data/`, so they cost no API
+budget and work with every provider key absent.
+
+Every field is independent and optional. A run can proceed on endpoint context
+alone, with the IOC box empty.
+
+| Layer | Question answered | Dataset |
+|---|---|---|
+| **Identity** | Is this binary really what its name claims? Path-baseline whitelist plus Levenshtein typosquat detection (`scvhost.exe` vs `svchost.exe`), including extension swaps | `known_system_processes.json` (66) |
+| **Dual-use** | Is the binary documented as abusable? | `lolbas_binaries.json` (240) |
+| **Pairing** | Is this parent→child combination known-suspicious? Sigma-derived | `sigma_parent_child_pairs.json` (1,874) |
+| **Command structure** | What does this command line actually *do*? Tokenizer for both cmd.exe and PowerShell | `cmd_internal_commands.json` (45) |
+| **Deobfuscation** | What does it decode to? | — |
+| **Suspicious switches** | Does it use known evasion switches? | `suspicious_cmdline_keywords.json` (34) |
+| **Argument confirmation** | Do the arguments match a *documented* LOLBAS abuse pattern, not just a dual-use binary? | `lolbas_commands.json` (105 binaries / 165 patterns) |
+| **Detection rules** | Does it match a Sigma CommandLine rule? | `sigma_cmdline_patterns.json` (1,409) |
+| **Entropy** | Unrecognised encoding nothing else caught? | — |
+
+#### Command line breakdown
+
+Rendered between the ticket-note output and the per-IOC cards: the submitted
+line verbatim, the detected interpreter, the decoded form with the exact
+transform chain that produced it, and the parsed base command / flags /
+arguments.
+
+Deobfuscation is **pure string rewriting — nothing is ever executed**. It folds
+base64 (`-EncodedCommand`, decoded UTF-16LE first), quoted-string concatenation
+`('c'+'a'+'l'+'c')`, `[char]` codes, the `-f` format operator, intra-word
+backticks, percent-encoding, HTML entities and `\uXXXX` escapes — iterating to a
+fixed point under hard round and size caps. Every applied step is recorded, so a
+decoded string can always be traced back to its source.
+
+Indicators recovered from a decoded payload (URLs, IPs, hashes) **join the normal
+enrichment pipeline automatically** — pasting one encoded one-liner yields a
+fully enriched URL row with no second analyst action. URLs found this way are
+withheld from URLScan submission: publishing an attacker's URL is an outbound
+disclosure the analyst did not ask for.
+
+#### Verdicts and the corroboration rule
+
+Both modules emit `_flag()`-shaped findings that feed the existing 100+ flag
+system, Threat Analysis evidence, and the ticket narrative. Neither ever returns
+**Benign** — absence of evidence is `Unknown`.
+
+`Malicious` requires **two independent sources**, per the project's aggregation
+rule. Suspicious switches and obfuscation together count as one; the second must
+be a Sigma rule match or a confirmed LOLBAS abuse pattern. A Sigma rule whose
+*full* original condition is satisfied across both modules in one session — the
+process half supplying `Image`/`ParentImage`, the command-line half supplying
+`CommandLine` — is treated as exact rather than approximate.
+
+#### Calibration
+
+Both modules ship a corpus and a regression gate, because a detection module
+tuned only for recall looks excellent until analysts start ignoring it.
+
+```bash
+python core/scripts/try_cmdline_analyzer.py --calibrate
+python core/scripts/try_cmdline_analyzer.py "powershell -nop -w hidden -enc SQBFAFgA..."
+```
+
+| Corpus | Known-bad | Known-good | Current result |
+|---|---|---|---|
+| `tests/fixtures/cmdline_corpus.json` | 30 | 32 | 30/30 detected, 0 unexpected flags |
+| `tests/fixtures/process_corpus.json` | 14 | 28 | 14/14 as recorded, 2 documented defects |
+
+> The known-good halves are hand-written from ordinary Windows administration,
+> packaging and CI activity — **not** from any particular estate. Local habits
+> differ, so the meaningful validation step is adding real command lines from
+> your own closed-as-false-positive alerts to the corpus and re-running the gate.
+> Four benign samples (SCCM and Intune wrappers, an administrator's
+> `schtasks /create`, a `Compress-Archive` backup) legitimately reach
+> `Suspicious`; they are declared in the corpus rather than suppressed.
+
+Source: [core/process_analyzer.py](core/process_analyzer.py) ·
+[core/cmdline_analyzer.py](core/cmdline_analyzer.py) ·
+[core/cmdline_parser.py](core/cmdline_parser.py) ·
+[core/cmdline_deobfuscator.py](core/cmdline_deobfuscator.py) ·
+Plans: [docs/process_analyzer.md](docs/process_analyzer.md) ·
+[docs/cmdline_analyzer.md](docs/cmdline_analyzer.md)
 
 ---
 
@@ -177,7 +268,9 @@ Resolves IP addresses to country, city, ISP, and ASN, and plots them on an inter
 
 ### 8. AI Ticket Generation
 
-Auto-generates a human-readable incident narrative using Google Gemini or Groq, grounded in the extracted flags, raw provider logs, and analyst-supplied context (alert name, host, host IP, detection time, device action, parent/child process, and free-text context). The AI provider and model can be selected via the Options panel before running the analysis.
+Auto-generates a human-readable incident narrative using Google Gemini or Groq, grounded in the extracted flags, raw provider logs, and analyst-supplied context (alert name, host, host IP, detection time, device action, command line, file path, parent/child process, and free-text context). The AI provider and model can be selected via the Options panel before running the analysis.
+
+The prompt carries the [endpoint analysis](#4c-endpoint-context-analysis--process-filepath--command-line) findings verbatim — including the decoded command line and the transform chain that produced it — alongside an explicit **"checks NOT performed"** list, so the narrative never implies a field was cleared when the analyst simply left it blank.
 
 Additional AI panel capabilities:
 
@@ -285,13 +378,17 @@ Config: [.streamlit/config.toml](.streamlit/config.toml)
 ## Analysis Pipeline
 
 ```
-Input IOCs
+Input IOCs  +  Endpoint context (command line, filepath, parent/child process)
     ↓
 [Parser]          — type detection, normalization, deduplication
+    ↓
+[Local Analysis]  — process/filepath identity + command-line decode & matching
+                    (no network; emits flags and new IOC candidates)
     ↓
 [Mode Filter]     — Triage (full) / Lookup (minimal) + Triage Speed (Fast/Detailed)
     ↓
 [Provider Router] — each IOC is sent only to relevant providers
+                    (including indicators recovered from a decoded payload)
     ↓
 [Flag Extraction] — 100+ threat flags extracted, severity-rated, MITRE-mapped
     ↓
@@ -329,11 +426,33 @@ ioc-router/
 ├── .streamlit/
 │   └── config.toml               # ForwardMsg cache tuning + WS compression for Cloud stability
 │
-├── core/                         # Orchestration & shared utilities
+├── core/                         # Orchestration, local analysis & shared utilities
 │   ├── orchestrator.py           # Async provider dispatch & result aggregation
 │   ├── cache.py                  # In-memory result caching
 │   ├── geo.py                    # IP geolocation resolution
-│   └── infra_classifier.py       # ASN-based infra classification (BP / FP / HIGH_RISK)
+│   ├── infra_classifier.py       # ASN-based infra classification (BP / FP / HIGH_RISK)
+│   ├── process_analyzer.py       # Process/filepath identity, LOLBAS, Sigma pairing
+│   ├── lolbas_lookup.py          # LOLBAS dual-use lookup + abuse-command patterns
+│   ├── cmdline_parser.py         # cmd.exe + PowerShell tokenizer, interpreter detection
+│   ├── cmdline_deobfuscator.py   # Command-line decode (pure transforms, never executes)
+│   ├── decode_common.py          # Encoding primitives shared across analysis modules
+│   ├── cmdline_analyzer.py       # Keywords, entropy, Sigma/LOLBAS matching, verdict
+│   │
+│   ├── data/                     # Offline-generated datasets (no runtime fetches)
+│   │   ├── known_system_processes.json    # Path-baseline whitelist (66)
+│   │   ├── lolbas_binaries.json           # Dual-use binaries (240)
+│   │   ├── lolbas_commands.json           # Documented abuse patterns (105 / 165)
+│   │   ├── sigma_parent_child_pairs.json  # Parent→child blocklist (1,874)
+│   │   ├── sigma_cmdline_patterns.json    # CommandLine rule patterns (1,409)
+│   │   ├── suspicious_cmdline_keywords.json  # Curated switch table (34)
+│   │   └── cmd_internal_commands.json     # cmd.exe builtins (45)
+│   │
+│   └── scripts/                  # Offline dataset regeneration & manual harnesses
+│       ├── extract_lolbas.py                  # LOLBAS → binaries + abuse commands
+│       ├── extract_sigma_pairs.py             # SigmaHQ → parent/child pairs
+│       ├── extract_sigma_cmdline_patterns.py  # SigmaHQ → CommandLine patterns
+│       ├── try_process_analyzer.py            # Ad-hoc process/filepath analysis
+│       └── try_cmdline_analyzer.py            # Ad-hoc analysis + `--calibrate`
 │
 ├── ioc/                          # IOC processing pipeline
 │   ├── parser.py                 # Type detection, normalization, deduplication
@@ -384,7 +503,7 @@ ioc-router/
 │       ├── map.py                # Interactive OSM map builder
 │       └── output_renderer.py    # Notes / Table / JSON / Shareable output
 │
-├── docs/                         # Provider integration documentation
+├── docs/                         # Provider integration & module design documentation
 │   ├── virustotal.md
 │   ├── urlscan.md
 │   ├── abuseipdb.md
@@ -397,7 +516,11 @@ ioc-router/
 │   ├── whoxy.md
 │   ├── ransomware_live.md
 │   ├── gemini.md
-│   └── groq.md
+│   ├── groq.md
+│   ├── threat_state_level_verdict.md      # Threat state / level / verdict reference
+│   ├── process_analyzer.md                # How the process/filepath module works
+│   ├── cmdline_analyzer.md                # How the command-line module works
+│   └── waf_payload_analyzer_plan.md       # In progress — parser landed, not yet wired in
 │
 ├── image/                        # Screenshots for README documentation
 │   ├── Homepage.jpeg
@@ -413,17 +536,36 @@ ioc-router/
 │   ├── multiple IOC results.jpeg
 │   └── multiple provider output.jpeg
 │
-└── tests/
+└── tests/                        # 533 tests — `python -m pytest`
+    ├── fixtures/
+    │   ├── cmdline_corpus.json   # Calibration corpus: 30 known-bad / 32 known-good
+    │   └── process_corpus.json   # Calibration corpus: 14 known-bad / 28 known-good
     ├── test_abuseipdb_processing.py
+    ├── test_cmdline_analyzer.py
+    ├── test_cmdline_calibration.py      # False-positive regression gate
+    ├── test_cmdline_deobfuscator.py
+    ├── test_cmdline_integration.py
+    ├── test_cmdline_lolbas_layer4.py
+    ├── test_cmdline_parser.py
+    ├── test_cmdline_sigma_layer5.py
     ├── test_cve_panel_copy.py
+    ├── test_decode_common.py
+    ├── test_defang_display.py
     ├── test_dnsdumpster_processing.py
     ├── test_hybrid_analysis_provider.py
     ├── test_infra_classifier.py
+    ├── test_lolbas_lookup.py
     ├── test_malwarebazaar_provider.py
+    ├── test_parser_schemeless_url.py
     ├── test_path_prober.py
+    ├── test_process_analyzer.py
+    ├── test_process_calibration.py      # False-positive regression gate
+    ├── test_process_integration.py
     ├── test_shodan_internetdb.py
+    ├── test_sigma_pairs.py
     ├── test_threat_analysis.py
-    └── test_urlscan_processing.py
+    ├── test_urlscan_processing.py
+    └── test_virustotal_url_scheme.py
 ```
 
 ---
@@ -488,3 +630,45 @@ The app will be available at:
 ```
 http://localhost:8501
 ```
+
+---
+
+## Development
+
+### Tests
+
+```bash
+python -m pytest
+```
+
+Two of these are calibration gates rather than unit tests — they assert that the
+endpoint-analysis modules do not fire on ordinary administrative activity. They
+are the ones to watch when tuning any detection threshold.
+
+### Regenerating the local datasets
+
+The datasets under `core/data/` are generated **offline** and committed; the app
+never fetches them at runtime. Re-run these quarterly, or whenever the upstream
+projects publish notable additions, and commit the result.
+
+```bash
+pip install pyyaml          # script-only — deliberately NOT in requirements.txt
+
+python core/scripts/extract_lolbas.py                            # → lolbas_binaries + lolbas_commands
+python core/scripts/extract_sigma_pairs.py --download            # → sigma_parent_child_pairs
+python core/scripts/extract_sigma_cmdline_patterns.py --download # → sigma_cmdline_patterns
+```
+
+Add `--dry-run` to any of them to report counts without writing. Sigma is never
+evaluated at runtime — no `pySigma`, no rule engine; the app only reads the
+generated JSON.
+
+**Upstream sources and licences:** [SigmaHQ](https://github.com/SigmaHQ/sigma)
+(Detection Rule License 1.1) · [LOLBAS](https://github.com/LOLBAS-Project/LOLBAS)
+(CC BY 4.0).
+
+> Both Sigma extractions are partial by design: each keeps the conditions it can
+> evaluate and drops the rest, recording what was dropped on every record. A
+> pattern that no longer discriminates once its siblings are removed is not
+> shipped at all — the reasoning, and the measurements behind it, are in
+> [docs/cmdline_analyzer.md](docs/cmdline_analyzer.md).
