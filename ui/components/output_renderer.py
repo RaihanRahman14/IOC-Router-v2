@@ -227,7 +227,7 @@ def render_cmdline_breakdown(analysis: dict) -> None:
     if not commands:
         return
 
-    with st.expander("⌨️ Command line breakdown", expanded=True):
+    with st.expander("⌨️ Command line breakdown", expanded=False):
         # The submitted line comes first: everything below is a claim about it,
         # and the analyst needs to see what was actually analysed before reading
         # any of them — especially when decoding rewrote it.
@@ -279,6 +279,145 @@ def render_cmdline_breakdown(analysis: dict) -> None:
             )
 
 
+def _waf_tab_labels(analysis: list[dict]) -> list[str]:
+    """Build unique tab labels for a multi-payload WAF breakdown, keyed by request path.
+
+    Args:
+        analysis: The ``waf_analysis`` list from ``run_results``, with more than
+            one entry.
+
+    Returns:
+        One label per entry, in order. Falls back to ``Payload N`` when an
+        entry has no path, and disambiguates repeats with a `` (2)``-style
+        suffix so tabs sharing a path don't collide.
+    """
+    seen: dict[str, int] = {}
+    labels: list[str] = []
+    for index, entry in enumerate(analysis, 1):
+        base = entry.get("path") or f"Payload {index}"
+        seen[base] = seen.get(base, 0) + 1
+        labels.append(base if seen[base] == 1 else f"{base} ({seen[base]})")
+    return labels
+
+
+def _render_waf_entry(entry: dict) -> None:
+    """Render one payload's structural breakdown: decode chain, CRS matches, verdict.
+
+    Body shared by the single-payload and tabbed multi-payload layouts of
+    :func:`render_waf_breakdown`.
+
+    Args:
+        entry: One dict from the ``waf_analysis`` list in ``run_results``.
+    """
+    path = entry.get("path")
+    st.caption(f"Request path: **{path}**" if path else "Request path: *(none supplied)*")
+
+    # The submitted payload comes first: everything below is a claim
+    # about it, and decoding may have rewritten what the rules saw.
+    st.caption("Payload submitted")
+    st.code(entry.get("raw_payload") or "(empty)", language="text")
+
+    if entry.get("was_encoded"):
+        chain = " → ".join(entry.get("decode_chain") or []) or "unspecified"
+        st.warning(f"Encoded — decoded via {chain}")
+        st.caption("Decoded form")
+        st.code(entry.get("decoded_payload") or "", language="text")
+
+    markers = entry.get("markers") or []
+    if markers:
+        st.caption("Admitted by marker: " + ", ".join(f"`{m}`" for m in markers))
+
+    # A curated fingerprint is the only single-source route to Malicious
+    # (docs/waf_payload_analyzer.md D10), so it is stated before the CRS
+    # detail rather than buried under it.
+    fingerprint = entry.get("cve_fingerprint_match") or {}
+    if fingerprint:
+        st.error(
+            f"CVE fingerprint: **{fingerprint.get('name')}** "
+            f"({fingerprint.get('cve')})"
+        )
+        kev = fingerprint.get("kev")
+        if kev is None:
+            st.caption(
+                "NVD/KEV enrichment not retrieved — the lookup did not complete. "
+                "This is not the same as 'not known-exploited'."
+            )
+        elif kev:
+            st.caption("Listed in the CISA Known Exploited Vulnerabilities catalogue.")
+        else:
+            st.caption("Not listed in the CISA KEV catalogue.")
+
+    matches = entry.get("crs_matches") or []
+    match_count = entry.get("crs_match_count", len(matches))
+    if match_count:
+        # PL1+PL2 is the deciding score (calibration C3): PL3/PL4 rules
+        # count punctuation and fire on ordinary JSON and source code,
+        # so showing the full score alone would misrepresent the verdict.
+        st.markdown(
+            f"**OWASP CRS — {match_count} rule(s) matched.** "
+            f"Anomaly score {entry.get('crs_anomaly_score_pl12', 0):g} "
+            f"(PL1+PL2, decides the verdict) · "
+            f"{entry.get('crs_anomaly_score', 0):g} all levels · "
+            f"{entry.get('crs_anomaly_score_pl1', 0):g} PL1 only"
+        )
+
+        categories = entry.get("crs_categories") or []
+        if categories:
+            st.markdown(
+                "Categories: "
+                + ", ".join(
+                    _WAF_CATEGORY_LABELS.get(c, c) for c in sorted(categories)
+                )
+            )
+
+        for match in matches:
+            label = _WAF_CATEGORY_LABELS.get(
+                match.get("category"), match.get("category", "")
+            )
+            st.markdown(
+                f"- `{match.get('rule_id')}` **{label}** "
+                f"[{match.get('severity')}, PL{match.get('paranoia_level')}, "
+                f"weight {match.get('severity_weight', 0):g}] — "
+                f"{match.get('message', '')} "
+                f"*(matched on {match.get('matched_on', 'raw')})*"
+            )
+            # Provenance, not decoration: a rule that was extracted
+            # without part of its logic will under-match, and an analyst
+            # reading the hit needs to know it was partial.
+            dropped = match.get("dropped_conditions") or []
+            if dropped:
+                st.caption("    Partial rule — " + "; ".join(dropped))
+
+        if len(matches) < match_count:
+            st.caption(
+                f"Showing the {len(matches)} heaviest of {match_count} matches."
+            )
+    elif entry.get("parse_ok", True):
+        st.markdown("**OWASP CRS — no rule matched.**")
+
+    # Every reason the result may be thinner than it looks, last, where
+    # it qualifies everything above it.
+    if not entry.get("parse_ok", True):
+        st.caption("No payload followed the delimiter — there was nothing to analyse.")
+    elif not entry.get("decode_ok", True):
+        st.caption("Decoding did not complete; the decoded form above is partial.")
+    if entry.get("crs_truncated"):
+        st.caption("Payload exceeded the scan cap — only its head was matched.")
+
+    skipped = entry.get("checks_skipped") or []
+    if skipped:
+        st.caption("Checks NOT performed: " + "; ".join(skipped))
+
+    verdict = entry.get("aggregated_verdict", "Unknown")
+    if verdict == "Unknown":
+        st.caption(
+            "Verdict **Unknown** — nothing matched locally. This module never "
+            "returns Benign, so this is not a clean result."
+        )
+    else:
+        st.caption(f"Verdict: **{verdict}** — local analysis, no provider lookup.")
+
+
 def render_waf_breakdown(analysis: list[dict]) -> None:
     """Render the WAF payload breakdown above the results table.
 
@@ -287,8 +426,11 @@ def render_waf_breakdown(analysis: list[dict]) -> None:
     are the parts an analyst reads before trusting the verdict, and none of them
     survive being flattened into a single table cell.
 
-    Unlike the command-line module there may be several payloads in one run, so
-    each gets its own block inside the expander.
+    Unlike the command-line module there may be several payloads in one run. A
+    single payload renders inline, matching the previous layout; more than one
+    renders as tabs — the same pattern used for a single IOC's provider results
+    in :mod:`ui.components.ioc_card` — with each tab headed by its request path
+    rather than a provider name.
 
     Args:
         analysis: The ``waf_analysis`` list from ``run_results``. Anything falsy
@@ -297,120 +439,14 @@ def render_waf_breakdown(analysis: list[dict]) -> None:
     if not analysis:
         return
 
-    with st.expander("🛡️ WAF payload breakdown", expanded=True):
-        for index, entry in enumerate(analysis, 1):
-            if index > 1:
-                st.divider()
-            if len(analysis) > 1:
-                st.markdown(f"**Payload {index} of {len(analysis)}**")
-
-            path = entry.get("path")
-            st.caption(f"Request path: **{path}**" if path else "Request path: *(none supplied)*")
-
-            # The submitted payload comes first: everything below is a claim
-            # about it, and decoding may have rewritten what the rules saw.
-            st.caption("Payload submitted")
-            st.code(entry.get("raw_payload") or "(empty)", language="text")
-
-            if entry.get("was_encoded"):
-                chain = " → ".join(entry.get("decode_chain") or []) or "unspecified"
-                st.warning(f"Encoded — decoded via {chain}")
-                st.caption("Decoded form")
-                st.code(entry.get("decoded_payload") or "", language="text")
-
-            markers = entry.get("markers") or []
-            if markers:
-                st.caption("Admitted by marker: " + ", ".join(f"`{m}`" for m in markers))
-
-            # A curated fingerprint is the only single-source route to Malicious
-            # (docs/waf_payload_analyzer.md D10), so it is stated before the CRS
-            # detail rather than buried under it.
-            fingerprint = entry.get("cve_fingerprint_match") or {}
-            if fingerprint:
-                st.error(
-                    f"CVE fingerprint: **{fingerprint.get('name')}** "
-                    f"({fingerprint.get('cve')})"
-                )
-                kev = fingerprint.get("kev")
-                if kev is None:
-                    st.caption(
-                        "NVD/KEV enrichment not retrieved — the lookup did not complete. "
-                        "This is not the same as 'not known-exploited'."
-                    )
-                elif kev:
-                    st.caption("Listed in the CISA Known Exploited Vulnerabilities catalogue.")
-                else:
-                    st.caption("Not listed in the CISA KEV catalogue.")
-
-            matches = entry.get("crs_matches") or []
-            match_count = entry.get("crs_match_count", len(matches))
-            if match_count:
-                # PL1+PL2 is the deciding score (calibration C3): PL3/PL4 rules
-                # count punctuation and fire on ordinary JSON and source code,
-                # so showing the full score alone would misrepresent the verdict.
-                st.markdown(
-                    f"**OWASP CRS — {match_count} rule(s) matched.** "
-                    f"Anomaly score {entry.get('crs_anomaly_score_pl12', 0):g} "
-                    f"(PL1+PL2, decides the verdict) · "
-                    f"{entry.get('crs_anomaly_score', 0):g} all levels · "
-                    f"{entry.get('crs_anomaly_score_pl1', 0):g} PL1 only"
-                )
-
-                categories = entry.get("crs_categories") or []
-                if categories:
-                    st.markdown(
-                        "Categories: "
-                        + ", ".join(
-                            _WAF_CATEGORY_LABELS.get(c, c) for c in sorted(categories)
-                        )
-                    )
-
-                for match in matches:
-                    label = _WAF_CATEGORY_LABELS.get(
-                        match.get("category"), match.get("category", "")
-                    )
-                    st.markdown(
-                        f"- `{match.get('rule_id')}` **{label}** "
-                        f"[{match.get('severity')}, PL{match.get('paranoia_level')}, "
-                        f"weight {match.get('severity_weight', 0):g}] — "
-                        f"{match.get('message', '')} "
-                        f"*(matched on {match.get('matched_on', 'raw')})*"
-                    )
-                    # Provenance, not decoration: a rule that was extracted
-                    # without part of its logic will under-match, and an analyst
-                    # reading the hit needs to know it was partial.
-                    dropped = match.get("dropped_conditions") or []
-                    if dropped:
-                        st.caption("    Partial rule — " + "; ".join(dropped))
-
-                if len(matches) < match_count:
-                    st.caption(
-                        f"Showing the {len(matches)} heaviest of {match_count} matches."
-                    )
-            elif entry.get("parse_ok", True):
-                st.markdown("**OWASP CRS — no rule matched.**")
-
-            # Every reason the result may be thinner than it looks, last, where
-            # it qualifies everything above it.
-            if not entry.get("parse_ok", True):
-                st.caption("No payload followed the delimiter — there was nothing to analyse.")
-            elif not entry.get("decode_ok", True):
-                st.caption("Decoding did not complete; the decoded form above is partial.")
-            if entry.get("crs_truncated"):
-                st.caption("Payload exceeded the scan cap — only its head was matched.")
-
-            skipped = entry.get("checks_skipped") or []
-            if skipped:
-                st.caption("Checks NOT performed: " + "; ".join(skipped))
-
-            verdict = entry.get("aggregated_verdict", "Unknown")
-            if verdict == "Unknown":
-                st.caption(
-                    "Verdict **Unknown** — nothing matched locally. This module never "
-                    "returns Benign, so this is not a clean result."
-                )
-            else:
-                st.caption(f"Verdict: **{verdict}** — local analysis, no provider lookup.")
+    with st.expander("🛡️ WAF payload breakdown", expanded=False):
+        if len(analysis) == 1:
+            _render_waf_entry(analysis[0])
+        else:
+            tabs = st.tabs(_waf_tab_labels(analysis))
+            for tab, entry in zip(tabs, analysis):
+                with tab:
+                    _render_waf_entry(entry)
 
 
 def render_results_output(output_format: str, run_results: dict) -> None:
