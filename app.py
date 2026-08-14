@@ -1181,7 +1181,7 @@ if run_requested and (raw.strip() or _has_process_input()):
     else:
         # Every enabled provider runs on its own worker thread, so the wait is
         # the slowest provider rather than the sum of all of them.
-        with st.spinner("Menjalankan provider lookup…"):
+        with st.spinner("Running provider lookup…"):
             st.session_state["run_results"] = run_enrichment(
                 _enrichment_input,
                 settings=settings,
