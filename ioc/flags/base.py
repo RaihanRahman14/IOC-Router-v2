@@ -31,11 +31,9 @@ MITRE_TECHNIQUE_BASE_URL = "https://attack.mitre.org/techniques"
 def mitre_url(technique: str) -> str:
     """Build the ATT&CK page URL for a technique id.
 
-    Canonical home for a helper that `core.process_analyzer` and
-    `core.cmdline_analyzer` each carry a byte-identical private copy of. New
-    call sites use this one; folding those two into it is a separate cleanup,
-    kept out of the change that introduced this so the shipped modules stay
-    untouched.
+    Canonical home for this helper — `core.process_analyzer`,
+    `core.cmdline_analyzer`, and `core.waf_payload_analyzer` all import it
+    from here rather than keeping their own copy.
 
     Args:
         technique: e.g. ``"T1036.005"`` or ``"T1105"``.

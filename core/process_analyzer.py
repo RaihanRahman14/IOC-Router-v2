@@ -30,10 +30,11 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from core import lolbas_lookup
-# Reuse the shared flag shape so process findings are indistinguishable from
-# provider findings downstream. ioc.flags.base imports nothing from core, so
-# this direction is cycle-free (core.orchestrator already imports from ioc).
-from ioc.flags.base import _flag
+# Reuse the shared flag shape (and the ATT&CK URL builder) so process findings
+# are indistinguishable from provider findings downstream. ioc.flags.base
+# imports nothing from core, so this direction is cycle-free
+# (core.orchestrator already imports from ioc).
+from ioc.flags.base import _flag, mitre_url
 
 logger = logging.getLogger(__name__)
 
@@ -617,27 +618,11 @@ def match_pairing(parent_process: str | None, child_process: str | None) -> dict
 SIGMA_RULE_BASE_URL = (
     "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation"
 )
-MITRE_TECHNIQUE_BASE_URL = "https://attack.mitre.org/techniques"
 
 
 def _field_suffix(field_name: str) -> str:
     """Return the flag-id suffix for a form field (``file_path`` -> ``FILE_PATH``)."""
     return field_name.upper()
-
-
-def _mitre_url(technique: str) -> str:
-    """Build the ATT&CK page URL for a technique id.
-
-    Args:
-        technique: e.g. ``"T1036.005"`` or ``"T1105"``.
-
-    Returns:
-        The technique's ATT&CK URL, or ``""`` for an unrecognised id.
-    """
-    value = str(technique or "").strip().upper()
-    if not value.startswith("T"):
-        return ""
-    return f"{MITRE_TECHNIQUE_BASE_URL}/{value.replace('.', '/')}/"
 
 
 def _sigma_rule_url(pairing: dict) -> str:
@@ -743,7 +728,7 @@ def build_flags(result: ProcessAnalysisResult) -> list[dict]:
                 # the more actionable read.
                 "source_url": (
                     (analysis.impersonated_lolbas or {}).get("url")
-                    or _mitre_url(_MASQUERADE_MITRE[0])
+                    or mitre_url(_MASQUERADE_MITRE[0])
                 ),
             })
             continue
@@ -798,7 +783,7 @@ def build_flags(result: ProcessAnalysisResult) -> list[dict]:
                 f"that doubt. {parent.identity_detail}",
                 "Process Analysis",
             ),
-            "source_url": _mitre_url(_MASQUERADE_MITRE[0]),
+            "source_url": mitre_url(_MASQUERADE_MITRE[0]),
         })
 
     order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}

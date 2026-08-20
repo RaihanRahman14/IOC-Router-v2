@@ -9,6 +9,7 @@ import unittest
 
 from core import process_analyzer as pa
 from ioc.flags import flags_summary_for_evidence
+from ioc.flags.base import mitre_url
 from ioc.threat_analysis import analyzeThreat
 from ioc.verdict import summarize_results
 
@@ -217,11 +218,14 @@ class TestFlagSourceLinks(unittest.TestCase):
         self.assertEqual(flag["source_url"], "https://attack.mitre.org/techniques/T1036/005/")
 
     def test_mitre_url_builder(self) -> None:
-        self.assertEqual(pa._mitre_url("T1105"), "https://attack.mitre.org/techniques/T1105/")
-        self.assertEqual(pa._mitre_url("T1218.005"),
+        # process_analyzer imports this from ioc.flags.base (the canonical
+        # home, shared with cmdline_analyzer and waf_payload_analyzer) rather
+        # than keeping its own copy — test it there.
+        self.assertEqual(mitre_url("T1105"), "https://attack.mitre.org/techniques/T1105/")
+        self.assertEqual(mitre_url("T1218.005"),
                          "https://attack.mitre.org/techniques/T1218/005/")
-        self.assertEqual(pa._mitre_url(""), "")
-        self.assertEqual(pa._mitre_url("TA0002"), "https://attack.mitre.org/techniques/TA0002/")
+        self.assertEqual(mitre_url(""), "")
+        self.assertEqual(mitre_url("TA0002"), "https://attack.mitre.org/techniques/TA0002/")
 
     def test_sigma_url_builder_handles_missing_file(self) -> None:
         self.assertEqual(pa._sigma_rule_url({}), "")

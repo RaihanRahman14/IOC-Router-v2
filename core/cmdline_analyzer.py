@@ -42,8 +42,8 @@ from pathlib import Path, PureWindowsPath
 from core import cmdline_deobfuscator as deob
 from core import lolbas_lookup
 from core import cmdline_parser as parser
-from core.process_analyzer import MITRE_TECHNIQUE_BASE_URL, ProcessAnalysisResult
-from ioc.flags.base import _flag
+from core.process_analyzer import ProcessAnalysisResult
+from ioc.flags.base import _flag, mitre_url
 
 logger = logging.getLogger(__name__)
 
@@ -256,14 +256,6 @@ def load_suspicious_keywords() -> list[dict]:
         return []
 
     return [k for k in keywords if isinstance(k, dict) and k.get("id") and k.get("patterns")]
-
-
-def _mitre_url(technique: str) -> str:
-    """Build the ATT&CK page URL for a technique id."""
-    value = str(technique or "").strip().upper()
-    if not value.startswith("T"):
-        return ""
-    return f"{MITRE_TECHNIQUE_BASE_URL}/{value.replace('.', '/')}/"
 
 
 def _match_flag(record: dict, commands: list) -> str | None:
@@ -753,7 +745,7 @@ def _with_source(flag: dict, mitre: list[str]) -> dict:
     Returns:
         The flag, with ``source_url`` set when a technique id was available.
     """
-    url = next((u for u in (_mitre_url(t) for t in mitre) if u), "")
+    url = next((u for u in (mitre_url(t) for t in mitre) if u), "")
     return {**flag, "source_url": url} if url else flag
 
 
