@@ -209,6 +209,46 @@ Plans: [docs/process_analyzer.md](docs/process_analyzer.md) ·
 
 ---
 
+### 4d. WAF Payload Analysis — SQLi / XSS / RCE / LFI / SSRF Detection
+
+A dedicated **WAF Payload** field sits in the Context panel beside Command
+Line — one payload per line, optionally prefixed with a request path
+(`/login | ' OR '1'='1`). Like the process and command-line modules, this is
+**pure local analysis with no network I/O and nothing ever submitted to any
+provider**.
+
+| Layer | What it does | Dataset |
+|---|---|---|
+| **Decode** | Shared decoder (percent-encoding, HTML entities, `\uXXXX`/`\xNN`, base64), reused from the command-line module via `core/decode_common.py` with web-specific parameters | — |
+| **CRS matching** | Payload matched against an extracted OWASP CRS rule subset — SQLi, XSS, RCE, LFI, RFI, SSRF, protocol-anomaly categories — after replaying each rule's own transformation chain | `crs_patterns.json` (183 rules) |
+| **CVE fingerprinting** | Curated, hand-picked signatures for mass-exploited CVEs (Log4Shell, Spring4Shell, ProxyShell, ...) that have no benign reason to appear in traffic, cross-referenced against NVD + CISA KEV | `cve_fingerprints.json` |
+
+**Verdict ladder** (never returns **Benign** — absence of evidence is
+`Unknown`, same rule as the sibling modules): a CVE fingerprint match is the
+one single-source path to `Malicious`; a high-severity CRS category match
+escalates to `Malicious` only with a second independent signal (the payload
+arrived pre-encoded, or the CRS anomaly score also crosses its threshold); an
+anomaly-score-only match tops out at `Suspicious`, never `Malicious`, per the
+project's two-source corroboration rule.
+
+Findings feed the same 100+ flag system, the Threat Analysis evidence, and
+the ticket narrative as every other flag source, and appear in the JSON
+output under `waf_analysis`.
+
+Like its siblings, this module ships a calibration corpus
+(`tests/fixtures/waf_corpus.json`) and a regression gate
+(`tests/test_waf_calibration.py`) so tuning any threshold is measured, not
+guessed.
+
+Source: [core/waf_payload_analyzer.py](core/waf_payload_analyzer.py) ·
+[core/waf_payload_parser.py](core/waf_payload_parser.py) ·
+[core/crs_matcher.py](core/crs_matcher.py) ·
+[core/crs_transforms.py](core/crs_transforms.py) ·
+[core/cve_fingerprint.py](core/cve_fingerprint.py) ·
+Design record: [docs/waf_payload_analyzer.md](docs/waf_payload_analyzer.md)
+
+---
+
 ### 5. Verdict Aggregation
 
 Produces a final verdict per IOC — **Malicious**, **Suspicious**, **Unknown**, or **Benign** — based on consensus across all queried providers. The ticket notes output includes a session-level summary (total IOCs, count per verdict) followed by a per-IOC breakdown listing each provider's finding and a plain-language conclusion.
@@ -309,7 +349,7 @@ A dedicated panel surfaces recent CVEs from the **NVD API v2**, enriched with th
 - **NVD-aware caching** — 1-hour TTL on NVD + KEV responses keeps the rolling window reasonably fresh while easing rate-limit pressure; MITRE responses use a separate 24h TTL. Optional `CVE_NVD_KEY` env variable injects an NVD API key for higher rate limits (50 req/30s vs 5).
 - **Copy formatter** — one-click copy formatted for WhatsApp/SOC handoff: bold styling, raw CVE URLs, and grouped severity output.
 
-Source: [ui/components/cve_panel.py](ui/components/cve_panel.py) · Tests: [tests/test_cve_panel_copy.py](tests/test_cve_panel_copy.py)
+Source: [ui/components/cve_panel.py](ui/components/cve_panel.py) (rendering) · [providers/nvd.py](providers/nvd.py) (NVD/KEV/MITRE client & parsing) · Tests: [tests/test_cve_panel_copy.py](tests/test_cve_panel_copy.py), [tests/test_nvd_provider.py](tests/test_nvd_provider.py)
 
 ---
 
@@ -378,11 +418,12 @@ Config: [.streamlit/config.toml](.streamlit/config.toml)
 ## Analysis Pipeline
 
 ```
-Input IOCs  +  Endpoint context (command line, filepath, parent/child process)
+Input IOCs  +  Endpoint context (command line, filepath, parent/child process, WAF payload)
     ↓
 [Parser]          — type detection, normalization, deduplication
     ↓
 [Local Analysis]  — process/filepath identity + command-line decode & matching
+                    + WAF payload CRS/CVE-fingerprint matching
                     (no network; emits flags and new IOC candidates)
     ↓
 [Mode Filter]     — Triage (full) / Lookup (minimal) + Triage Speed (Fast/Detailed)
@@ -428,7 +469,9 @@ ioc-router/
 │
 ├── core/                         # Orchestration, local analysis & shared utilities
 │   ├── orchestrator.py           # Async provider dispatch & result aggregation
+│   ├── pipeline.py               # Enrichment run assembly (extracted from app.py)
 │   ├── cache.py                  # In-memory result caching
+│   ├── http.py                   # Pooled requests.Session + bounded parallel fan-out
 │   ├── geo.py                    # IP geolocation resolution
 │   ├── infra_classifier.py       # ASN-based infra classification (BP / FP / HIGH_RISK)
 │   ├── process_analyzer.py       # Process/filepath identity, LOLBAS, Sigma pairing
@@ -437,6 +480,11 @@ ioc-router/
 │   ├── cmdline_deobfuscator.py   # Command-line decode (pure transforms, never executes)
 │   ├── decode_common.py          # Encoding primitives shared across analysis modules
 │   ├── cmdline_analyzer.py       # Keywords, entropy, Sigma/LOLBAS matching, verdict
+│   ├── waf_payload_parser.py     # WAF payload field parsing (line split + validation)
+│   ├── waf_payload_analyzer.py   # CRS + CVE-fingerprint matching, verdict, rows
+│   ├── crs_matcher.py            # OWASP CRS rule matching against decoded payloads
+│   ├── crs_transforms.py         # ModSecurity-equivalent transformation chain
+│   ├── cve_fingerprint.py        # Curated known-exploited CVE signature matching
 │   │
 │   ├── data/                     # Offline-generated datasets (no runtime fetches)
 │   │   ├── known_system_processes.json    # Path-baseline whitelist (66)
@@ -445,12 +493,15 @@ ioc-router/
 │   │   ├── sigma_parent_child_pairs.json  # Parent→child blocklist (1,874)
 │   │   ├── sigma_cmdline_patterns.json    # CommandLine rule patterns (1,409)
 │   │   ├── suspicious_cmdline_keywords.json  # Curated switch table (34)
-│   │   └── cmd_internal_commands.json     # cmd.exe builtins (45)
+│   │   ├── cmd_internal_commands.json     # cmd.exe builtins (45)
+│   │   ├── crs_patterns.json              # Extracted OWASP CRS rule subset (183)
+│   │   └── cve_fingerprints.json          # Curated known-exploited CVE signatures
 │   │
 │   └── scripts/                  # Offline dataset regeneration & manual harnesses
 │       ├── extract_lolbas.py                  # LOLBAS → binaries + abuse commands
 │       ├── extract_sigma_pairs.py             # SigmaHQ → parent/child pairs
 │       ├── extract_sigma_cmdline_patterns.py  # SigmaHQ → CommandLine patterns
+│       ├── extract_crs_patterns.py            # OWASP CRS → crs_patterns.json
 │       ├── try_process_analyzer.py            # Ad-hoc process/filepath analysis
 │       └── try_cmdline_analyzer.py            # Ad-hoc analysis + `--calibrate`
 │
@@ -485,6 +536,7 @@ ioc-router/
 │   ├── whoxy.py                  # Whoxy WHOIS + reverse WHOIS
 │   ├── ransomware_live.py        # Ransomware.live victim search
 │   ├── path_prober.py            # Path Probe HTTP scanner (parallel via ThreadPoolExecutor)
+│   ├── nvd.py                    # NVD / CISA KEV / MITRE cveawg client (CVE panel data layer)
 │   ├── gemini.py                 # Google Gemini AI client
 │   └── groq.py                   # Groq AI client
 │
@@ -500,6 +552,7 @@ ioc-router/
 │       ├── note_popup.py         # ⓘ Notes dialog (landing-page notes from header)
 │       ├── timing_popup.py       # ⏱ Timing dialog (per-provider + AI breakdown)
 │       ├── tab_switcher.py       # Hidden Streamlit buttons for header tab switching
+│       ├── popup_state.py        # Shared dialog/popup session-state helpers
 │       ├── map.py                # Interactive OSM map builder
 │       └── output_renderer.py    # Notes / Table / JSON / Shareable output
 │
@@ -520,7 +573,7 @@ ioc-router/
 │   ├── threat_state_level_verdict.md      # Threat state / level / verdict reference
 │   ├── process_analyzer.md                # How the process/filepath module works
 │   ├── cmdline_analyzer.md                # How the command-line module works
-│   └── waf_payload_analyzer_plan.md       # In progress — parser landed, not yet wired in
+│   └── waf_payload_analyzer.md            # WAF payload module design record — shipped
 │
 ├── image/                        # Screenshots for README documentation
 │   ├── Homepage.jpeg
@@ -536,11 +589,14 @@ ioc-router/
 │   ├── multiple IOC results.jpeg
 │   └── multiple provider output.jpeg
 │
-└── tests/                        # 533 tests — `python -m pytest`
+└── tests/                        # 900+ tests — `python -m pytest`
     ├── fixtures/
     │   ├── cmdline_corpus.json   # Calibration corpus: 30 known-bad / 32 known-good
-    │   └── process_corpus.json   # Calibration corpus: 14 known-bad / 28 known-good
+    │   ├── process_corpus.json   # Calibration corpus: 14 known-bad / 28 known-good
+    │   └── waf_corpus.json       # Calibration corpus: 28 known-bad / 20 known-good
     ├── test_abuseipdb_processing.py
+    ├── test_ai_panel.py
+    ├── test_cache_wrappers.py
     ├── test_cmdline_analyzer.py
     ├── test_cmdline_calibration.py      # False-positive regression gate
     ├── test_cmdline_deobfuscator.py
@@ -548,16 +604,24 @@ ioc-router/
     ├── test_cmdline_lolbas_layer4.py
     ├── test_cmdline_parser.py
     ├── test_cmdline_sigma_layer5.py
+    ├── test_crs_matching.py
+    ├── test_crs_patterns.py
+    ├── test_cve_fingerprints.py
     ├── test_cve_panel_copy.py
     ├── test_decode_common.py
     ├── test_defang_display.py
     ├── test_dnsdumpster_processing.py
+    ├── test_http_helpers.py
     ├── test_hybrid_analysis_provider.py
     ├── test_infra_classifier.py
+    ├── test_ioc_card.py
     ├── test_lolbas_lookup.py
     ├── test_malwarebazaar_provider.py
+    ├── test_nvd_provider.py
+    ├── test_orchestrator.py
     ├── test_parser_schemeless_url.py
     ├── test_path_prober.py
+    ├── test_pipeline.py
     ├── test_process_analyzer.py
     ├── test_process_calibration.py      # False-positive regression gate
     ├── test_process_integration.py
@@ -565,7 +629,14 @@ ioc-router/
     ├── test_sigma_pairs.py
     ├── test_threat_analysis.py
     ├── test_urlscan_processing.py
-    └── test_virustotal_url_scheme.py
+    ├── test_verdict_authority.py
+    ├── test_virustotal_batch.py
+    ├── test_virustotal_url_scheme.py
+    ├── test_waf_calibration.py          # False-positive regression gate
+    ├── test_waf_consistency.py          # Verdict/flag agreement cross-checks
+    ├── test_waf_payload_analyzer.py
+    ├── test_waf_payload_integration.py
+    └── test_waf_payload_parser.py
 ```
 
 ---
@@ -641,9 +712,11 @@ http://localhost:8501
 python -m pytest
 ```
 
-Two of these are calibration gates rather than unit tests — they assert that the
-endpoint-analysis modules do not fire on ordinary administrative activity. They
-are the ones to watch when tuning any detection threshold.
+Three of these are calibration gates rather than unit tests —
+`test_cmdline_calibration.py`, `test_process_calibration.py`, and
+`test_waf_calibration.py` assert that the local-analysis modules do not fire
+on ordinary administrative activity or benign web traffic. They are the ones
+to watch when tuning any detection threshold.
 
 ### Regenerating the local datasets
 
@@ -657,15 +730,17 @@ pip install pyyaml          # script-only — deliberately NOT in requirements.t
 python core/scripts/extract_lolbas.py                            # → lolbas_binaries + lolbas_commands
 python core/scripts/extract_sigma_pairs.py --download            # → sigma_parent_child_pairs
 python core/scripts/extract_sigma_cmdline_patterns.py --download # → sigma_cmdline_patterns
+python core/scripts/extract_crs_patterns.py --download           # → crs_patterns
 ```
 
-Add `--dry-run` to any of them to report counts without writing. Sigma is never
-evaluated at runtime — no `pySigma`, no rule engine; the app only reads the
-generated JSON.
+Add `--dry-run` to any of them to report counts without writing. Sigma and CRS
+are never evaluated at runtime — no `pySigma`, no ModSecurity/Coraza engine;
+the app only reads the generated JSON.
 
 **Upstream sources and licences:** [SigmaHQ](https://github.com/SigmaHQ/sigma)
 (Detection Rule License 1.1) · [LOLBAS](https://github.com/LOLBAS-Project/LOLBAS)
-(CC BY 4.0).
+(CC BY 4.0) · [OWASP CRS](https://github.com/coreruleset/coreruleset)
+(Apache License 2.0).
 
 > Both Sigma extractions are partial by design: each keeps the conditions it can
 > evaluate and drops the rest, recording what was dropped on every record. A

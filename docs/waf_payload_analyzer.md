@@ -1,5 +1,22 @@
 # Implementation Plan — WAF Payload Analysis
 
+**Status: shipped.** All milestones below are complete (see §6) and the
+module has run through a full calibration pass (§6 Milestone C) plus a
+post-review correction pass. This document is kept as the design record —
+the decisions (D1–D11) and their reasoning are still current — but it is not
+a living reference for exact file/line numbers. Two refactors landed after
+this document's own content was last revised and were not back-filled into
+it: **`core.pipeline`** now assembles the enrichment run that used to live
+inline in `app.py` (so `app.py` line numbers cited below, especially in §0
+and D6/D7, no longer point at the described code), and the CVE data layer
+(`_fetch_kev_data` / `_fetch_nvd_page` / `_time_window` /
+`_PROVIDER_KEYS`-style names cited below) was extracted out of
+`ui/components/cve_panel.py` into **`providers/nvd.py`** with public names
+(`fetch_kev_catalog`, `fetch_nvd_page`, `time_window`,
+`orchestrator.PROVIDER_KEYS`). For the current file layout, see the
+[README's Project Structure](../README.md#project-structure) and the
+current module list in §2 below rather than the historical line anchors.
+
 Source briefing: *WAF Payload Analysis Module* (2026-08-08).
 Companions: [`process_analyzer.md`](process_analyzer.md) and
 [`cmdline_analyzer.md`](cmdline_analyzer.md) — the two sibling modules,
