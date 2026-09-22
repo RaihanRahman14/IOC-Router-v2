@@ -14,7 +14,7 @@ and D6/D7, no longer point at the described code), and the CVE data layer
 `ui/components/cve_panel.py` into **`providers/nvd.py`** with public names
 (`fetch_kev_catalog`, `fetch_nvd_page`, `time_window`,
 `orchestrator.PROVIDER_KEYS`). For the current file layout, see the
-[README's Project Structure](../README.md#project-structure) and the
+[Project Structure](README.md#project-structure) and the
 current module list in §2 below rather than the historical line anchors.
 
 Source briefing: *WAF Payload Analysis Module* (2026-08-08).
@@ -905,6 +905,8 @@ here.
 
 Corpus: 28 known-bad, 20 known-good, in
 [`tests/fixtures/waf_corpus.json`](../tests/fixtures/waf_corpus.json).
+Gate: [`tests/test_waf_calibration.py`](../tests/test_waf_calibration.py), so
+tuning any threshold is measured, not guessed.
 
 | Measure | Result |
 |---|---|

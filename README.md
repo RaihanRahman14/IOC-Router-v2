@@ -144,61 +144,10 @@ alone, with the IOC box empty.
 | **Detection rules** | Does it match a Sigma CommandLine rule? | `sigma_cmdline_patterns.json` (1,409) |
 | **Entropy** | Unrecognised encoding nothing else caught? | - |
 
-#### Command line breakdown
-
-Rendered between the ticket-note output and the per-IOC cards: the submitted
-line verbatim, the detected interpreter, the decoded form with the exact
-transform chain that produced it, and the parsed base command / flags /
-arguments.
-
-Deobfuscation is **pure string rewriting - nothing is ever executed**. It folds
-base64 (`-EncodedCommand`, decoded UTF-16LE first), quoted-string concatenation
-`('c'+'a'+'l'+'c')`, `[char]` codes, the `-f` format operator, intra-word
-backticks, percent-encoding, HTML entities and `\uXXXX` escapes - iterating to a
-fixed point under hard round and size caps. Every applied step is recorded, so a
-decoded string can always be traced back to its source.
-
-Indicators recovered from a decoded payload (URLs, IPs, hashes) **join the normal
-enrichment pipeline automatically** - pasting one encoded one-liner yields a
-fully enriched URL row with no second analyst action. URLs found this way are
-withheld from URLScan submission: publishing an attacker's URL is an outbound
-disclosure the analyst did not ask for.
-
-#### Verdicts and the corroboration rule
-
-Both modules emit `_flag()`-shaped findings that feed the existing 100+ flag
-system, Threat Analysis evidence, and the ticket narrative. Neither ever returns
-**Benign** - absence of evidence is `Unknown`.
-
-`Malicious` requires **two independent sources**, per the project's aggregation
-rule. Suspicious switches and obfuscation together count as one; the second must
-be a Sigma rule match or a confirmed LOLBAS abuse pattern. A Sigma rule whose
-*full* original condition is satisfied across both modules in one session - the
-process half supplying `Image`/`ParentImage`, the command-line half supplying
-`CommandLine` - is treated as exact rather than approximate.
-
-#### Calibration
-
-Both modules ship a corpus and a regression gate, because a detection module
-tuned only for recall looks excellent until analysts start ignoring it.
-
-```bash
-python core/scripts/try_cmdline_analyzer.py --calibrate
-python core/scripts/try_cmdline_analyzer.py "powershell -nop -w hidden -enc SQBFAFgA..."
-```
-
-| Corpus | Known-bad | Known-good | Current result |
-|---|---|---|---|
-| `tests/fixtures/cmdline_corpus.json` | 30 | 32 | 30/30 detected, 0 unexpected flags |
-| `tests/fixtures/process_corpus.json` | 14 | 28 | 14/14 as recorded, 2 documented defects |
-
-> The known-good halves are hand-written from ordinary Windows administration,
-> packaging and CI activity - **not** from any particular estate. Local habits
-> differ, so the meaningful validation step is adding real command lines from
-> your own closed-as-false-positive alerts to the corpus and re-running the gate.
-> Four benign samples (SCCM and Intune wrappers, an administrator's
-> `schtasks /create`, a `Compress-Archive` backup) legitimately reach
-> `Suspicious`; they are declared in the corpus rather than suppressed.
+The command line breakdown, deobfuscation, verdict and corroboration rules, and
+calibration results are documented in
+[docs/cmdline_analyzer.md](docs/cmdline_analyzer.md) and
+[docs/process_analyzer.md](docs/process_analyzer.md).
 
 Source: [core/process_analyzer.py](core/process_analyzer.py) ·
 [core/cmdline_analyzer.py](core/cmdline_analyzer.py) ·
@@ -223,22 +172,8 @@ provider**.
 | **CRS matching** | Payload matched against an extracted OWASP CRS rule subset - SQLi, XSS, RCE, LFI, RFI, SSRF, protocol-anomaly categories - after replaying each rule's own transformation chain | `crs_patterns.json` (183 rules) |
 | **CVE fingerprinting** | Curated, hand-picked signatures for mass-exploited CVEs (Log4Shell, Spring4Shell, ProxyShell, ...) that have no benign reason to appear in traffic, cross-referenced against NVD + CISA KEV | `cve_fingerprints.json` |
 
-**Verdict ladder** (never returns **Benign** - absence of evidence is
-`Unknown`, same rule as the sibling modules): a CVE fingerprint match is the
-one single-source path to `Malicious`; a high-severity CRS category match
-escalates to `Malicious` only with a second independent signal (the payload
-arrived pre-encoded, or the CRS anomaly score also crosses its threshold); an
-anomaly-score-only match tops out at `Suspicious`, never `Malicious`, per the
-project's two-source corroboration rule.
-
-Findings feed the same 100+ flag system, the Threat Analysis evidence, and
-the ticket narrative as every other flag source, and appear in the JSON
-output under `waf_analysis`.
-
-Like its siblings, this module ships a calibration corpus
-(`tests/fixtures/waf_corpus.json`) and a regression gate
-(`tests/test_waf_calibration.py`) so tuning any threshold is measured, not
-guessed.
+The verdict ladder, integration points, and calibration results are documented
+in [docs/waf_payload_analyzer.md](docs/waf_payload_analyzer.md).
 
 Source: [core/waf_payload_analyzer.py](core/waf_payload_analyzer.py) ·
 [core/waf_payload_parser.py](core/waf_payload_parser.py) ·
@@ -339,15 +274,8 @@ Results can be exported in four formats selectable from the Options panel - **Ti
 
 ### 10. CVE Lookup Panel
 
-A dedicated panel surfaces recent CVEs from the **NVD API v2**, enriched with the **CISA KEV** catalog and the **MITRE cveawg** record for each CVE. Key behaviors:
-
-- **Lazy loading**: 10 entries per page so large NVD windows stay responsive.
-- **Severity filtering**: pick from `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `Common`, `ALL`, or a custom `Select` set.
-- **Common-app detection**: vendor/product matching against a curated keyword list (Cisco, Fortinet, Palo Alto, VMware, Microsoft, Chrome, Zoom, Slack, WhatsApp Desktop, Telegram Desktop, Check Point, CyberArk, BeyondTrust, SentinelOne, Bitdefender, Trend Micro, Aruba, Ruckus, Sangfor, Hillstone, Imperva, Riverbed, Nagios, Veeam, Tenable, WordPress, HSM nShield, Atmos Agent, Device42, XFusion, SecIron, etc.) so SOC-relevant CVEs surface first. Short/ambiguous tokens (`hp`, `edge`, `aws`, `azure`, `f5`, `linux`, `oracle`, `php`, `mysql`) are matched against vendor+product fields only to avoid false positives on unrelated CVE descriptions.
-- **MITRE enrichment**: pulls vendor / product / affected version range from `affected[]` and a short CAPEC attack-pattern label from `impacts[]`, plus the **CWE-N** id from the NVD weaknesses list. Records are fetched in parallel (12 workers) and cached for 24 hours.
-- **KEV expansion**: when a CVE is in the CISA KEV catalog, the card carries the KEV `shortDescription`, `requiredAction`, `knownRansomwareCampaignUse`, and `vulnerabilityName` fields alongside the standard NVD data.
-- **NVD-aware caching**: 1-hour TTL on NVD + KEV responses keeps the rolling window reasonably fresh while easing rate-limit pressure; MITRE responses use a separate 24h TTL. Optional `CVE_NVD_KEY` env variable injects an NVD API key for higher rate limits (50 req/30s vs 5).
-- **Copy formatter**: one-click copy formatted for WhatsApp/SOC handoff, with bold styling, raw CVE URLs, and grouped severity output.
+A dedicated panel surfaces recent CVEs from the **NVD API v2**, enriched with the **CISA KEV** catalog and the **MITRE cveawg** record for each CVE. Filtering, common-app detection, enrichment, caching, and
+the copy formatter are documented in [docs/cve_panel.md](docs/cve_panel.md).
 
 Source: [ui/components/cve_panel.py](ui/components/cve_panel.py) (rendering) · [providers/nvd.py](providers/nvd.py) (NVD/KEV/MITRE client & parsing) · Tests: [tests/test_cve_panel_copy.py](tests/test_cve_panel_copy.py), [tests/test_nvd_provider.py](tests/test_nvd_provider.py)
 

@@ -11,6 +11,7 @@ features, setup, and usage.
 | [Command Line Analysis](cmdline_analyzer.md) | Structural parsing, deobfuscation, LOLBAS, Sigma CommandLine rules |
 | [WAF Payload Analysis](waf_payload_analyzer.md) | SQLi / XSS / RCE / LFI / SSRF detection, OWASP CRS matching |
 | [Threat State, Level, and Verdict](threat_state_level_verdict.md) | How the three assessments are derived |
+| [CVE Lookup Panel](cve_panel.md) | NVD / CISA KEV / MITRE enrichment, filtering, caching, copy formatter |
 
 ## Provider Documentation
 
