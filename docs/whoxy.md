@@ -1,6 +1,6 @@
 # Whoxy
 
-Whoxy provides WHOIS registration data and reverse WHOIS lookup — the ability to find all domains registered by a given email address, company name, or keyword. IOC Router uses it to surface domain registrant identity, registration history, and related infrastructure.
+Whoxy provides WHOIS registration data and reverse WHOIS lookup - the ability to find all domains registered by a given email address, company name, or keyword. IOC Router uses it to surface domain registrant identity, registration history, and related infrastructure.
 
 ---
 
@@ -28,7 +28,7 @@ The API key is passed as a URL query parameter:
 |------|---------------|-----------|
 | WHOIS lookup | `?whois={domain}&key=...` | Domain, URL |
 | Reverse WHOIS by email | `?reverse=whois&email={email}&key=...` | Email |
-| Reverse WHOIS by company | `?reverse=whois&company={company}&key=...` | — |
+| Reverse WHOIS by company | `?reverse=whois&company={company}&key=...` | - |
 | Reverse WHOIS by keyword | `?reverse=whois&keyword={term}&key=...` | WHOIS keyword |
 
 For URL inputs, the domain is extracted before the query is made. For bare WHOIS keyword IOCs (detected by [`ioc/parser.py`](../ioc/parser.py)), a keyword reverse lookup is performed to find all domains matching that registrant keyword.
@@ -61,11 +61,11 @@ For URL inputs, the domain is extracted before the query is made. For bare WHOIS
 
 [`ioc/flags/` base flags](../ioc/flags/base.py) and the Whoxy provider output generate flags such as:
 
-- Newly registered domain — `create_date` within the last 30 days
-- Domain expiring soon — `expiry_date` within the next 14 days
-- Privacy-protected registrant — registrant email/name redacted via proxy service
-- Multiple domains, same registrant — reverse WHOIS returns 10+ related domains
-- Suspicious registrar — known bullet-proof or low-reputation registrar
+- Newly registered domain: `create_date` within the last 30 days
+- Domain expiring soon: `expiry_date` within the next 14 days
+- Privacy-protected registrant: registrant email/name redacted via proxy service
+- Multiple domains, same registrant: reverse WHOIS returns 10+ related domains
+- Suspicious registrar: known bullet-proof or low-reputation registrar
 
 ### Timeout & Batching
 
@@ -78,7 +78,7 @@ For URL inputs, the domain is extracted before the query is made. For bare WHOIS
 
 1. Register at [https://www.whoxy.com/signup.php](https://www.whoxy.com/signup.php).
 2. After logging in, go to **Account → API Access** (or [https://www.whoxy.com/my-account.php](https://www.whoxy.com/my-account.php)).
-3. Your API key is displayed in the API section — copy it.
+3. Your API key is displayed in the API section - copy it.
 4. Add it to `.env`:
    ```env
    WHOXY_KEY=your_api_key_here

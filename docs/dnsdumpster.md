@@ -28,7 +28,7 @@ X-API-Key: <DNSDUMPSTER_KEY>
 
 | Field | Description |
 |-------|-------------|
-| `a[]` | A records — each entry includes IP, ASN, owner, country, PTR, HTTP/HTTPS banners |
+| `a[]` | A records: each entry includes IP, ASN, owner, country, PTR, HTTP/HTTPS banners |
 | `cname[]` | CNAME records with target hostname |
 | `mx[]` | MX records with priority and IP enrichment |
 | `ns[]` | Nameserver records |
@@ -54,16 +54,16 @@ For each A record, the provider extracts HTTP/HTTPS server headers and page titl
 ### Output Structure
 
 The provider normalises the raw API response into a SOC-friendly dict containing:
-- `a_records` — enriched list of A record entries
-- `cname_map` — CNAME → target mappings
-- `mail_dns_infra` — MX records with mail server details
-- `network_enrichment` — NS and ASN data
-- `red_flags` — list of detected anomalies
+- `a_records`: enriched list of A record entries
+- `cname_map`: CNAME → target mappings
+- `mail_dns_infra`: MX records with mail server details
+- `network_enrichment`: NS and ASN data
+- `red_flags`: list of detected anomalies
 
 ### Timeout & Batching
 
 - Timeout: **15 seconds** per request
-- Entry point: `dnsdumpster_lookup_batch()` in [`providers/dnsdumpster.py`](../providers/dnsdumpster.py) — only processes `domain` and `url` IOC types
+- Entry point: `dnsdumpster_lookup_batch()` in [`providers/dnsdumpster.py`](../providers/dnsdumpster.py) - only processes `domain` and `url` IOC types
 
 ---
 

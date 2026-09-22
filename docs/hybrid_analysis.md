@@ -1,6 +1,6 @@
 # Hybrid Analysis
 
-Hybrid Analysis (powered by CrowdStrike Falcon Sandbox) executes suspicious files and URLs in an isolated virtual machine and records all runtime behaviour — process trees, network connections, dropped files, registry changes, and MITRE ATT&CK technique mappings. IOC Router uses it for deep sandbox-based analysis of hashes and quick URL scans.
+Hybrid Analysis (powered by CrowdStrike Falcon Sandbox) executes suspicious files and URLs in an isolated virtual machine and records all runtime behaviour - process trees, network connections, dropped files, registry changes, and MITRE ATT&CK technique mappings. IOC Router uses it for deep sandbox-based analysis of hashes and quick URL scans.
 
 ---
 
@@ -64,10 +64,10 @@ For domain and IP inputs, `POST /api/v2/search/terms` is used to find related ha
 [`ioc/flags/hybrid_analysis.py`](../ioc/flags/hybrid_analysis.py) derives flags including:
 
 - Sandbox verdict: malicious / suspicious
-- High threat score — score ≥ 70
+- High threat score: score ≥ 70
 - Known malware family identified
 - MITRE technique matched (e.g. T1055 Process Injection, T1071 C2 via HTTP)
-- Network IOCs extracted — contacted domains/IPs listed
+- Network IOCs extracted: contacted domains/IPs listed
 - Dropped executable files
 - Mutex persistence indicator
 

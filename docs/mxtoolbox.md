@@ -69,12 +69,12 @@ Each command returns a result object with four arrays:
 
 Flags are derived from the aggregated Failed/Warning items:
 
-- Blacklisted IP — IP found on one or more DNS-based blacklists (DNSBLs)
-- Missing SPF record — SPF check returned no `v=spf1` TXT record
-- Missing DMARC policy — no `v=DMARC1` record found
-- No PTR record — reverse DNS not configured (common for spam sources)
-- MX record misconfiguration — MX lookup failed or returned invalid data
-- HTTP unreachable — HTTP check timed out or returned an error
+- Blacklisted IP: IP found on one or more DNS-based blacklists (DNSBLs)
+- Missing SPF record: SPF check returned no `v=spf1` TXT record
+- Missing DMARC policy: no `v=DMARC1` record found
+- No PTR record: reverse DNS not configured (common for spam sources)
+- MX record misconfiguration: MX lookup failed or returned invalid data
+- HTTP unreachable: HTTP check timed out or returned an error
 
 ### Timeout & Batching
 
@@ -87,7 +87,7 @@ Flags are derived from the aggregated Failed/Warning items:
 
 1. Register at [https://mxtoolbox.com/signup](https://mxtoolbox.com/signup).
 2. After logging in, navigate to **Account → API** (or [https://mxtoolbox.com/user/api-key](https://mxtoolbox.com/user/api-key)).
-3. Your API key is shown on that page — copy it.
+3. Your API key is shown on that page - copy it.
 4. Add it to `.env`:
    ```env
    MXTOOLBOX_KEY=your_api_key_here

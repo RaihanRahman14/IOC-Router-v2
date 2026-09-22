@@ -684,7 +684,12 @@ def render_results_output(output_format: str, run_results: dict) -> None:
                 try:
                     from core.geo import fetch_geo_ip_api
                     geo = fetch_geo_ip_api(queried_ip) or {}
+                    # AbuseIPDB first, same precedence the Infrastructure block
+                    # uses — its ISP name is the one an analyst sees elsewhere.
+                    isp = (abuse_results.get(val, {}) or {}).get("isp") or geo.get("isp") or ""
                     country = geo.get("country") or ""
+                    if isp:
+                        parts.append(isp)
                     if country:
                         parts.append(country)
                 except Exception:

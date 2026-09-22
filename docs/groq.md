@@ -43,7 +43,7 @@ The system prompt primes the model as a SOC assistant for consistent, profession
 
 ### Default Model
 
-The default model is `llama-3.1-8b-instant` — chosen for speed. The `model` parameter is exposed as a function argument ([`providers/groq.py:12`](../providers/groq.py#L12)), so the caller can swap to any model Groq supports (e.g. `llama-3.3-70b-versatile`, `mixtral-8x7b-32768`, `gemma2-9b-it`).
+The default model is `llama-3.1-8b-instant` - chosen for speed. The `model` parameter is exposed as a function argument ([`providers/groq.py:12`](../providers/groq.py#L12)), so the caller can swap to any model Groq supports (e.g. `llama-3.3-70b-versatile`, `mixtral-8x7b-32768`, `gemma2-9b-it`).
 
 ### Response Parsing
 

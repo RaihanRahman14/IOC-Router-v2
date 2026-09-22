@@ -36,7 +36,7 @@ After the primary lookup, additional relationship endpoints are queried for rich
 | Public comments | `/{id}/comments` | 5 |
 | Community votes | `/{id}/votes` | 5 |
 | DNS resolutions | `/{id}/resolutions` | 10 |
-| Sandbox behavior | `/files/{id}/behaviour_summary` | — |
+| Sandbox behavior | `/files/{id}/behaviour_summary` | - |
 
 ### Response Fields Used
 
@@ -51,9 +51,9 @@ After the primary lookup, additional relationship endpoints are queried for rich
 
 [`ioc/flags/virustotal.py`](../ioc/flags/virustotal.py) converts raw stats into structured threat flags:
 
-- `VT_HIGH_MALICIOUS_DETECTION` — 10+ engines flagged as malicious (CRITICAL)
-- `VT_ENGINE_LABEL_PHISH / TROJAN / RANSOMWARE` — specific engine label categories (HIGH)
-- `VT_CATEGORY_COMMAND_AND_CONTROL / BOTNET` — community category hits (HIGH)
+- `VT_HIGH_MALICIOUS_DETECTION`: 10+ engines flagged as malicious (CRITICAL)
+- `VT_ENGINE_LABEL_PHISH / TROJAN / RANSOMWARE`: specific engine label categories (HIGH)
+- `VT_CATEGORY_COMMAND_AND_CONTROL / BOTNET`: community category hits (HIGH)
 - Thresholds: CRITICAL ≥ 10, HIGH ≥ 3, MEDIUM ≥ 1
 
 ### Verdict Logic
@@ -67,7 +67,7 @@ Defined in [`ioc/verdict.py`](../ioc/verdict.py):
 ### Timeout & Batching
 
 - Timeout: **15 seconds** per request
-- Entry point: `vt_lookup_batch()` in [`providers/virustotal.py`](../providers/virustotal.py) — processes a list of IOCs and returns a dict keyed by IOC value
+- Entry point: `vt_lookup_batch()` in [`providers/virustotal.py`](../providers/virustotal.py) - processes a list of IOCs and returns a dict keyed by IOC value
 
 ---
 

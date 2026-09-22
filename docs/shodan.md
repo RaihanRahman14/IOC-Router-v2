@@ -1,6 +1,6 @@
 # Shodan
 
-Shodan continuously scans the public internet and indexes open ports, running services, CVEs, and service tags for every reachable IP. IOC Router uses the lightweight **InternetDB** endpoint — no API key required — to fetch port, vulnerability, and tag data.
+Shodan continuously scans the public internet and indexes open ports, running services, CVEs, and service tags for every reachable IP. IOC Router uses the lightweight **InternetDB** endpoint - no API key required - to fetch port, vulnerability, and tag data.
 
 ---
 
@@ -53,11 +53,11 @@ The provider implements automatic retry on HTTP `429` (rate-limited) and timeout
 
 [`ioc/flags/shodan.py`](../ioc/flags/shodan.py) generates flags such as:
 
-- Critical CVE exposure — CVE present on a critical service port
-- RDP/SMB/SSH exposed — high-risk ports open to the internet
-- Tor exit node / VPN relay — from `tags[]`
-- Honeypot detected — from `tags[]`
-- High port exposure — 10+ open ports
+- Critical CVE exposure: CVE present on a critical service port
+- RDP/SMB/SSH exposed: high-risk ports open to the internet
+- Tor exit node / VPN relay: from `tags[]`
+- Honeypot detected: from `tags[]`
+- High port exposure: 10+ open ports
 
 ### Timeout & Batching
 

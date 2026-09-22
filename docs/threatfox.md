@@ -1,6 +1,6 @@
 # ThreatFox
 
-ThreatFox (by abuse.ch) is a free threat intelligence database focused on malware indicators — C2 infrastructure, malware families, and IOC confidence scores. IOC Router uses it to identify known malware C2 addresses, domains, and associated file hashes.
+ThreatFox (by abuse.ch) is a free threat intelligence database focused on malware indicators - C2 infrastructure, malware families, and IOC confidence scores. IOC Router uses it to identify known malware C2 addresses, domains, and associated file hashes.
 
 ---
 
@@ -55,10 +55,10 @@ For domains, the provider automatically expands the query to include `http://` a
 
 [`ioc/flags/threatfox.py`](../ioc/flags/threatfox.py) produces flags such as:
 
-- Known C2 server — threat type is `botnet_cc` or `c2`
-- High-confidence malware match — confidence ≥ 75
-- Payload delivery infrastructure — threat type `payload_delivery`
-- Known malware hash — hash matched in the database
+- Known C2 server: threat type is `botnet_cc` or `c2`
+- High-confidence malware match: confidence ≥ 75
+- Payload delivery infrastructure: threat type `payload_delivery`
+- Known malware hash: hash matched in the database
 
 ### Verdict Contribution
 
