@@ -21,9 +21,12 @@ this module has no provider call to make in the first place.
 from __future__ import annotations
 
 import functools
+import json
 import logging
 
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from urllib.parse import unquote
 
 from core.decode_common import (
     LABEL_BASE64,
@@ -50,6 +53,9 @@ FLAG_SOURCE = "WAF Payload"
 
 WAF_ENCODED_PAYLOAD = "WAF_ENCODED_PAYLOAD"
 WAF_CVE_FINGERPRINT = "WAF_CVE_FINGERPRINT"
+WAF_RECON_PATH_PROBE = "WAF_RECON_PATH_PROBE"
+
+_RECON_DATA_FILE = Path(__file__).parent / "data" / "recon_paths.json"
 
 # One flag id per CRS category. Ids are prefixed WAF_ and mapped to evidence
 # keys explicitly in ioc/flags/__init__.py rather than by the substring matching
@@ -110,6 +116,7 @@ _TRANSFORMS: tuple[tuple[str, Transform], ...] = (
 
 _MITRE_ENCODED = ["T1027", "T1140"]
 _MITRE_EXPLOIT = ["T1190"]
+_MITRE_RECON = ["T1595.003"]
 
 VERDICT_LADDER = ("Unknown", "Suspicious", "Malicious")
 
@@ -181,6 +188,8 @@ class WafPayloadAnalysisResult:
         crs_truncated: True when only the head of the payload was scanned.
         cve_fingerprint_match: The curated CVE signature that fired, or None.
             ``nvd`` and ``kev`` enrichment is attached by the caller.
+        recon_probe_match: The scanner-probed path this request asked for, or
+            None. Reconnaissance only — it never moves the verdict.
         checks_skipped: Human-readable list of checks that did not run.
         aggregated_verdict: Malicious | Suspicious | Unknown. Never Benign (D9).
         flags: ``_flag()``-shaped findings, feeding the existing flag system.
@@ -204,6 +213,7 @@ class WafPayloadAnalysisResult:
     crs_category_stats: dict = field(default_factory=dict)
     crs_truncated: bool = False
     cve_fingerprint_match: dict | None = None
+    recon_probe_match: dict | None = None
     checks_skipped: list[str] = field(default_factory=list)
     aggregated_verdict: str = "Unknown"
     flags: list[dict] = field(default_factory=list)
@@ -234,6 +244,103 @@ def decode_payload(payload: str) -> tuple[str, list[str], bool]:
         return payload, [], False
 
     return run.text, run.chain, not run.truncated
+
+
+@functools.lru_cache(maxsize=1)
+def load_recon_paths() -> tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]:
+    """Load the scanner-probed path list from ``core/data/recon_paths.json``.
+
+    Returns:
+        Tuple of (paths, suffixes), each a tuple of ``(value, label)`` pairs with
+        values lower-cased. Both empty when the file is missing or unreadable,
+        which degrades recon detection to "found nothing" rather than breaking a
+        run — the same failure mode as the CVE fingerprint layer.
+    """
+    try:
+        document = json.loads(_RECON_DATA_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.error("recon path file unreadable: %s", exc)
+        return (), ()
+
+    paths: list[tuple[str, str]] = []
+    categories = document.get("categories", {})
+    if isinstance(categories, dict):
+        for category in categories.values():
+            if not isinstance(category, dict):
+                continue
+            label = str(category.get("label") or "scanner-probed path")
+            for entry in category.get("paths", []):
+                value = str(entry).strip().lower().rstrip("/")
+                if value.startswith("/") and len(value) > 1:
+                    paths.append((value, label))
+
+    suffixes: list[tuple[str, str]] = []
+    suffix_block = document.get("suffixes", {})
+    if isinstance(suffix_block, dict):
+        label = str(suffix_block.get("label") or "leftover file")
+        for entry in suffix_block.get("values", []):
+            value = str(entry).strip().lower()
+            if value:
+                suffixes.append((value, label))
+
+    return tuple(paths), tuple(suffixes)
+
+
+def _normalise_request_path(value: str) -> str:
+    """Reduce a request path to the form the recon list is written in.
+
+    Args:
+        value: A request path as submitted, possibly with a query string.
+
+    Returns:
+        Lower-cased, percent-decoded path with the query string and fragment
+        dropped, backslashes folded to slashes, repeated slashes collapsed and
+        no trailing slash. Empty when the value is not path-shaped.
+    """
+    text = value.strip()
+    if not text.startswith(("/", "\\")):
+        return ""
+    text = text.split("?", 1)[0].split("#", 1)[0]
+    text = unquote(text).replace("\\", "/").lower()
+    while "//" in text:
+        text = text.replace("//", "/")
+    return text.rstrip("/")
+
+
+def match_recon_path(path: str | None, payload: str = "") -> dict | None:
+    """Check whether a request asked for a path that scanners probe for.
+
+    The request path is read from ``path`` when there is one. When the line had
+    no delimiter — the WAF Payload field accepts that — the whole line lands in
+    ``payload``, so a path-shaped payload is read instead.
+
+    Args:
+        path: Left of the delimiter, or None.
+        payload: Right of the delimiter, used only when ``path`` is None.
+
+    Returns:
+        ``{"path", "matched", "label"}`` for the first entry that matched, or
+        None.
+    """
+    candidate = path if path else payload
+    normalised = _normalise_request_path(candidate or "")
+    if not normalised:
+        return None
+
+    paths, suffixes = load_recon_paths()
+    # Segment-aligned containment: "/.env" must match "/app/.env" and
+    # "/.env/x" but not "/.environment".
+    haystack = normalised + "/"
+    for value, label in paths:
+        if value + "/" in haystack:
+            return {"path": candidate, "matched": value, "label": label}
+
+    last_segment = normalised.rsplit("/", 1)[-1]
+    for value, label in suffixes:
+        if last_segment.endswith(value) and last_segment != value:
+            return {"path": candidate, "matched": value, "label": label}
+
+    return None
 
 
 def decision_categories(result: "WafPayloadAnalysisResult") -> list[str]:
@@ -339,6 +446,22 @@ def build_flags(result: WafPayloadAnalysisResult) -> list[dict]:
             detail,
             FLAG_SOURCE,
         ), _MITRE_EXPLOIT, ""))
+
+    probe = result.recon_probe_match
+    if probe:
+        # LOW and mapped to scanning_or_recon only: asking for /.env says the
+        # requester is looking, not that anything was attempted against it.
+        flags.append(_with_link(_flag(
+            WAF_RECON_PATH_PROBE,
+            f"Reconnaissance path probe: {probe['label']}",
+            "Reconnaissance",
+            "LOW",
+            _MITRE_RECON,
+            f"Request path {probe['path']!r} matches the scanner-probed entry "
+            f"{probe['matched']!r}. On its own this is reconnaissance, not an "
+            "attack.",
+            FLAG_SOURCE,
+        ), _MITRE_RECON, ""))
 
     if result.was_encoded:
         chain = " -> ".join(result.decode_chain) or "unspecified"
@@ -478,8 +601,12 @@ def to_rows(result: WafPayloadAnalysisResult) -> list[dict]:
     # one. Without this a 2 kB-truncated payload with SQLi past the bound read
     # as "No CRS rule or CVE signature matched".
     partial = " (payload truncated — not fully scanned)" if result.crs_truncated else ""
+    probe = result.recon_probe_match
+    probe_text = f"Reconnaissance path probe ({probe['label']})" if probe else ""
 
-    if not result.parse_ok:
+    if not result.parse_ok and probe:
+        evidence = f"{probe_text}; no payload after the delimiter"
+    elif not result.parse_ok:
         evidence = "No payload after the delimiter — nothing to analyse"
     elif fingerprint:
         evidence = f"{fingerprint['cve']} ({fingerprint['name']}) signature matched"
@@ -497,6 +624,8 @@ def to_rows(result: WafPayloadAnalysisResult) -> list[dict]:
             f"CRS {'/'.join(decided)}: {count} rule(s), "
             f"anomaly score {result.crs_anomaly_score_pl12:g}{partial}"
         )
+    elif probe:
+        evidence = f"{probe_text}; no CRS rule or CVE signature matched{partial}"
     elif result.crs_match_count:
         evidence = (
             f"Only low-confidence CRS rules matched (score "
@@ -521,6 +650,9 @@ def to_rows(result: WafPayloadAnalysisResult) -> list[dict]:
     elif result.crs_anomaly_score_pl12:
         confidence = "Low"
         sources = "Local (OWASP CRS)"
+    elif probe:
+        confidence = "Low"
+        sources = "Local (recon path list)"
     else:
         # Includes the case where only PL3/PL4 punctuation rules fired: those
         # do not decide anything, so claiming CRS as a source would overstate
@@ -555,10 +687,15 @@ def analyze_waf_payload(data: WafPayloadInput) -> WafPayloadAnalysisResult:
         markers=list(data.markers),
     )
 
+    # Read before the empty-payload return below: a recon probe is usually a
+    # bare path ("/.env |"), so this is the one finding such a line can carry.
+    result.recon_probe_match = match_recon_path(data.path, data.payload)
+
     if not data.payload.strip():
         # Plan §4 rule 6. parse_ok is what keeps this distinguishable from a
-        # payload that simply matched nothing.
+        # payload that simply matched nothing. The verdict stays Unknown.
         result.parse_ok = False
+        result.flags = build_flags(result)
         return result
 
     decoded, chain, decode_ok = decode_payload(data.payload)

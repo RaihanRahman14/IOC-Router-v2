@@ -171,6 +171,9 @@ provider**.
 | **Decode** | Shared decoder (percent-encoding, HTML entities, `\uXXXX`/`\xNN`, base64), reused from the command-line module via `core/decode_common.py` with web-specific parameters | - |
 | **CRS matching** | Payload matched against an extracted OWASP CRS rule subset - SQLi, XSS, RCE, LFI, RFI, SSRF, protocol-anomaly categories - after replaying each rule's own transformation chain | `crs_patterns.json` (183 rules) |
 | **CVE fingerprinting** | Curated, hand-picked signatures for mass-exploited CVEs (Log4Shell, Spring4Shell, ProxyShell, ...) that have no benign reason to appear in traffic, cross-referenced against NVD + CISA KEV | `cve_fingerprints.json` |
+| **Recon path probe** | Request path matched against paths scanners probe for (`/.env`, `/.git/config`, `/wp-admin`, `/actuator`, backup files, ...). Moves the Threat State to Reconnaissance; never changes the verdict | `recon_paths.json` |
+
+In the Threat Analysis panel, a recon probe lands on **Reconnaissance** (Low), and any exploit payload lands on **Exploitation** (Medium), blocked or not. A WAF finding alone never reaches Execution. See [Threat State, Level, and Verdict](docs/threat_state_level_verdict.md).
 
 The verdict ladder, integration points, and calibration results are documented
 in [docs/waf_payload_analyzer.md](docs/waf_payload_analyzer.md).
@@ -217,7 +220,21 @@ Source: [ioc/confidence_scorer.py](ioc/confidence_scorer.py)
 
 ### 6. Threat State, Level, and Verdict
 
-Determines the threat lifecycle state (e.g. Reconnaissance, Persistence, Impact) and assigns a threat level (Low → Very High), adjusted for asset criticality when the **Critical** flag is set. Also surfaces a human-readable risk label, a list of reasons driving the assessment, all relevant MITRE ATT&CK tactics observed across providers, key evidence per IOC (malware family, domain age, open ports, first seen), and direct source links back to each provider's result page.
+Determines the threat lifecycle state and assigns a threat level (Low → Very High), adjusted for asset criticality when the **Critical** flag is set. State names follow the [Unified Kill Chain](https://www.unifiedkillchain.com/) phases:
+
+| Threat State | Meaning | Base Level |
+|---|---|---|
+| Exposure | No attack activity; asset posture only (outside UKC) | Low |
+| Reconnaissance | Scanning or probing for sensitive paths | Low |
+| Delivery | Phishing, exploit reputation, or an attack blocked by controls | Low |
+| Exploitation | Web exploit payload (SQLi, XSS, LFI, ...), blocked or not | Medium |
+| Execution | Malware executed or C2 communication | Medium |
+| Privilege Escalation | Attacker gained higher privileges | High |
+| Lateral Movement | Attacker spreading to other systems | High |
+| Persistence | Attacker established a survival mechanism | High |
+| Impact | Data exfiltration or service disruption/encryption | Very High |
+
+The threat analysis also surfaces a human-readable risk label, a list of reasons driving the assessment, all relevant MITRE ATT&CK tactics observed across providers, key evidence per IOC (malware family, domain age, open ports, first seen), and direct source links back to each provider's result page.
 
 See [Threat State, Level, and Verdict](docs/threat_state_level_verdict.md) for a full breakdown of each state, level, and verdict.
 

@@ -33,11 +33,15 @@ from core.geo import fetch_geo_ip_api, fetch_nominatim
 # Rendered as the "?" tooltip next to each selectbox (Streamlit renders markdown).
 # See docs/threat_state_level_verdict.md for the full breakdown.
 _THREAT_STATE_HELP = (
-    "**How far the attack has progressed (kill-chain stage):**\n\n"
+    "**How far the attack has progressed (Unified Kill Chain stage):**\n\n"
     "- **Exposure** — asset merely exposed/visible; no attack activity.\n"
-    "- **Intrusion Attempt** — recon, phishing, or exploit attempt, *or* a "
-    "serious attack that was blocked by controls.\n"
-    "- **Compromise** — foothold gained: malware executed or C2 communication.\n"
+    "- **Reconnaissance** — scanning or probing for sensitive paths; same level "
+    "as Exposure.\n"
+    "- **Delivery** — phishing or exploit attempt, *or* a serious attack that "
+    "was blocked by controls.\n"
+    "- **Exploitation** — exploit payload (SQLi, XSS, LFI, …) aimed at a web "
+    "application, blocked or not.\n"
+    "- **Execution** — foothold gained: malware executed or C2 communication.\n"
     "- **Privilege Escalation** — attacker gained higher privileges.\n"
     "- **Lateral Movement** — attacker spreading to other systems.\n"
     "- **Persistence** — attacker established a survival mechanism.\n"
@@ -46,8 +50,9 @@ _THREAT_STATE_HELP = (
 
 _THREAT_LEVEL_HELP = (
     "**Severity / response priority:**\n\n"
-    "- **Low** — minimal risk; exposure or attempts with no real progress.\n"
-    "- **Medium** — confirmed compromise, limited scope; needs investigation.\n"
+    "- **Low** — minimal risk; exposure, recon, or attempts with no real progress.\n"
+    "- **Medium** — web exploit payload, or confirmed execution with limited "
+    "scope; needs investigation.\n"
     "- **High** — serious progression (priv-esc, lateral, persistence) or "
     "critical-asset compromise; prompt response.\n"
     "- **Very High** — active impact (exfiltration/encryption) or critical "
@@ -614,6 +619,7 @@ def _build_analysis_summary(selected_values: list[str], run_results: dict) -> di
         "scanning_or_recon": False,
         "phishing_or_social_eng": False,
         "exploit_attempt": False,
+        "web_exploit_payload": False,
         "malware_executed": False,
         "c2_connection": False,
         "privilege_escalation": False,
@@ -785,8 +791,10 @@ def _build_reason_fallbacks(summary: dict, state: str, level: str) -> list[str]:
         "Persistence": "attack progression indicates a sustained foothold",
         "Lateral Movement": "attack progression indicates movement between hosts",
         "Privilege Escalation": "attack progression indicates privilege elevation",
-        "Compromise": "attack progression has moved beyond attempt to full compromise",
-        "Intrusion Attempt": "attack progression is still at the attempt stage",
+        "Execution": "attack progression has moved beyond attempt to code execution",
+        "Exploitation": "an exploit payload reached the application; success is not established",
+        "Delivery": "attack progression is still at the attempt stage",
+        "Reconnaissance": "only reconnaissance activity was observed",
         "Exposure": "no active attack progression observed",
     }
     r1 = f"Threat State {state} selected because {state_reason_map.get(state, 'observed evidence progression')}."
@@ -818,7 +826,7 @@ def _format_threat_text_for_box(raw_text: str, summary: dict) -> str:
 
     if not state:
         # Fallback if AI missed structured line.
-        for s in ["Impact", "Persistence", "Lateral Movement", "Privilege Escalation", "Compromise", "Intrusion Attempt", "Exposure"]:
+        for s in ["Impact", "Persistence", "Lateral Movement", "Privilege Escalation", "Execution", "Exploitation", "Delivery", "Reconnaissance", "Exposure"]:
             if s.lower() in str(raw_text).lower():
                 state = s
                 break
@@ -1262,7 +1270,7 @@ def render_ai_panel(run_results: dict, settings) -> None:
 
         _level_color = {"Low": "#2ecc71", "Medium": "#f39c12", "High": "#e67e22", "Very High": "#e74c3c"}.get(_ta_level, "#aaa")
         _level_badge = f'<span style="background:{_level_color};color:#fff;padding:2px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">{_ta_level}</span>'
-        _state_color = {"Exposure":"#3498db","Intrusion Attempt":"#f39c12","Compromise":"#e67e22","Privilege Escalation":"#e74c3c","Lateral Movement":"#c0392b","Persistence":"#8e44ad","Impact":"#7b241c"}.get(_ta_state,"#555")
+        _state_color = {"Exposure":"#3498db","Reconnaissance":"#2980b9","Delivery":"#f39c12","Exploitation":"#d68910","Execution":"#e67e22","Privilege Escalation":"#e74c3c","Lateral Movement":"#c0392b","Persistence":"#8e44ad","Impact":"#7b241c"}.get(_ta_state,"#555")
         _state_badge = f'<span style="background:{_state_color};color:#fff;padding:2px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">{_ta_state}</span>'
         _verdict_badge = f'<span style="background:{_ta_verdict_color};color:#fff;padding:2px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">{_ta_verdict or "—"}</span>'
 
@@ -1488,7 +1496,7 @@ def render_ai_panel(run_results: dict, settings) -> None:
         with st.expander("**Threat Analysis**", expanded=False):
             # ── Row 1: State + Level + Verdict with analyst override dropdowns ──
             _state_options = [
-                "Exposure", "Intrusion Attempt", "Compromise",
+                "Exposure", "Reconnaissance", "Delivery", "Exploitation", "Execution",
                 "Privilege Escalation", "Lateral Movement", "Persistence", "Impact",
             ]
             _level_options = ["Low", "Medium", "High", "Very High"]
@@ -1523,8 +1531,10 @@ def render_ai_panel(run_results: dict, settings) -> None:
             (function() {
               var colorMap = {
                 "Exposure": "#3498db",
-                "Intrusion Attempt": "#f39c12",
-                "Compromise": "#e67e22",
+                "Reconnaissance": "#2980b9",
+                "Delivery": "#f39c12",
+                "Exploitation": "#d68910",
+                "Execution": "#e67e22",
                 "Privilege Escalation": "#e74c3c",
                 "Lateral Movement": "#c0392b",
                 "Persistence": "#8e44ad",

@@ -1,0 +1,88 @@
+{
+  "_meta": {
+    "description": "Request paths that automated scanners probe for, used by core.waf_payload_analyzer to raise WAF_RECON_PATH_PROBE. A match is reconnaissance, not an attack: it moves the Threat State to Reconnaissance and never changes the WAF verdict.",
+    "mitre": "T1595.003 (Active Scanning: Wordlist Scanning)",
+    "matching": "Case-insensitive, after percent-decoding and dropping the query string. A path entry matches when it appears segment-aligned anywhere in the request path, so /.env also matches /app/.env and /wp-login.php also matches /blog/wp-login.php. A suffix matches the last path segment only.",
+    "admission": "Only paths with no routine reason to be requested by ordinary visitors. Production endpoints that scanners also request (for example /graphql, /login, /api) are excluded: probing them is indistinguishable from using them."
+  },
+  "categories": {
+    "secrets_and_config": {
+      "label": "secret or configuration file",
+      "paths": [
+        "/.env",
+        "/.env.local",
+        "/.env.production",
+        "/.env.backup",
+        "/.git/config",
+        "/.git/head",
+        "/.svn/entries",
+        "/.hg/hgrc",
+        "/.ds_store",
+        "/.aws/credentials",
+        "/.ssh/id_rsa",
+        "/id_rsa",
+        "/.htpasswd",
+        "/.htaccess",
+        "/web.config",
+        "/.npmrc",
+        "/.vscode/sftp.json",
+        "/docker-compose.yml"
+      ]
+    },
+    "admin_panels": {
+      "label": "administration panel",
+      "paths": [
+        "/wp-admin",
+        "/wp-login.php",
+        "/xmlrpc.php",
+        "/phpmyadmin",
+        "/pma",
+        "/myadmin",
+        "/adminer.php",
+        "/manager/html",
+        "/jmx-console",
+        "/administrator"
+      ]
+    },
+    "debug_and_info": {
+      "label": "debug or server-information endpoint",
+      "paths": [
+        "/actuator",
+        "/server-status",
+        "/server-info",
+        "/phpinfo.php",
+        "/info.php",
+        "/elmah.axd",
+        "/trace.axd",
+        "/_profiler",
+        "/telescope",
+        "/debug/default/view"
+      ]
+    },
+    "api_discovery": {
+      "label": "API documentation endpoint",
+      "paths": [
+        "/swagger-ui.html",
+        "/swagger-ui",
+        "/swagger.json",
+        "/v2/api-docs",
+        "/v3/api-docs",
+        "/openapi.json"
+      ]
+    },
+    "backup_files": {
+      "label": "backup archive",
+      "paths": [
+        "/backup.zip",
+        "/backup.tar.gz",
+        "/www.zip",
+        "/site.zip",
+        "/db.zip"
+      ]
+    }
+  },
+  "suffixes": {
+    "label": "backup or leftover file",
+    "values": [".bak", ".old", ".orig", ".swp", ".sql", "~"]
+  }
+}

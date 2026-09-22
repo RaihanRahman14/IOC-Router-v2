@@ -364,6 +364,41 @@ deduplication in `extract_ioc_flags`. This is a deviation from briefing §7's
 proof of an attack - the same call the cmdline module made for
 `CMDLINE_ENCODED_PAYLOAD`.
 
+**Amendment (2026-09-22): Threat State rename and recon probes.** Threat States
+were renamed to Unified Kill Chain phases (see
+[threat_state_level_verdict.md](threat_state_level_verdict.md)), and two
+mappings were added:
+
+| Flag ID | Severity | Evidence keys | Threat State |
+|---|---|---|---|
+| every exploit flag in the table above | as above | `exploit_attempt` **+ `web_exploit_payload`** | Exploitation (Medium) |
+| `WAF_RECON_PATH_PROBE` | LOW | `scanning_or_recon` | Reconnaissance (Low) |
+
+`web_exploit_payload` exists because `exploit_attempt` is also set by provider
+reputation (substring `EXPLOIT` / `CVE` / `SQLI` in a provider flag id), which
+says "this IP attacked elsewhere", not "this payload was aimed at us". Only the
+WAF-specific key moves the state to Exploitation; provider reputation stays at
+Delivery. Exploit flags keep `exploit_attempt` as well, so the verdict rules did
+not have to change.
+
+Exploitation is reached **whether or not the WAF blocked the request**, and
+never escalates to Execution on WAF evidence alone: a payload in a WAF log
+proves it was sent, not that it worked.
+
+`WAF_RECON_PATH_PROBE` fires when the request path matches
+[`core/data/recon_paths.json`](../core/data/recon_paths.json): secret and config
+files, admin panels, debug endpoints, API documentation and backup files.
+MITRE T1595.003 (Active Scanning: Wordlist Scanning). Matching is
+case-insensitive, percent-decoded, ignores the query string, and is
+segment-aligned, so `/.env` matches `/app/.env` but not `/.environment`.
+Production endpoints that scanners also request (`/graphql`, `/login`) are
+excluded on purpose: probing them cannot be told apart from using them. The
+flag **never changes `aggregated_verdict`**, consistent with D10.
+
+The check runs **before** the empty-payload return in `analyze_waf_payload()`.
+A probe is usually a bare path (`/.env |`), and until this change such a line
+produced `parse_ok=False` with no flags at all.
+
 ### D9: `Benign` is never returned. Deviation from briefing §5.5.
 
 Briefing §5.5 routes "nothing matched anywhere" to `Benign`. Both sibling modules
@@ -487,6 +522,7 @@ core/
   data/
     crs_patterns.json                    # Layer 3 extracted subset (D3)
     cve_fingerprints.json                # Layer 4 curated dictionary
+    recon_paths.json                     # scanner-probed paths (D8 amendment)
   scripts/
     extract_crs_patterns.py              # offline, sibling of extract_sigma_cmdline_patterns.py
 ui/components/
@@ -536,6 +572,7 @@ class WafPayloadAnalysisResult:
     crs_matches: list[CrsMatch]
     crs_anomaly_score: float
     cve_fingerprint_match: dict | None      # {cve, name, nvd: dict | None, kev: bool | None}
+    recon_probe_match: dict | None  # {path, matched, label}; never moves the verdict
     aggregated_verdict: str
     flags: list[dict]               # _flag()-shaped, feeds the existing system
 ```

@@ -201,6 +201,56 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(rows[0]["Verdict"], "Malicious")
 
 
+class TestThreatStateFromWaf(unittest.TestCase):
+    """A WAF line must land on the right Unified Kill Chain stage, end to end."""
+
+    @staticmethod
+    def _state(line: str, device_action: str = "") -> dict:
+        from ioc.flags import flags_summary_for_evidence
+        from ioc.threat_analysis import analyzeThreat
+
+        flags = [f for w in parse_waf_field(line) for f in analyze_waf_payload(w).flags]
+        summary = flags_summary_for_evidence(flags)
+        return analyzeThreat({
+            "evidence": summary["evidence"],
+            "mitre_tactics": summary["mitre_tactics"],
+            "risk_notes": summary["notes"],
+            "asset_criticality": "standard",
+            "device_action": device_action,
+        })
+
+    def test_recon_probe_is_reconnaissance_at_low(self) -> None:
+        for action in ("", "Blocked"):
+            with self.subTest(action=action):
+                out = self._state("/.env |", action)
+                self.assertEqual(out["threat_state"], "Reconnaissance")
+                self.assertEqual(out["threat_level"], "Low")
+
+    def test_exploit_payload_is_exploitation_at_medium_blocked_or_not(self) -> None:
+        for action in ("", "Allowed", "Blocked"):
+            with self.subTest(action=action):
+                out = self._state(SQLI_LINE, action)
+                self.assertEqual(out["threat_state"], "Exploitation")
+                self.assertEqual(out["threat_level"], "Medium")
+                self.assertEqual(out["verdict"], "Benign Positive")
+
+    def test_every_exploit_category_reaches_exploitation(self) -> None:
+        for line in (
+            "/search | <script>alert(1)</script>",
+            "/dl | ../../../../etc/passwd",
+            LOG4SHELL_LINE,
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(self._state(line)["threat_state"], "Exploitation")
+
+    def test_probe_carrying_an_exploit_is_exploitation(self) -> None:
+        out = self._state("/wp-login.php | ' OR '1'='1")
+        self.assertEqual(out["threat_state"], "Exploitation")
+
+    def test_encoding_alone_moves_nothing(self) -> None:
+        self.assertEqual(self._state("/x | %41%42%43")["threat_state"], "Exposure")
+
+
 class TestProviderIsolation(unittest.TestCase):
     """The claim that a payload can never be sent to an external service."""
 

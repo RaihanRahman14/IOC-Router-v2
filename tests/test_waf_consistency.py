@@ -79,7 +79,9 @@ class TestVerdictAndFlagsAgree(unittest.TestCase):
             with self.subTest(line=line[:48]):
                 flagged = {
                     f["id"] for f in result.flags if f["id"].startswith("WAF_")
-                    and f["id"] not in ("WAF_ENCODED_PAYLOAD", "WAF_CVE_FINGERPRINT")
+                    and f["id"] not in (
+                        "WAF_ENCODED_PAYLOAD", "WAF_CVE_FINGERPRINT", "WAF_RECON_PATH_PROBE",
+                    )
                 }
                 self.assertEqual(len(flagged), len(decision_categories(result)))
 

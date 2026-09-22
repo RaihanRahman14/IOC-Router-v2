@@ -157,11 +157,11 @@ Never returns **Benign**. Absence of evidence is `Unknown`, consistent with
 ## Output
 
 - **Flags**: `_flag()`-shaped, feeding the existing flag system. All three
-  process flags map to the `malware_executed` evidence key ("Compromise"), not
+  process flags map to the `malware_executed` evidence key ("Execution"), not
   `persistence_mechanism`: impersonating a binary or spawning a shell from Office
   says something ran that should not have, but says nothing about a persistence
   mechanism being installed. A prevented Device Action still caps the resulting
-  Threat State at "Intrusion Attempt", which is the safety valve that makes this
+  Threat State at "Delivery", which is the safety valve that makes this
   defensible.
 - **Rows**: one per submitted field, plus a pair row whenever the pairing layer
   ran. The pair row is emitted **even on a clean result**: a check that ran and

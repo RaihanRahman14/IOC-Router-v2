@@ -76,14 +76,14 @@ class TestThreatAnalysisIntegration(unittest.TestCase):
     def test_office_pairing_raises_threat_state(self) -> None:
         result = pa.analyze_process_event(pa.ProcessFilepathInput(
             parent_process="winword.exe", child_process="cmd.exe"))
-        self.assertEqual(self._analyze(result)["threat_state"], "Compromise")
+        self.assertEqual(self._analyze(result)["threat_state"], "Execution")
 
     def test_prevented_action_caps_the_state(self) -> None:
         """A blocked detection must not read as a successful compromise."""
         result = pa.analyze_process_event(pa.ProcessFilepathInput(
             parent_process="winword.exe", child_process="cmd.exe"))
         self.assertEqual(
-            self._analyze(result, device_action="Blocked")["threat_state"], "Intrusion Attempt"
+            self._analyze(result, device_action="Blocked")["threat_state"], "Delivery"
         )
 
     def test_clean_input_stays_at_exposure(self) -> None:

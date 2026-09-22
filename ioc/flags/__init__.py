@@ -106,7 +106,7 @@ def flags_to_ai_context(flags: list[dict]) -> str:
 # Active tampering with host defenses *is* mapped to malware_executed. Disabling
 # AMSI or clearing the event log is not a configuration choice — something ran
 # that had a reason to hide. A prevented Device Action still caps the resulting
-# Threat State at "Intrusion Attempt", which is the safety valve that makes this
+# Threat State at "Delivery", which is the safety valve that makes this
 # defensible, exactly as for the process module's flags above.
 _CMDLINE_EVIDENCE: dict[str, frozenset[str]] = {
     "malware_executed": frozenset({
@@ -163,21 +163,29 @@ _CMDLINE_EVIDENCE: dict[str, frozenset[str]] = {
 # execution — inherited none. That asymmetry would be an artefact of spelling,
 # not a judgement about what each finding proves.
 #
+# Exploit findings set two keys. exploit_attempt is shared with provider
+# reputation ("this IP has attacked elsewhere"); web_exploit_payload is set only
+# here, because a payload aimed at *this* application is a different claim, and
+# it is what moves the Threat State to Exploitation rather than Delivery.
+#
 # Deliberately unmapped: WAF_ENCODED_PAYLOAD. Encoding is an evasion signal, not
 # proof of an attack, and forcing it into an evidence key would overstate what it
 # shows. It still reaches the narrative through its MITRE tactic and severity.
+_WAF_EXPLOIT_IDS = frozenset({
+    "WAF_CVE_FINGERPRINT",
+    "WAF_SQLI_MATCH",
+    "WAF_XSS_MATCH",
+    "WAF_RCE_MATCH",
+    "WAF_LFI_MATCH",
+    "WAF_RFI_MATCH",
+    "WAF_PHP_INJECTION_MATCH",
+    "WAF_SSRF_MATCH",
+    "WAF_PROTOCOL_ANOMALY",
+})
 _WAF_EVIDENCE: dict[str, frozenset[str]] = {
-    "exploit_attempt": frozenset({
-        "WAF_CVE_FINGERPRINT",
-        "WAF_SQLI_MATCH",
-        "WAF_XSS_MATCH",
-        "WAF_RCE_MATCH",
-        "WAF_LFI_MATCH",
-        "WAF_RFI_MATCH",
-        "WAF_PHP_INJECTION_MATCH",
-        "WAF_SSRF_MATCH",
-        "WAF_PROTOCOL_ANOMALY",
-    }),
+    "exploit_attempt": _WAF_EXPLOIT_IDS,
+    "web_exploit_payload": _WAF_EXPLOIT_IDS,
+    "scanning_or_recon": frozenset({"WAF_RECON_PATH_PROBE"}),
 }
 
 
@@ -190,6 +198,7 @@ def flags_summary_for_evidence(flags: list[dict]) -> dict:
         "scanning_or_recon": False,
         "phishing_or_social_eng": False,
         "exploit_attempt": False,
+        "web_exploit_payload": False,
         "malware_executed": False,
         "c2_connection": False,
         "privilege_escalation": False,
@@ -236,11 +245,11 @@ def flags_summary_for_evidence(flags: list[dict]) -> dict:
         # module's findings would reach the Threat Analysis narrative with an
         # empty evidence dict and silently score as "Exposure".
         #
-        # All three map to `malware_executed` ("Compromise"), not
+        # All three map to `malware_executed` ("Execution"), not
         # `persistence_mechanism` ("Persistence"): impersonating a system binary
         # or spawning a shell from Office says something ran that should not
         # have, but says nothing about a persistence mechanism being installed.
-        # A prevented Device Action still caps the state at Intrusion Attempt.
+        # A prevented Device Action still caps the state at Delivery.
         if any(k in fid for k in (
             "MASQUERADING", "PARENT_CHAIN_CONTAMINATION", "SUSPICIOUS_PARENT_CHILD_PAIR",
         )):

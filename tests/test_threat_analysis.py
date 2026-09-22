@@ -11,6 +11,7 @@ class TestThreatAnalysis(unittest.TestCase):
                 "scanning_or_recon": False,
                 "phishing_or_social_eng": False,
                 "exploit_attempt": False,
+                "web_exploit_payload": False,
                 "malware_executed": False,
                 "c2_connection": False,
                 "privilege_escalation": False,
@@ -30,21 +31,99 @@ class TestThreatAnalysis(unittest.TestCase):
         out = analyzeThreat(data)
         self.assertEqual(out["threat_state"], "Exposure")
         self.assertEqual(out["threat_level"], "Low")
+        self.assertEqual(out["verdict"], "False Positive")
 
-    def test_intrusion_attempt_scanning_blocked(self):
+    def test_recon_replaces_exposure(self):
+        data = self._base()
+        data["evidence"]["scanning_or_recon"] = True
+        out = analyzeThreat(data)
+        self.assertEqual(out["threat_state"], "Reconnaissance")
+        self.assertEqual(out["threat_level"], "Low")
+        self.assertEqual(out["verdict"], "Benign Positive")
+
+    def test_recon_blocked_stays_low(self):
         data = self._base()
         data["evidence"]["scanning_or_recon"] = True
         data["evidence"]["attack_prevented"] = True
+        data["device_action"] = "Blocked"
         out = analyzeThreat(data)
-        self.assertEqual(out["threat_state"], "Intrusion Attempt")
+        self.assertEqual(out["threat_state"], "Reconnaissance")
         self.assertEqual(out["threat_level"], "Low")
 
-    def test_compromise_by_malware_execution(self):
+    def test_phishing_is_delivery(self):
+        data = self._base()
+        data["evidence"]["phishing_or_social_eng"] = True
+        out = analyzeThreat(data)
+        self.assertEqual(out["threat_state"], "Delivery")
+        self.assertEqual(out["threat_level"], "Low")
+        self.assertEqual(out["verdict"], "Benign Positive")
+
+    def test_provider_exploit_reputation_is_delivery_not_exploitation(self):
+        # "This IP attacked elsewhere" is not a payload aimed at this app.
+        data = self._base()
+        data["evidence"]["exploit_attempt"] = True
+        self.assertEqual(determineThreatState(data), "Delivery")
+
+    def test_web_exploit_payload_is_exploitation_at_medium(self):
+        data = self._base()
+        data["evidence"]["exploit_attempt"] = True
+        data["evidence"]["web_exploit_payload"] = True
+        out = analyzeThreat(data)
+        self.assertEqual(out["threat_state"], "Exploitation")
+        self.assertEqual(out["threat_level"], "Medium")
+        # Medium is not a True Positive level, and Exploitation proves no success.
+        self.assertEqual(out["verdict"], "Benign Positive")
+
+    def test_web_exploit_payload_blocked_is_still_exploitation_at_medium(self):
+        data = self._base()
+        data["evidence"]["exploit_attempt"] = True
+        data["evidence"]["web_exploit_payload"] = True
+        data["device_action"] = "Blocked"
+        out = analyzeThreat(data)
+        self.assertEqual(out["threat_state"], "Exploitation")
+        self.assertEqual(out["threat_level"], "Medium")
+
+    def test_exploitation_outranks_recon(self):
+        data = self._base()
+        data["evidence"]["scanning_or_recon"] = True
+        data["evidence"]["exploit_attempt"] = True
+        data["evidence"]["web_exploit_payload"] = True
+        self.assertEqual(determineThreatState(data), "Exploitation")
+
+    def test_exploitation_outranks_delivery(self):
+        data = self._base()
+        data["evidence"]["phishing_or_social_eng"] = True
+        data["evidence"]["web_exploit_payload"] = True
+        self.assertEqual(determineThreatState(data), "Exploitation")
+
+    def test_server_side_execution_outranks_exploitation(self):
+        data = self._base()
+        data["evidence"]["web_exploit_payload"] = True
+        data["evidence"]["malware_executed"] = True
+        out = analyzeThreat(data)
+        self.assertEqual(out["threat_state"], "Execution")
+        self.assertEqual(out["verdict"], "True Positive")
+
+    def test_prevented_execution_caps_at_delivery(self):
+        data = self._base()
+        data["evidence"]["malware_executed"] = True
+        data["device_action"] = "Quarantined"
+        out = analyzeThreat(data)
+        self.assertEqual(out["threat_state"], "Delivery")
+        self.assertEqual(out["threat_level"], "Low")
+
+    def test_execution_by_malware_execution(self):
         data = self._base()
         data["evidence"]["malware_executed"] = True
         out = analyzeThreat(data)
-        self.assertEqual(out["threat_state"], "Compromise")
+        self.assertEqual(out["threat_state"], "Execution")
         self.assertEqual(out["threat_level"], "Medium")
+
+    def test_execution_on_critical_asset_is_high(self):
+        data = self._base()
+        data["evidence"]["malware_executed"] = True
+        data["asset_criticality"] = "critical"
+        self.assertEqual(analyzeThreat(data)["threat_level"], "High")
 
     def test_privilege_escalation(self):
         data = self._base()

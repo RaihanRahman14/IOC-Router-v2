@@ -71,7 +71,8 @@ ioc-router/
 │   │   ├── suspicious_cmdline_keywords.json  # Curated switch table (34)
 │   │   ├── cmd_internal_commands.json     # cmd.exe builtins (45)
 │   │   ├── crs_patterns.json              # Extracted OWASP CRS rule subset (183)
-│   │   └── cve_fingerprints.json          # Curated known-exploited CVE signatures
+│   │   ├── cve_fingerprints.json          # Curated known-exploited CVE signatures
+│   │   └── recon_paths.json               # Scanner-probed paths (WAF recon flag)
 │   │
 │   └── scripts/                  # Offline dataset regeneration & manual harnesses
 │       ├── extract_lolbas.py                  # LOLBAS → binaries + abuse commands

@@ -260,5 +260,84 @@ def to_rows_of(line: str) -> list[dict]:
     return wpa.to_rows(_analyze(line))
 
 
+class TestReconPathProbe(unittest.TestCase):
+    """Scanner-probed paths raise a LOW recon flag and never move the verdict."""
+
+    @staticmethod
+    def _ids(line: str) -> set[str]:
+        return {f["id"] for f in _analyze(line).flags}
+
+    def test_bare_path_probe_raises_a_flag_despite_empty_payload(self) -> None:
+        # The case the early return used to swallow: "/.env |" has no payload.
+        result = _analyze("/.env |")
+        self.assertFalse(result.parse_ok)
+        self.assertEqual(result.aggregated_verdict, "Unknown")
+        self.assertEqual([f["id"] for f in result.flags], [wpa.WAF_RECON_PATH_PROBE])
+        flag = result.flags[0]
+        self.assertEqual(flag["severity"], "LOW")
+        self.assertEqual(flag["mitre"], ["T1595.003"])
+        self.assertEqual(
+            flag["source_url"], "https://attack.mitre.org/techniques/T1595/003/",
+        )
+
+    def test_common_probes_match(self) -> None:
+        for path in (
+            "/.env", "/.git/config", "/.git/HEAD", "/wp-admin/", "/wp-login.php",
+            "/phpmyadmin/index.php", "/actuator/env", "/server-status",
+            "/phpinfo.php", "/swagger-ui.html", "/v2/api-docs", "/.aws/credentials",
+            "/backup.zip", "/index.php.bak", "/wp-config.php~", "/dump.sql",
+        ):
+            with self.subTest(path=path):
+                self.assertIsNotNone(wpa.match_recon_path(path))
+
+    def test_probes_match_below_the_root(self) -> None:
+        for path in ("/app/.env", "/blog/wp-login.php", "/api/.git/config"):
+            with self.subTest(path=path):
+                self.assertIsNotNone(wpa.match_recon_path(path))
+
+    def test_query_string_case_and_encoding_are_normalised(self) -> None:
+        for path in ("/.ENV", "/.env?x=1", "/%2eenv", "//.env", "\\.env"):
+            with self.subTest(path=path):
+                self.assertIsNotNone(wpa.match_recon_path(path))
+
+    def test_ordinary_paths_do_not_match(self) -> None:
+        for path in (
+            "/login", "/login?user=", "/api/data", "/search", "/graphql",
+            "/.environment", "/docs/env", "/sql", "/cgi-bin/x", "/",
+        ):
+            with self.subTest(path=path):
+                self.assertIsNone(wpa.match_recon_path(path))
+
+    def test_payload_only_line_is_read_as_the_path(self) -> None:
+        # The WAF field accepts a line with no delimiter; it lands in payload.
+        self.assertIsNotNone(wpa.match_recon_path(None, "/.git/config"))
+        self.assertIsNone(wpa.match_recon_path(None, "' OR 1=1"))
+
+    def test_recon_does_not_change_the_verdict(self) -> None:
+        # Same payload with and without a probed path: identical verdicts.
+        probed = _analyze("/wp-login.php | ' OR '1'='1")
+        plain = _analyze("/login | ' OR '1'='1")
+        self.assertEqual(probed.aggregated_verdict, plain.aggregated_verdict)
+        self.assertIn(wpa.WAF_RECON_PATH_PROBE, {f["id"] for f in probed.flags})
+
+    def test_non_probe_empty_payload_still_raises_nothing(self) -> None:
+        self.assertEqual(_analyze("/login?user= |").flags, [])
+
+    def test_row_names_the_probe_instead_of_nothing_to_analyse(self) -> None:
+        row = to_rows_of("/.env |")[0]
+        self.assertIn("Reconnaissance path probe", row["Primary Evidence"])
+        self.assertEqual(row["Verdict"], "Unknown")
+        self.assertEqual(row["Confidence"], "Low")
+        self.assertEqual(row["Sources"], "Local (recon path list)")
+
+    def test_data_file_loads(self) -> None:
+        paths, suffixes = wpa.load_recon_paths()
+        self.assertGreater(len(paths), 40)
+        self.assertTrue(suffixes)
+        for value, _ in paths:
+            self.assertTrue(value.startswith("/"), value)
+            self.assertEqual(value, value.lower(), value)
+
+
 if __name__ == "__main__":
     unittest.main()
