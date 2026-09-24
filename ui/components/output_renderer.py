@@ -6,6 +6,8 @@ import base64
 import streamlit as st
 import streamlit.components.v1 as components
 
+from core.geo import fetch_geo_ip_api
+
 try:
     import pandas as pd
 except Exception:
@@ -679,21 +681,6 @@ def render_results_output(output_format: str, run_results: dict) -> None:
             if tags:
                 tag_str = ",".join(tags[:3]) + ("…" if len(tags) > 3 else "")
                 parts.append(tag_str)
-            queried_ip = sh.get("queriedIp") or ""
-            if queried_ip:
-                try:
-                    from core.geo import fetch_geo_ip_api
-                    geo = fetch_geo_ip_api(queried_ip) or {}
-                    # AbuseIPDB first, same precedence the Infrastructure block
-                    # uses — its ISP name is the one an analyst sees elsewhere.
-                    isp = (abuse_results.get(val, {}) or {}).get("isp") or geo.get("isp") or ""
-                    country = geo.get("country") or ""
-                    if isp:
-                        parts.append(isp)
-                    if country:
-                        parts.append(country)
-                except Exception:
-                    pass
             return "Shodan: " + ", ".join(parts)
 
         def _mx_line(val: str) -> str:
@@ -778,14 +765,64 @@ def render_results_output(output_format: str, run_results: dict) -> None:
             t: set(ps) for t, ps in allowed_by_type_raw.items()
         }
 
-        def _add(notes_list: list, ioc_type: str, provider: str, line: str) -> None:
+        def _shown(ioc_type: str, provider: str) -> bool:
             allowed = allowed_by_type.get(ioc_type)
             if allowed is None:
-                if not pf.get(provider, True):
-                    return
-            elif provider not in allowed:
-                return
-            notes_list.append(line)
+                return pf.get(provider, True)
+            return provider in allowed
+
+        def _add(notes_list: list, ioc_type: str, provider: str, line: str) -> None:
+            if _shown(ioc_type, provider):
+                notes_list.append(line)
+
+        def _geo_extras(ioc_type: str, val: str) -> dict[str, list[str]]:
+            """Pick which provider line carries the ISP and country for ``val``.
+
+            Each field comes from the first shown provider that has it:
+            Shodan (ip-api geo of the queried IP), then AbuseIPDB, then
+            VirusTotal. The value is attached to that provider's line, so the
+            ticket shows where it came from.
+
+            Args:
+                ioc_type: The row's IOC type.
+                val: The artifact value.
+
+            Returns:
+                Provider key -> extra parts (ISP first, then country) to
+                append to that provider's line.
+            """
+            if ioc_type not in ("ip", "domain", "url"):
+                return {}
+            candidates: list[tuple[str, str, str]] = []
+            if _shown(ioc_type, "shodan"):
+                sh = shodan_results.get(val) or {}
+                ip = sh.get("queriedIp") or (val if ioc_type == "ip" else "")
+                geo = fetch_geo_ip_api(ip) if ip else {}
+                candidates.append(("shodan", geo.get("isp") or "", geo.get("country") or ""))
+            if _shown(ioc_type, "abuse"):
+                ab = abuse_results.get(val) or {}
+                candidates.append(("abuse", ab.get("isp") or "", ab.get("countryCode") or ""))
+            if _shown(ioc_type, "vt"):
+                attrs = (vt_results.get(val) or {}).get("attributes") or {}
+                candidates.append(("vt", attrs.get("as_owner") or "", attrs.get("country") or ""))
+
+            extras: dict[str, list[str]] = {}
+            isp_src = next((c for c in candidates if c[1]), None)
+            if isp_src:
+                extras.setdefault(isp_src[0], []).append(isp_src[1])
+            country_src = next((c for c in candidates if c[2]), None)
+            if country_src:
+                extras.setdefault(country_src[0], []).append(country_src[2])
+            return extras
+
+        def _with_geo(line: str, parts: list[str] | None) -> str:
+            """Append ISP/country parts to a provider line, replacing "No data"."""
+            if not parts:
+                return line
+            name, _, body = line.partition(": ")
+            if body == "No data":
+                return f"{name}: {', '.join(parts)}"
+            return f"{line}, {', '.join(parts)}"
 
         # Rows produced by the local analyzers rather than by a provider. They
         # carry the same column schema but no provider data, so they take a
@@ -930,13 +967,14 @@ def render_results_output(output_format: str, run_results: dict) -> None:
                 notes.append(f"Conclusion: {conclusion}")
                 notes.append("")
                 continue
+            geo_extras = _geo_extras(t, val)
             if t == "ip":
                 notes.append("#IP")
                 notes.append(f"IP: {val}")
-                _add(notes, t, "abuse",     _abuse_line(val))
-                _add(notes, t, "vt",        _vt_line(val))
+                _add(notes, t, "abuse",     _with_geo(_abuse_line(val), geo_extras.get("abuse")))
+                _add(notes, t, "vt",        _with_geo(_vt_line(val), geo_extras.get("vt")))
                 _add(notes, t, "tf",        _tf_line(val))
-                _add(notes, t, "shodan",    _shodan_line(val))
+                _add(notes, t, "shodan",    _with_geo(_shodan_line(val), geo_extras.get("shodan")))
                 _add(notes, t, "ha",        _ha_line(val))
                 _add(notes, t, "mxtoolbox", _mx_line(val))
                 notes.append("Conclusion: " + ("Malicious IP, confirmed suspicious activity" if verdict == "Malicious" else f"{verdict} IP"))
@@ -952,9 +990,9 @@ def render_results_output(output_format: str, run_results: dict) -> None:
                 notes.append("#Domain")
                 notes.append(f"Domain: {val}")
                 _add(notes, t, "urlscan",        _urlscan_line(val))
-                _add(notes, t, "vt",             _vt_line(val))
+                _add(notes, t, "vt",             _with_geo(_vt_line(val), geo_extras.get("vt")))
                 _add(notes, t, "tf",             _tf_line(val))
-                _add(notes, t, "shodan",         _shodan_line(val))
+                _add(notes, t, "shodan",         _with_geo(_shodan_line(val), geo_extras.get("shodan")))
                 _add(notes, t, "ha",             _ha_line(val))
                 _add(notes, t, "dns",            _dd_line(val))
                 _add(notes, t, "mxtoolbox",      _mx_line(val))
@@ -963,9 +1001,9 @@ def render_results_output(output_format: str, run_results: dict) -> None:
                 notes.append("#URL")
                 notes.append(f"URL: {val}")
                 _add(notes, t, "urlscan",        _urlscan_line(val))
-                _add(notes, t, "vt",             _vt_line(val))
+                _add(notes, t, "vt",             _with_geo(_vt_line(val), geo_extras.get("vt")))
                 _add(notes, t, "tf",             _tf_line(val))
-                _add(notes, t, "shodan",         _shodan_line(val))
+                _add(notes, t, "shodan",         _with_geo(_shodan_line(val), geo_extras.get("shodan")))
                 _add(notes, t, "ha",             _ha_line(val))
                 _add(notes, t, "dns",            _dd_line(val))
                 _add(notes, t, "mxtoolbox",      _mx_line(val))
