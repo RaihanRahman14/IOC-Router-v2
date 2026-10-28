@@ -68,7 +68,7 @@ _COMMON_APP_KEYWORDS: list[str] = [
     "imperva", "nagios", "riverbed", "ruckus", "sangfor",
     "seciron", "sentinelone", "sentinel one", "tenable",
     "trend micro", "trendmicro", "veeam", "wordpress", "word press",
-    "xfusion",
+    "xfusion", "watchguard", "watch guard",
 ]
 # Short/ambiguous tokens — matched against vendor+product only to avoid false positives
 # (e.g. "padding oracle" in crypto CVEs, "runs on Linux", "azure" as a color).
@@ -98,6 +98,8 @@ _COMMON_KEYWORD_LABEL: dict[str, str] = {
     "atmos agent":             "Atmos Agent",
     "trend micro":             "Trend Micro",
     "trendmicro":              "Trend Micro",
+    "watch guard":             "WatchGuard",
+    "watchguard":              "WatchGuard",
     "word press":              "WordPress",
     "wordpress":               "WordPress",
     "sentinelone":             "SentinelOne",
